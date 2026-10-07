@@ -142,3 +142,51 @@ def test_fetch_card_raw_does_not_cache_an_unreachable_scryfall(monkeypatch):
     cache = DbCardCache()
     assert scryfall.fetch_card_raw("Lightning Bolt", cache) is None
     assert cache.get_card("card_en_lightning_bolt") is None
+
+
+RULE = {
+    "program": {"abilities": []},
+    "status": "supported",
+    "reason": "",
+    "reason_kind": "",
+    "model": "typesafe/jev-1.13",
+}
+
+
+def _exercise_rules(cache):
+    assert cache.get_rule("oracle-1", "1") is None
+    cache.set_rule("oracle-1", "1", RULE)
+    assert cache.get_rule("oracle-1", "1") == RULE
+    # The DSL version is part of the key.
+    assert cache.get_rule("oracle-1", "2") is None
+    # Overwrite.
+    cache.set_rule(
+        "oracle-1", "1", RULE | {"status": "unsupported", "program": None, "reason": "x"}
+    )
+    assert cache.get_rule("oracle-1", "1")["status"] == "unsupported"
+
+
+def test_file_cache_rules_roundtrip(tmp_path):
+    _exercise_rules(FileCardCache(str(tmp_path)))
+
+
+@pytest.mark.django_db
+def test_db_cache_rules_roundtrip():
+    _exercise_rules(DbCardCache())
+
+
+@pytest.mark.django_db
+def test_a_rule_compiled_concurrently_is_overwritten(monkeypatch):
+    from django.db import IntegrityError
+
+    from decks.models import CardRule
+
+    cache = DbCardCache()
+    cache.set_rule("oracle-1", "1", RULE)
+
+    def racing_update_or_create(**kwargs):
+        raise IntegrityError("duplicate key")  # another match compiled it first
+
+    monkeypatch.setattr(CardRule.objects, "update_or_create", racing_update_or_create)
+    cache.set_rule("oracle-1", "1", RULE | {"reason": "new"})
+    assert CardRule.objects.get(oracle_id="oracle-1", dsl_version="1").reason == "new"

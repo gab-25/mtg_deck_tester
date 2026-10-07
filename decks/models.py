@@ -80,3 +80,37 @@ class ScryfallImage(models.Model):
 
     class Meta:
         db_table = "scryfall_images"
+
+
+class CardRule(models.Model):
+    """A card's compiled effect program, keyed by oracle id and DSL version.
+
+    ``decks`` stores the program as opaque JSON and never imports the DSL: the
+    playtest owns its meaning. ``model`` and ``compiled_at`` are not part of the
+    key, so a new model release doesn't recompile the whole pool.
+    """
+
+    class Status(models.TextChoices):
+        SUPPORTED = "supported", "Supported"
+        PARTIAL = "partial", "Partial"
+        UNSUPPORTED = "unsupported", "Unsupported"
+
+    oracle_id = models.CharField(max_length=64)
+    dsl_version = models.CharField(max_length=16)
+    # The validated program, or null when the card is unsupported.
+    program = models.JSONField(null=True)
+    status = models.CharField(max_length=16, choices=Status.choices)
+    reason = models.TextField(blank=True, default="")
+    # Why it is unsupported, as a category the coverage report groups by.
+    reason_kind = models.CharField(max_length=32, blank=True, default="")
+    # The versioned model that answered (empty when no model was asked).
+    model = models.CharField(max_length=64, blank=True, default="")
+    compiled_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = "card_rules"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["oracle_id", "dsl_version"], name="card_rule_per_dsl_version"
+            ),
+        ]
