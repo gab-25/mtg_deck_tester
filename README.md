@@ -56,6 +56,24 @@ The engine (`playtest/engine/`) supports:
 Not supported yet: the stack and priority, instant-speed play, blocking, abilities
 and card effects, colored mana, mulligans.
 
+### Card coverage
+
+Card effects are being compiled ahead of the game, once per card, into a small
+closed effect language. A deterministic pre-pass reads mana cost, types, power and
+toughness, keywords and the mana a card produces straight from Scryfall; only the
+rest of the rules text goes to a judge, where code splits it into clauses and
+[Jev](https://docs.typesafe.ai) (TypeSafe AI, through OpenRouter) only picks, for each
+clause, which operation, which target and which amount. A card it can't read, or
+can't answer confidently, is *unsupported* — never approximated. Results are cached
+in the `card_rules` table. To see how much of a deck would be simulated:
+
+```bash
+uv run python manage.py card_coverage --deck <deck uuid>
+uv run python manage.py card_coverage path/to/decklist.txt
+```
+
+The engine doesn't play compiled effects yet.
+
 ## Project structure
 
 ```
@@ -77,8 +95,15 @@ playtest/               # App: matches between agents
 │   ├── actions.py      #     The actions offered to an agent
 │   ├── rules.py        #     What the actions do; eliminations
 │   ├── view.py         #     What a seat may see (no hidden information)
-│   └── game.py         #     Setup, turns, phases, asking agents, the result
-├── agents/             #   Random agent, LLM agent, OpenRouter client
+│   ├── game.py         #     Setup, turns, phases, asking agents, the result
+│   ├── manacost.py     #     Mana cost parser
+│   ├── cardrules.py    #     Card facts from Scryfall JSON; residual rules text
+│   ├── clauses.py      #     Residual text → abilities and clauses
+│   ├── dsl.py          #     The effect language and its validator
+│   └── coverage.py     #     How much of a deck is simulated
+├── agents/             #   Random agent, LLM agent, OpenRouter and Jev clients
+├── judge.py            #   Compiles cards into effect programs (Jev), cached
+├── management/         #   `card_coverage` command
 ├── forms.py            #   The new-match form
 └── runner.py           #   Stored decks → engine → stored events and result
 theme/static/           # Precompiled stylesheet, vendored fonts and icons
@@ -92,7 +117,7 @@ The project uses [`uv`](https://docs.astral.sh/uv/).
 ### Docker Compose
 
 ```bash
-export OPENROUTER_API_KEY="..."       # optional: enables LLM seats
+export OPENROUTER_API_KEY="..."       # optional: enables LLM seats and the card judge
 export OPENROUTER_MODEL="..."         # optional: default model (google/gemini-2.5-flash)
 docker compose up --build
 docker compose exec web python manage.py createsuperuser
@@ -117,8 +142,9 @@ local development; real environment variables win):
 | Variable | Meaning | Default |
 |---|---|---|
 | `DATABASE_URL` | Postgres or SQLite URL | `postgresql://mtg:mtg@localhost:5432/mtg_tester` |
-| `OPENROUTER_API_KEY` | Enables LLM seats | — |
+| `OPENROUTER_API_KEY` | Enables LLM seats and the card judge (Jev); without it, cards needing the judge are unsupported | — |
 | `OPENROUTER_MODEL` | Default model for LLM seats | `google/gemini-2.5-flash` |
+| `JEV_MODEL` | Jev model for the card judge (through OpenRouter, same key) | `~typesafe/jev-latest` |
 | `SECRET_KEY` / `DEBUG` | Django basics | dev key / on |
 | `CSRF_TRUSTED_ORIGINS` | Comma-separated origins behind a proxy | — |
 | `RUN_JOBS_IN_BACKGROUND` | Run imports and matches off the request thread | `1` |
@@ -134,9 +160,9 @@ decisions: keep an eye on the round limit and on your OpenRouter spend.
 uv run pytest
 ```
 
-The suite is hermetic: in-memory SQLite, no Scryfall and no OpenRouter calls. It also
-checks that templates only use classes the precompiled stylesheet contains and icons
-the vendored font subset can render.
+The suite is hermetic: in-memory SQLite, no Scryfall and no OpenRouter calls (Jev
+included). It also checks that templates only use classes the precompiled stylesheet
+contains and icons the vendored font subset can render.
 
 ## License
 
