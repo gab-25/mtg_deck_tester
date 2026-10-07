@@ -179,11 +179,13 @@ def process_cached_card(card: dict, cache) -> dict:
     }
 
 
-def fetch_card_data(card_name: str, cache) -> dict:
-    """Fetches English card data from cache or Scryfall.
+def fetch_card_raw(card_name: str, cache) -> dict | None:
+    """Returns a card's raw English Scryfall JSON, from cache or Scryfall.
 
-    ``cache`` is a cache backend (see :mod:`decks.cache`) exposing
-    ``get_card``/``set_card``/``has_image``/``get_image``/``set_image``.
+    ``None`` when Scryfall doesn't know the card, or couldn't be reached (then
+    nothing is cached, so it is retried next time). The rules compiler needs
+    fields the processed card leaves out (``oracle_id``, ``keywords``,
+    ``colors``), and they are all in the JSON already cached at import time.
     """
     # Keyed on the front face, so "Sink into Stupor" and "Sink into Stupor //
     # Soporific Springs" share the one entry they both resolve to.
@@ -195,7 +197,7 @@ def fetch_card_data(card_name: str, cache) -> dict:
     if cached is not None:
         if cached.get("error") == "not_found":
             return None
-        return process_cached_card(cached, cache)
+        return cached
 
     # 2. Fetch the exact English match from the Scryfall API.
     encoded_name = urllib.parse.quote(card_name)
@@ -216,4 +218,16 @@ def fetch_card_data(card_name: str, cache) -> dict:
         return None
 
     cache.set_card(cache_key, card)
+    return card
+
+
+def fetch_card_data(card_name: str, cache) -> dict:
+    """Fetches English card data from cache or Scryfall.
+
+    ``cache`` is a cache backend (see :mod:`decks.cache`) exposing
+    ``get_card``/``set_card``/``has_image``/``get_image``/``set_image``.
+    """
+    card = fetch_card_raw(card_name, cache)
+    if card is None:
+        return None
     return process_cached_card(card, cache)
