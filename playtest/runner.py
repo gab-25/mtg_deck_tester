@@ -1,7 +1,6 @@
 """Runs a stored match through the engine and stores what happened."""
 
 import logging
-import re
 
 from django.db import transaction
 from django.utils import timezone
@@ -12,6 +11,7 @@ from mtg_deck_tester.logging_context import job_log_context
 
 from .agents.llm_agent import LLMAgent
 from .agents.random_agent import RandomAgent
+from .engine.cardrules import printed_stat
 from .engine.cards import CardSpec, DeckSpec, Kind
 from .engine.game import Game
 from .engine.state import GameRules
@@ -28,23 +28,14 @@ _KINDS = {
     "Battle": Kind.PERMANENT,
 }
 
-_LEADING_INT = re.compile(r"^\d+")
-
-
-def _stat(value) -> int:
-    """A printed power/toughness as a number: ``"3"`` -> 3, ``"1+*"`` -> 1, ``"*"`` -> 0."""
-    match = _LEADING_INT.match(str(value or ""))
-    return int(match.group(0)) if match else 0
-
-
 def card_spec(data: dict) -> CardSpec:
     """Turns a stored (processed Scryfall) card into what the engine plays with."""
     return CardSpec(
         name=data.get("name", "Unknown card"),
         kind=_KINDS.get(classify_card(data), Kind.SPELL),
         mana_value=int(data.get("cmc") or 0),
-        power=_stat(data.get("power")),
-        toughness=_stat(data.get("toughness")),
+        power=printed_stat(data.get("power")),
+        toughness=printed_stat(data.get("toughness")),
     )
 
 
