@@ -79,13 +79,17 @@ def compile_card(card_json: dict, cache, *, ask=None) -> CompiledCard:
     raises: a card that can't be compiled is UNSUPPORTED, with a reason.
     """
     facts = characteristics(card_json)
-    cached = cache.get_rule(facts.oracle_id, DSL_VERSION)
+    # A card without an oracle id would share its cache entry with every other.
+    cacheable = bool(facts.oracle_id)
+    cached = cache.get_rule(facts.oracle_id, DSL_VERSION) if cacheable else None
     if cached is not None:
         return CompiledCard(facts.name, facts, **cached)
 
     compiled = _compile(facts, ask or typesafe.system_one)
-    # A card Jev couldn't be asked about is retried next time; any answer is final.
-    if compiled.reason_kind != ReasonKind.NOT_ASKED:
+    # Only Jev's answers are worth keeping: everything else is recomputed for
+    # free, so a fix to the pre-pass or the splitter applies at once. A card
+    # Jev couldn't be asked about is retried next time.
+    if cacheable and compiled.model and compiled.reason_kind != ReasonKind.NOT_ASKED:
         cache.set_rule(
             facts.oracle_id,
             DSL_VERSION,
@@ -136,8 +140,10 @@ def build_questions(abilities: list[AbilityText]) -> dict:
     # whether the answer depends on the order.
     reversed_ops = dict(reversed(list(ops.items())))
     targets = {name: description for name, (_, description) in SELECTORS.items()} | {
-        NO_TARGET: "The clause names no player and no object."
+        NO_TARGET: "The clause names no player and no object.",
+        NONE: "None of these: the clause affects a different set of players or objects.",
     }
+    reversed_targets = dict(reversed(list(targets.items())))
     questions = {}
     for key, clause in _clauses(abilities):
         questions[f"op_{key}"] = _choice(
@@ -150,11 +156,8 @@ def build_questions(abilities: list[AbilityText]) -> dict:
             questions[f"target_{key}"] = _choice(
                 clause, "Which player or object does `clause` affect?", targets
             )
-        if len(clause.amounts) > 1:
-            questions[f"amount_{key}"] = _choice(
-                clause,
-                "Which number in `clause` is the amount the operation applies: how much damage, life, how many cards?",
-                {str(n): None for n in clause.amounts},
+            questions[f"target_{key}_rev"] = _choice(
+                clause, "Which player or object does `clause` affect?", reversed_targets
             )
     return questions
 
@@ -208,13 +211,15 @@ def _compile(facts: CardFacts, ask) -> CompiledCard:
         abilities = split_abilities(facts.residual, facts)
     except Unreadable as exc:
         return _unsupported(facts, ReasonKind.UNREADABLE, str(exc))
+    questions = build_questions(abilities)
     try:
-        reply = ask(card_state(facts), build_questions(abilities))
+        reply = ask(card_state(facts), questions)
     except typesafe.TypeSafeError as exc:
         logger.warning("Judge could not ask Jev about %s: %s", facts.name, exc)
         return _unsupported(facts, ReasonKind.NOT_ASKED, str(exc))
     model = reply["model"]
     try:
+        _check_choices(questions, reply["answers"])
         payload = assemble(abilities, reply["answers"])
     except _Refusal as exc:
         return _unsupported(facts, exc.kind, exc.reason, model)
@@ -248,6 +253,12 @@ def _choice(clause: Clause, question: str, criteria: dict) -> dict:
     }
 
 
+def _check_choices(questions: dict, answers: dict) -> None:
+    for key, question in questions.items():
+        if answers[key]["choice"] not in question["criteria"]:
+            raise ValueError(f"{key}: {answers[key]['choice']!r} is not one of the options")
+
+
 def _answer(answers: dict, key: str, where: str) -> str:
     answer = answers[key]
     if answer["confidence"] < JUDGE_MIN_CONFIDENCE:
@@ -263,7 +274,17 @@ def _target(clause, key, spec, answers, targets, ops, where) -> str:
         if not ops or "target" not in ops[-1]:
             raise _Refusal(ReasonKind.UNREADABLE, f"{where}: continues a clause that has no target")
         return ops[-1]["target"]
-    selector = _answer(answers, f"target_{key}", where) if clause.has_target else NO_TARGET
+    selector = NO_TARGET
+    if clause.has_target:
+        selector = _answer(answers, f"target_{key}", where)
+        reverse = _answer(answers, f"target_{key}_rev", where)
+        if NONE in (selector, reverse):
+            raise _Refusal(ReasonKind.NONE_FITS, f"{where}: no selector of the DSL fits")
+        if selector != reverse:
+            raise _Refusal(
+                ReasonKind.UNSTABLE,
+                f"{where}: {selector} or {reverse}, depending on the option order",
+            )
     if selector == NO_TARGET:
         if spec.target_kinds != {"player"}:
             raise _Refusal(
@@ -279,8 +300,7 @@ def _target(clause, key, spec, answers, targets, ops, where) -> str:
 
 def _field(field, op, clause, key, answers, where):
     if field == "amount":
-        if len(clause.amounts) > 1:
-            return int(_answer(answers, f"amount_{key}", where))
+        # The splitter refuses clauses with several numbers: at most one here.
         return _only(clause.amounts, "amount", where)
     if field in ("power", "toughness"):
         pairs = clause.token_pts if op == "CREATE_TOKEN" else clause.pt_mods

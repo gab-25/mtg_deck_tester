@@ -36,9 +36,21 @@ class FakeJev:
     """Answers each question from a table keyed by question kind (op / target / amount)."""
 
     def __init__(
-        self, op="DEAL_DAMAGE", rev=None, target="ANY_TARGET", amount=None, confidence=0.95
+        self,
+        op="DEAL_DAMAGE",
+        rev=None,
+        target="ANY_TARGET",
+        target_rev=None,
+        amount=None,
+        confidence=0.95,
     ):
-        self.table = {"op": op, "rev": rev or op, "target": target, "amount": amount}
+        self.table = {
+            "op": op,
+            "rev": rev or op,
+            "target": target,
+            "target_rev": target_rev or target,
+            "amount": amount,
+        }
         self.confidence = confidence
         self.calls = []
 
@@ -46,7 +58,9 @@ class FakeJev:
         self.calls.append((state, questions))
         answers = {}
         for key in questions:
-            kind = "rev" if key.endswith("_rev") else key.split("_")[0]
+            kind = key.split("_")[0]
+            if key.endswith("_rev"):
+                kind = "rev" if kind == "op" else "target_rev"
             answers[key] = answer(self.table[kind], self.confidence)
         return {"model": "typesafe/jev-1.13", "answers": answers}
 
@@ -91,7 +105,7 @@ def test_a_burn_spell_compiles_with_one_request(cache):
         "type_line": "Instant",
         "rules_text": BOLT["oracle_text"],
     }
-    assert set(questions) == {"op_0_0", "op_0_0_rev", "target_0_0"}
+    assert set(questions) == {"op_0_0", "op_0_0_rev", "target_0_0", "target_0_0_rev"}
 
 
 def test_the_reverse_question_lists_the_options_in_reverse(cache):
@@ -119,6 +133,8 @@ def test_the_second_compilation_makes_no_request(cache):
         (FakeJev(op="DEAL_DAMAGE", rev="LOSE_LIFE"), "unstable"),
         (FakeJev(confidence=0.5), "low_confidence"),
         (FakeJev(target="YOU", op="DESTROY"), "invalid"),
+        (FakeJev(target="NONE"), "none"),
+        (FakeJev(target="ANY_TARGET", target_rev="TARGET_CREATURE"), "unstable"),
     ],
 )
 def test_doubtful_answers_make_the_card_unsupported_with_a_reason(cache, jev, kind):
@@ -173,16 +189,15 @@ def test_a_missing_key_never_raises(cache, monkeypatch):
     assert card.reason_kind == "not_asked"
 
 
-def test_several_amounts_are_disambiguated_by_jev(cache):
-    jev = FakeJev(amount="2")
+def test_several_numbers_in_one_clause_are_refused_without_a_call(cache):
+    jev = FakeJev()
     card = judge.compile_card(
         raw("Twin Bolt", "Instant", "Twin Bolt deals 2 damage to any target 3 times."),
         cache,
         ask=jev,
     )
-    [(_, questions)] = jev.calls
-    assert list(questions["amount_0_0"]["criteria"]) == ["2", "3"]
-    assert card.program["abilities"][0]["ops"][0]["amount"] == 2
+    assert (card.status, card.reason_kind) == ("unsupported", "unreadable")
+    assert jev.calls == []
 
 
 def test_a_single_amount_is_read_in_code(cache):
@@ -267,3 +282,39 @@ def test_compile_deck_reports_unknown_cards_and_compiles_each_name_once():
     assert (cards[2].card.status, cards[2].card.reason_kind) == ("unsupported", "not_found")
     assert fetched == ["Lightning Bolt", "Nonexistent"]
     assert len(jev.calls) == 1
+
+
+def test_the_target_question_is_asked_in_both_orders_with_a_none_option(cache):
+    jev = FakeJev()
+    judge.compile_card(BOLT, cache, ask=jev)
+    [(_, questions)] = jev.calls
+    forward = list(questions["target_0_0"]["criteria"])
+    assert judge.NONE in forward
+    assert list(questions["target_0_0_rev"]["criteria"]) == forward[::-1]
+
+
+def test_an_answer_outside_the_options_is_malformed_and_not_cached(cache):
+    card = judge.compile_card(BOLT, cache, ask=FakeJev(target="BOGUS"))
+    assert (card.status, card.reason_kind) == ("unsupported", "not_asked")
+    assert cache.get_rule("oracle-Lightning Bolt", DSL_VERSION) is None
+
+
+def test_cards_without_an_oracle_id_never_share_a_cache_entry(cache):
+    jev = FakeJev(op="DRAW_CARDS")
+    first = raw("First", "Sorcery", "Draw two cards.")
+    second = raw("Second", "Sorcery", "Draw three cards.")
+    first["oracle_id"] = second["oracle_id"] = None
+    judge.compile_card(first, cache, ask=jev)
+    card = judge.compile_card(second, cache, ask=jev)
+    assert len(jev.calls) == 2
+    assert card.program["abilities"][0]["ops"][0]["amount"] == 3
+
+
+def test_only_jev_answers_are_cached(cache):
+    judge.compile_card(
+        raw("Wilds", "Land", "Search your library for a land card."), cache, ask=FakeJev()
+    )
+    judge.compile_card(raw("Maybe", "Sorcery", "You may draw a card."), cache, ask=FakeJev())
+    judge.compile_card(raw("Grizzly Bears", "Creature — Bear", power="2", toughness="2"), cache)
+    for name in ("Wilds", "Maybe", "Grizzly Bears"):
+        assert cache.get_rule(f"oracle-{name}", DSL_VERSION) is None

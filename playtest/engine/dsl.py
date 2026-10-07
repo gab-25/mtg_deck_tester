@@ -60,6 +60,9 @@ DURATIONS = ("END_OF_TURN", "PERMANENT")
 CARD_TYPES = ("CREATURE", "ARTIFACT", "ENCHANTMENT", "LAND", "PERMANENT")
 MANA_COLORS = ("W", "U", "B", "R", "G", "C")
 
+# What a STATIC ability may do: change characteristics, not act once.
+STATIC_OPS = ("MODIFY_PT", "GRANT_KEYWORD")
+
 MAX_ABILITIES = 12
 MAX_OPS = 6
 MAX_AMOUNT = 20
@@ -297,6 +300,12 @@ def _ability(data, path, grounded) -> Ability:
     if trigger == "ACTIVATED" and any(op.kind == "ADD_MANA" for op in ops):
         if targets or any(op.kind != "ADD_MANA" for op in ops):
             raise DslError(path, "a mana ability can only add mana")
+    if trigger == "STATIC":
+        one_shot = next((op.kind for op in ops if op.kind not in STATIC_OPS), None)
+        if one_shot:
+            # A continuous effect can only change characteristics; a one-shot
+            # operation here means a trigger or condition was lost on the way.
+            raise DslError(path, f"a static ability can't {one_shot}")
     return Ability(trigger, ops, targets, cost, mode_group)
 
 

@@ -33,26 +33,41 @@ SUPPORTED_KEYWORDS = (
 
 # Mechanics the DSL can't express: a card whose residual text matches one is
 # UNSUPPORTED without asking any model.
-BLOCKLIST = tuple(
-    (label, re.compile(pattern, re.IGNORECASE))
-    for label, pattern in (
-        ("cascade", r"\bcascade\b"),
-        ("storm", r"\bstorm\b"),
-        ("copy", r"\bcop(?:y|ies)\b"),
-        ("instead", r"\binstead\b"),
-        ("search your library", r"\bsearch(?:es)? (?:your|their|its owner's) library\b"),
-        ("for each", r"\bfor each\b"),
-        ("as long as", r"\bas long as\b"),
-        ("protection from", r"\bprotection from\b"),
-        ("can't", r"\bcan't\b"),
-        ("exile ... until", r"\bexile\b[^.]*\buntil\b"),
-        ("loyalty", r"\bloyalty\b"),
-        ("mutate", r"\bmutate\b"),
-        ("daybound", r"\b(?:daybound|nightbound)\b"),
-        ("role token", r"\brole token\b"),
-        ("dungeon", r"\b(?:dungeon|venture)\b"),
-        ("X is", r"\bX is\b"),
-    )
+BLOCKLIST = (
+    *(
+        (label, re.compile(pattern, re.IGNORECASE))
+        for label, pattern in (
+            ("cascade", r"\bcascade\b"),
+            ("storm", r"\bstorm\b"),
+            ("copy", r"\bcop(?:y|ies)\b"),
+            ("instead", r"\binstead\b"),
+            ("search your library", r"\bsearch(?:es)? (?:your|their|its owner's) library\b"),
+            ("for each", r"\bfor each\b"),
+            ("as long as", r"\bas long as\b"),
+            ("protection from", r"\bprotection from\b"),
+            ("can't", r"\bcan't\b"),
+            ("exile ... until", r"\bexile\b[^.]*\buntil\b"),
+            ("loyalty", r"\bloyalty\b"),
+            ("mutate", r"\bmutate\b"),
+            ("daybound", r"\b(?:daybound|nightbound)\b"),
+            ("role token", r"\brole token\b"),
+            ("dungeon", r"\b(?:dungeon|venture)\b"),
+            ("X is", r"\bX is\b"),
+            ("additional cost", r"\bas an additional cost\b"),
+            ("scry", r"\bscry\b"),
+            ("surveil", r"\bsurveil\b"),
+            ("proliferate", r"\bproliferate\b"),
+            ("investigate", r"\binvestigate\b"),
+            ("explore", r"\bexplores?\b"),
+            ("fight", r"\bfights?\b"),
+            ("goad", r"\bgoad\b"),
+            ("look at", r"\blooks? at\b"),
+            ("reveal", r"\breveals?\b"),
+            ("spend this mana", r"\bspend this mana\b"),
+        )
+    ),
+    # "Kicker {2}", "Equip {1}", "Cycling {2}": a keyword the DSL doesn't know, with a cost.
+    ("keyword with a cost", re.compile(r"^[A-Z][a-z]+(?: [a-z]+)? \{", re.MULTILINE)),
 )
 
 _SUPERTYPES = {"Basic", "Legendary", "Snow", "World", "Ongoing"}
@@ -67,7 +82,7 @@ _COUNT_WORDS = {"one": 1, "two": 2, "three": 3}
 _MANA_ABILITY = re.compile(
     rf"\{{T\}}: Add (?:(?P<run>{_MANA_SYMBOLS}+)"
     rf"|{_MANA_SYMBOLS}(?:, {_MANA_SYMBOLS})*,? or {_MANA_SYMBOLS}"
-    r"|(?P<n>one|two|three) mana of any (?:one )?color)\."
+    r"|(?P<n>one|two|three) mana of any (?:one )?color(?: in your commander's color identity)?)\."
 )
 
 
@@ -130,8 +145,15 @@ def characteristics(card: dict) -> CardFacts:
     residual, keywords, ward_cost, enters_tapped, mana_amount = _read_text(
         oracle_text, name, bool(produced)
     )
-    if produced and not mana_amount:
-        # Basic lands print their mana ability as reminder text only.
+    is_land = "Land" in types
+    if not is_land and not mana_amount:
+        # Scryfall's produced_mana covers every face and every way of making
+        # mana (a ritual, a land back face): only a land or a printed mana
+        # ability on the front face makes the card a mana source.
+        produced = ()
+    if is_land and produced and not mana_amount and "Add" not in residual:
+        # Basic lands print their mana ability as reminder text only. A land
+        # whose mana ability stayed in the residual text has no guessed amount.
         mana_amount = 1
 
     power = front.get("power", card.get("power"))
@@ -141,7 +163,8 @@ def characteristics(card: dict) -> CardFacts:
 
     return CardFacts(
         name=name,
-        oracle_id=card.get("oracle_id") or "",
+        # Reversible cards carry their oracle id on the faces only.
+        oracle_id=card.get("oracle_id") or front.get("oracle_id") or "",
         type_line=type_line,
         mana_cost=mana_cost,
         mana_value=int(card.get("cmc") or 0),

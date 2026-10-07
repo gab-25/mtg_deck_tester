@@ -227,6 +227,16 @@ def test_an_empty_program_is_valid(facts):
             "only an activated ability",
         ),
         (program(ability([], [])), "1 to 6 operations"),
+        (
+            program(
+                ability(
+                    [{"op": "DRAW_CARDS", "target": "t", "amount": 2}],
+                    [target("YOU")],
+                    trigger="STATIC",
+                )
+            ),
+            "a static ability can't",
+        ),
     ],
 )
 def test_the_validator_rejects_never_coerces(payload, message, facts):

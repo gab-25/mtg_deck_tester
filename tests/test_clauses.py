@@ -142,8 +142,79 @@ def test_a_power_restriction_is_read_in_code():
             "several players",
         ),
         ("Choose two —\n• Draw a card.\n• Gain 3 life.", "Sorcery", "other than 'choose one'"),
+        # Review fixes: never guess a subject, a timing, a scope or a number.
+        (
+            "Whenever this creature attacks, defending player loses 2 life.",
+            "Creature",
+            "no recognised subject",
+        ),
+        (
+            "Enchanted creature's controller loses 2 life.",
+            "Enchantment — Aura",
+            "no recognised subject",
+        ),
+        (
+            "Enrage — Whenever this creature is dealt damage, create a 1/1 green Saproling creature token.",
+            "Creature — Dinosaur",
+            "ability word",
+        ),
+        ("If a creature died this turn, draw two cards.", "Sorcery", "conditional or delayed"),
+        (
+            "When this creature enters, if a creature died this turn, draw a card.",
+            "Creature",
+            "conditional or delayed",
+        ),
+        (
+            "Draw a card at the beginning of the next turn's upkeep.",
+            "Sorcery",
+            "conditional or delayed",
+        ),
+        (
+            'Create two 1/1 colorless Eldrazi Spawn creature tokens with "Sacrifice this creature: Add {C}."',
+            "Sorcery",
+            "quoted ability",
+        ),
+        ("Destroy all white creatures.", "Sorcery", "unsupported qualifier"),
+        ("Other creatures you control get +1/+1.", "Creature — Elf", "unsupported qualifier"),
+        ("Elf creatures you control get +1/+1.", "Creature — Elf", "unsupported qualifier"),
+        ("Tap up to two target creatures.", "Instant", "unsupported qualifier"),
+        ("Destroy two target artifacts.", "Sorcery", "unsupported qualifier"),
+        ("Destroy another target creature.", "Sorcery", "unsupported qualifier"),
+        (
+            "Return target creature card from your graveyard to your hand.",
+            "Sorcery",
+            "card in a zone",
+        ),
+        ("Target creature gets +3/+3 until your next turn.", "Instant", "duration"),
+        ("Create a 1/1 white Spirit creature token with flying.", "Sorcery", "token"),
+        ("Test Card deals 2 damage to any target 3 times.", "Instant", "several numbers"),
     ],
 )
 def test_text_it_cannot_read_is_unreadable(oracle_text, type_line, reason):
     with pytest.raises(Unreadable, match=reason):
         split(oracle_text, type_line)
+
+
+def test_a_single_counter_is_an_amount_of_one():
+    [ability] = split("Put a +1/+1 counter on target creature.")
+    assert ability.clauses[0].amounts == (1,)
+    assert ability.clauses[0].counters == ("+1/+1",)
+
+
+def test_a_legendary_card_refers_to_itself_by_its_short_name():
+    [ability] = split(
+        "When Atraxa enters, draw a card.",
+        type_line="Legendary Creature — Angel",
+        name="Atraxa, Praetors' Voice",
+    )
+    assert ability.trigger == "ETB"
+
+
+def test_its_owners_hand_is_not_a_back_reference():
+    [ability] = split("Return target creature to its owner's hand.")
+    assert ability.clauses[0].has_target
+
+
+def test_whole_board_phrases_still_read():
+    [ability] = split("Destroy all creatures.", type_line="Sorcery")
+    assert ability.clauses[0].has_target

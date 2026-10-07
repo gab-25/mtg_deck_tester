@@ -42,6 +42,17 @@ _BACK_REFERENCE = re.compile(
     re.IGNORECASE,
 )
 _OPTIONAL = re.compile(r"\bmay\b", re.IGNORECASE)
+# The fixed phrase "its owner's hand" is not a reference to an earlier object.
+_OWNERS = re.compile(r"\b(?:its owner's|their owner's|their owners')", re.IGNORECASE)
+# Conditions and timings the DSL has no way to state: dropping them would make
+# an effect unconditional or immediate.
+_CONDITIONAL = re.compile(
+    r"\b(?:if|unless|when|whenever|at the beginning|where|only|except|as long as)\b",
+    re.IGNORECASE,
+)
+# A duration other than "until end of turn" ("until your next turn", "this turn").
+_OTHER_DURATION = re.compile(r"\buntil\b|\bthis turn\b", re.IGNORECASE)
+_TOKEN_WORD = re.compile(r"\btokens?\b", re.IGNORECASE)
 _RESTRICTION = re.compile(
     rf"\bwith (power|mana value) {_NUMBER} or (less|greater)\b", re.IGNORECASE
 )
@@ -49,6 +60,15 @@ _TRAILING_QUALIFIER = re.compile(r"^ (?:with|without|that|which|who)\b", re.IGNO
 _NOUN = r"(?:creature|player|opponent|artifact|enchantment|land|permanent|spell)s?"
 _CONTROLLER = r"(?: you control| an opponent controls| your opponents control| you don't control)?"
 _QUALIFIER_WORDS = {"creature", "artifact", "enchantment", "land", "nonland", "noncreature", "or"}
+# Words that, right before "target" or "each", change how many or which objects
+# ("up to two target", "another target").
+_COUNT_WORDS = set(_NUMBER_WORDS) | {"another", "other"}
+# The only words that may precede a bare "creatures" ("Destroy all creatures",
+# "Creatures you control get ..."); anything else ("white", "Elf", "Other")
+# narrows the set in a way no selector can say.
+_BEFORE_CREATURES = {"destroy", "exile", "tap", "untap", "return"}
+# "target creature card", "from your graveyard": a card in a zone, not a permanent.
+_ZONE = re.compile(r"^ (?:cards?|from)\b", re.IGNORECASE)
 _PT_MOD = re.compile(r"([+-]\d+)/([+-]\d+)")
 _TOKEN = re.compile(r"\b(\d+)/(\d+) ([A-Za-z ]+?) (?:artifact )?creature tokens?\b")
 _COUNTER = re.compile(r"([+-]1/[+-]1) counters?\b")
@@ -57,7 +77,8 @@ _SACRIFICED = re.compile(
     re.IGNORECASE,
 )
 _ARTICLE_ONE = re.compile(
-    r"\b(?:draws?|creates?|puts?|sacrifices?|discards?|mills?) an? \b|\ba card\b", re.IGNORECASE
+    r"\b(?:draws?|creates?|puts?|sacrifices?|discards?|mills?) an? (?=\S)|\ba card\b",
+    re.IGNORECASE,
 )
 _MANA_RUN = re.compile(r"(?:\{[WUBRGC]\})+")
 _SYMBOL = re.compile(r"\{[^}]+\}")
@@ -99,7 +120,13 @@ class AbilityText:
 
 def split_abilities(residual: str, facts: CardFacts) -> list[AbilityText]:
     """Splits ``residual`` into abilities; raises :class:`Unreadable`."""
-    self_ref = rf"(?:this (?:creature|permanent|artifact|enchantment|land)|{re.escape(facts.name)})"
+    # Oracle text calls a legendary card by its short name ("When Atraxa enters").
+    names = sorted({facts.name, facts.name.split(",")[0]}, key=len, reverse=True)
+    self_ref = (
+        r"(?:this (?:creature|permanent|artifact|enchantment|land)|"
+        + "|".join(re.escape(n) for n in names)
+        + ")"
+    )
     is_spell = "Instant" in facts.types or "Sorcery" in facts.types
     abilities = []
     lines = residual.splitlines()
@@ -130,6 +157,11 @@ def split_abilities(residual: str, facts: CardFacts) -> list[AbilityText]:
 
 
 def _ability(line, self_ref, is_spell, facts, mode_group) -> AbilityText:
+    if '"' in line:
+        raise Unreadable(f"quoted ability: {line!r}")
+    if " — " in line:
+        # "Enrage — Whenever ...", "Raid — At the beginning ...".
+        raise Unreadable(f"ability word: {line!r}")
     triggers = (
         ("ETB", rf"When(?:ever)? {self_ref} enters(?: the battlefield)?, "),
         ("DIES", rf"When(?:ever)? {self_ref} dies, "),
@@ -154,6 +186,8 @@ def _ability(line, self_ref, is_spell, facts, mode_group) -> AbilityText:
         else:
             trigger = "SPELL" if is_spell else "STATIC"
             effect = line
+    if _CONDITIONAL.search(effect):
+        raise Unreadable(f"conditional or delayed effect: {line!r}")
     clauses = tuple(_clause(text, inherited, self_ref) for text, inherited in _clause_texts(effect))
     if not clauses:
         raise Unreadable(f"no effect in {line!r}")
@@ -208,8 +242,15 @@ def _clause_texts(effect: str) -> list[tuple[str, bool]]:
 def _clause(text: str, inherited: bool, self_ref: str) -> Clause:
     if _OPTIONAL.search(text):
         raise Unreadable(f"optional effect ('may'): {text!r}")
-    if _BACK_REFERENCE.search(text):
+    if _BACK_REFERENCE.search(_OWNERS.sub(" ", text)):
         raise Unreadable(f"refers back to an earlier object: {text!r}")
+    lowered = text.lower()
+    if _OTHER_DURATION.search(text) and "until end of turn" not in lowered:
+        raise Unreadable(f"unsupported duration: {text!r}")
+    if _TOKEN_WORD.search(text):
+        token = _TOKEN.search(text)
+        if token is None or text[token.end() :].strip():
+            raise Unreadable(f"token with more than a power, toughness and type: {text!r}")
 
     restriction = None
     match = _RESTRICTION.search(text)
@@ -222,18 +263,27 @@ def _clause(text: str, inherited: bool, self_ref: str) -> Clause:
     # The card naming itself as the source ("Test Card deals 3 damage to ...")
     # is not what the clause affects.
     subject = re.match(rf"{self_ref} ", text)
-    phrases = _target_phrases(text[subject.end() :] if subject else text, self_ref)
+    rest = text[subject.end() :] if subject else text
+    phrases = _target_phrases(rest, self_ref)
     if len(phrases) > 1:
         raise Unreadable(f"several players or objects in one clause: {text!r}")
+    if not phrases and not inherited and not _STARTS_WITH_VERB.match(rest):
+        # "Defending player loses 2 life": a subject no selector names. Only an
+        # imperative ("Draw a card") may default to the controller.
+        raise Unreadable(f"no recognised subject: {text!r}")
 
     pt_mods = tuple(
         (int(p), int(t)) for p, t in _PT_MOD.findall(text) if not re.search(r"counter", text)
     )
     tokens = _TOKEN.findall(text)
     mana_runs = _MANA_RUN.findall(text) if re.search(r"\badds?\b", text, re.IGNORECASE) else []
+    amounts = _amounts(text, mana_runs)
+    if len(amounts) > 1:
+        # Every number a clause states matters; picking one would drop another.
+        raise Unreadable(f"several numbers in one clause: {text!r}")
     return Clause(
         text=text,
-        amounts=_amounts(text, mana_runs),
+        amounts=amounts,
         has_target=bool(phrases) and not inherited,
         inherits_target=inherited,
         pt_mods=pt_mods,
@@ -245,7 +295,7 @@ def _clause(text: str, inherited: bool, self_ref: str) -> Clause:
         counters=tuple(dict.fromkeys(_COUNTER.findall(text))),
         colors=tuple(dict.fromkeys(s[1] for run in mana_runs for s in _SYMBOL.findall(run))),
         card_types=tuple(dict.fromkeys(m[-1].upper() for m in _SACRIFICED.findall(text))),
-        duration="END_OF_TURN" if "until end of turn" in text.lower() else "PERMANENT",
+        duration="END_OF_TURN" if "until end of turn" in lowered else "PERMANENT",
         restriction=restriction,
     )
 
@@ -255,7 +305,7 @@ def _target_phrases(text: str, self_ref: str) -> list[str]:
         r"\bany target\b"
         rf"|\btarget (?P<tq>[a-z ]*?){_NOUN}{_CONTROLLER}\b"
         rf"|\beach (?P<eq>[a-z ]*?)(?:opponent|player|creature)s?{_CONTROLLER}\b"
-        rf"|\b(?:all )?creatures{_CONTROLLER}\b"
+        rf"|\b(?P<bare>(?:all )?creatures){_CONTROLLER}\b"
         rf"|\b{self_ref}\b"
         r"|\byou\b",
         re.IGNORECASE,
@@ -265,7 +315,15 @@ def _target_phrases(text: str, self_ref: str) -> list[str]:
         qualifier = match.group("tq") or match.group("eq") or ""
         if set(qualifier.split()) - _QUALIFIER_WORDS:
             raise Unreadable(f"unsupported qualifier {qualifier.strip()!r}: {text!r}")
+        before = re.findall(r"[A-Za-z']+", text[: match.start()])
+        previous = before[-1].lower() if before else None
+        if match.group("bare") and previous not in (None, *_BEFORE_CREATURES):
+            raise Unreadable(f"unsupported qualifier {before[-1]!r}: {text!r}")
+        if not match.group("bare") and previous in _COUNT_WORDS:
+            raise Unreadable(f"unsupported qualifier {before[-1]!r}: {text!r}")
         after = text[match.end() :]
+        if _ZONE.match(after):
+            raise Unreadable(f"card in a zone, not a permanent: {text!r}")
         if _TRAILING_QUALIFIER.match(after) and not _RESTRICTION.match(after.lstrip()):
             raise Unreadable(f"unsupported qualifier after {match.group(0)!r}: {text!r}")
         phrases.append(match.group(0))

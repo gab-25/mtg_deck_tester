@@ -143,6 +143,15 @@ def test_rules_text_goes_to_the_judge_without_reminder_text():
         ("Legendary Planeswalker — Jace", "+1: Draw a card.", "{1}{U}{U}", "planeswalker"),
         ("Enchantment — Saga", "I — Draw a card.", "{1}{U}", "saga"),
         ("Instant", "Destroy target creature.", "{W/P}", "mana cost {W/P}"),
+        (
+            "Sorcery",
+            "As an additional cost to cast this spell, sacrifice a creature.\nDraw two cards.",
+            "{B}",
+            "additional cost",
+        ),
+        ("Sorcery", "Scry 2.", "{U}", "scry"),
+        ("Instant", "Surveil 2.", "{U}", "surveil"),
+        ("Sorcery", "Kicker {2}\nDraw a card.", "{U}", "keyword with a cost"),
     ],
 )
 def test_blocked_cards_never_reach_the_judge(type_line, oracle_text, mana_cost, label):
@@ -184,3 +193,77 @@ def test_a_double_faced_card_is_read_from_its_front_face_and_marked_partial():
 @pytest.mark.parametrize("value, expected", [("3", 3), ("1+*", 1), ("*", 0), (None, 0)])
 def test_printed_stat(value, expected):
     assert printed_stat(value) == expected
+
+
+def test_a_ritual_is_not_a_mana_source():
+    facts = characteristics(
+        raw("Dark Ritual", "Instant", "Add {B}{B}{B}.", "{B}", produced_mana=["B"])
+    )
+    assert facts.produced_mana == ()
+    assert facts.mana_amount == 0
+
+
+def test_a_spell_with_a_land_back_face_is_not_a_mana_source():
+    card = {
+        "oracle_id": "o-mdfc",
+        "name": "Smash // Peak",
+        "type_line": "Sorcery // Land",
+        "produced_mana": ["R"],
+        "card_faces": [
+            {
+                "name": "Smash",
+                "type_line": "Sorcery",
+                "mana_cost": "{X}{R}{R}",
+                "oracle_text": "Destroy target artifact.",
+            },
+            {"name": "Peak", "type_line": "Land", "mana_cost": "", "oracle_text": "{T}: Add {R}."},
+        ],
+    }
+    assert characteristics(card).produced_mana == ()
+
+
+def test_a_land_whose_mana_ability_is_not_read_has_no_guessed_amount():
+    facts = characteristics(
+        raw(
+            "Ancient Tomb",
+            "Land",
+            "{T}: Add {C}{C}. Ancient Tomb deals 2 damage to you.",
+            produced_mana=["C"],
+        )
+    )
+    assert facts.produced_mana == ("C",)
+    assert facts.mana_amount == 0
+
+
+def test_commander_identity_mana_is_a_plain_mana_ability():
+    facts = characteristics(
+        raw(
+            "Command Tower",
+            "Land",
+            "{T}: Add one mana of any color in your commander's color identity.",
+            produced_mana=["W", "U", "B", "R", "G"],
+        )
+    )
+    assert facts.residue is Residue.EMPTY
+    assert facts.mana_amount == 1
+
+
+def test_a_reversible_card_takes_its_oracle_id_from_the_front_face():
+    card = {
+        "name": "Front // Back",
+        "card_faces": [
+            {
+                "oracle_id": "o-front",
+                "name": "Front",
+                "type_line": "Creature — Bear",
+                "oracle_text": "",
+            },
+            {
+                "oracle_id": "o-back",
+                "name": "Back",
+                "type_line": "Creature — Bear",
+                "oracle_text": "",
+            },
+        ],
+    }
+    assert characteristics(card).oracle_id == "o-front"
