@@ -84,6 +84,8 @@
                     </div>
                     <div class="text-[12.5px] text-txt3 font-light leading-[1.55]">
                         <span class="text-txt2">Random</span> picks any legal action: a baseline that costs nothing.
+                        <span class="text-txt2">Heuristic</span> follows fixed rules — develop, attack when it pays,
+                        block to survive — and plays the same way every time, with no network.
                         <span class="text-txt2">LLM</span> asks a model on OpenRouter for every decision
                         (leave the model empty for <span class="font-mono2">{{ default_model }}</span>).
                         {% if not llm_available %}<span class="text-gold">No OPENROUTER_API_KEY is set, so LLM seats are unavailable.</span>{% endif %}
@@ -92,13 +94,14 @@
 
                 <div class="panel-card p-[18px]">
                     <div class="flex items-center gap-[7px] font-semibold text-[12.5px] tracking-[.06em] text-txt2 mb-3">
-                        <span translate="no" class="ms text-[18px]">gavel</span>SIMPLIFIED RULES
+                        <span translate="no" class="ms text-[18px]">gavel</span>RULES
                     </div>
                     <ul class="text-[12.5px] text-txt3 font-light leading-[1.6]" style="margin:0;padding-left:18px;list-style:disc">
-                        <li>One land per turn; every land taps for one generic mana.</li>
+                        <li>Real turn steps, priority and the stack; one land per turn.</li>
+                        <li>Colored mana, paid automatically by the engine.</li>
                         <li>Spells have no effect yet: permanents stay, the rest is discarded.</li>
-                        <li>Creatures attack unblocked, for their power.</li>
-                        <li>Commander tax and commander damage apply.</li>
+                        <li>Blocks, flying, menace, first strike, trample, deathtouch, lifelink.</li>
+                        <li>London mulligan, commander tax and commander damage.</li>
                     </ul>
                 </div>
 

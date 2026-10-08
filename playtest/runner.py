@@ -1,59 +1,66 @@
 """Runs a stored match through the engine and stores what happened."""
 
 import logging
-import re
 
 from django.db import transaction
 from django.utils import timezone
 
+from decks.cache import DbCardCache
 from decks.formats import FORMATS
-from decks.rules.cards import classify_card
+from decks.scryfall import fetch_card_raw
 from mtg_deck_tester.logging_context import job_log_context
 
+from .agents.heuristic import HeuristicAgent
 from .agents.llm_agent import LLMAgent
 from .agents.random_agent import RandomAgent
-from .engine.cards import CardSpec, DeckSpec, Kind
+from .engine.cardrules import characteristics
+from .engine.cards import CardSpec, DeckSpec
 from .engine.game import Game
 from .engine.state import GameRules
 from .models import Match, MatchEvent, Seat
 
 logger = logging.getLogger(__name__)
 
-_KINDS = {
-    "Land": Kind.LAND,
-    "Creature": Kind.CREATURE,
-    "Artifact": Kind.PERMANENT,
-    "Enchantment": Kind.PERMANENT,
-    "Planeswalker": Kind.PERMANENT,
-    "Battle": Kind.PERMANENT,
-}
+def raw_from_stored(data: dict) -> dict:
+    """A stand-in for raw Scryfall JSON, rebuilt from a stored (processed) card.
 
-_LEADING_INT = re.compile(r"^\d+")
-
-
-def _stat(value) -> int:
-    """A printed power/toughness as a number: ``"3"`` -> 3, ``"1+*"`` -> 1, ``"*"`` -> 0."""
-    match = _LEADING_INT.match(str(value or ""))
-    return int(match.group(0)) if match else 0
-
-
-def card_spec(data: dict) -> CardSpec:
-    """Turns a stored (processed Scryfall) card into what the engine plays with."""
-    return CardSpec(
-        name=data.get("name", "Unknown card"),
-        kind=_KINDS.get(classify_card(data), Kind.SPELL),
-        mana_value=int(data.get("cmc") or 0),
-        power=_stat(data.get("power")),
-        toughness=_stat(data.get("toughness")),
-    )
+    Used only when the raw JSON can't be fetched: the processed card keeps the
+    front face's cost and text, the stats and the mana it produces, but not its
+    colors or keywords.
+    """
+    front = (data.get("faces") or [{}])[0]
+    return {
+        "name": front.get("name") or data.get("name", "Unknown card"),
+        "type_line": data.get("type_line", ""),
+        "mana_cost": front.get("mana_cost", ""),
+        "oracle_text": front.get("rules_text", ""),
+        "cmc": data.get("cmc", 0),
+        "power": data.get("power"),
+        "toughness": data.get("toughness"),
+        "produced_mana": data.get("produced_mana") or [],
+    }
 
 
-def deck_spec(name: str, cards: list) -> DeckSpec:
-    """Expands a deck's stored ``cards`` into its commander and its library."""
+def card_spec(raw: dict) -> CardSpec:
+    """Turns a card's raw Scryfall JSON into what the engine plays with."""
+    return CardSpec.from_facts(characteristics(raw))
+
+
+def deck_spec(name: str, cards: list, fetch=None) -> DeckSpec:
+    """Expands a deck's stored ``cards`` into its commander and its library.
+
+    ``fetch(card_name)`` returns the card's raw Scryfall JSON (or None); by
+    default it reads the Scryfall cache, which the import filled.
+    """
+    if fetch is None:
+        cache = DbCardCache()
+        fetch = lambda card_name: fetch_card_raw(card_name, cache)
     commander = None
     library = []
     for item in cards:
-        spec = card_spec(item["data"])
+        data = item["data"]
+        raw = fetch(data.get("name", "")) or raw_from_stored(data)
+        spec = card_spec(raw)
         if item.get("is_commander") and commander is None:
             commander = spec
         else:
@@ -85,6 +92,8 @@ def build_agent(seat: Seat, seed: int):
     agent_seed = seed + seat.position
     if seat.agent == Seat.Agent.LLM:
         return LLMAgent(seat.model or None, seed=agent_seed)
+    if seat.agent == Seat.Agent.HEURISTIC:
+        return HeuristicAgent(agent_seed)
     return RandomAgent(agent_seed)
 
 
@@ -102,6 +111,7 @@ def run_match(match_id) -> None:
                 seq=recorded.seq,
                 round=recorded.round,
                 turn=recorded.turn,
+                step=recorded.step,
                 seat_position=event.seat,
                 kind=event.kind,
                 text=event.text,
@@ -127,7 +137,7 @@ def run_match(match_id) -> None:
                 on_event=persist,
             )
             result = game.run()
-        except Exception as exc:  # noqa: BLE001 - record any failure for the user.
+        except Exception as exc:
             logger.exception("Match failed")
             Match.objects.filter(pk=match_id).update(
                 status=Match.Status.FAILED, error=str(exc), finished_at=timezone.now()

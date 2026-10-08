@@ -55,6 +55,7 @@ class Match(models.Model):
 class Seat(models.Model):
     class Agent(models.TextChoices):
         RANDOM = "random", "Random"
+        HEURISTIC = "heuristic", "Heuristic"
         LLM = "llm", "LLM"
 
     match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name="seats")
@@ -91,6 +92,8 @@ class MatchEvent(models.Model):
     seq = models.PositiveIntegerField()
     round = models.PositiveIntegerField()
     turn = models.PositiveIntegerField()
+    # The step of the turn (``untap`` … ``cleanup``), empty before the first turn.
+    step = models.CharField(max_length=32, blank=True, default="")
     # The seat the event is about, or None for table-wide events.
     seat_position = models.PositiveSmallIntegerField(null=True, blank=True)
     kind = models.CharField(max_length=32)

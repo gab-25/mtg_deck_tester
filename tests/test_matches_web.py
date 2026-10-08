@@ -72,6 +72,17 @@ def test_a_four_player_commander_pod(client, user):
 
 
 @pytest.mark.django_db
+def test_heuristic_agents_play_a_duel_from_the_web(client, user):
+    assert b'value="heuristic"' in client.get("/matches/new").content
+    decks = [make_deck(user, name=f"Deck {i}", fmt="duel") for i in range(2)]
+    client.post("/matches/create", _form("duel", decks, agent="heuristic", max_rounds="40"))
+    match = Match.objects.get(owner=user)
+    assert match.status == Match.Status.FINISHED
+    assert {seat.agent for seat in match.seats.all()} == {"heuristic"}
+    assert b"Heuristic" in client.get(f"/matches/{match.id}").content
+
+
+@pytest.mark.django_db
 def test_the_same_deck_can_sit_twice(client, user):
     deck = make_deck(user, fmt="duel")
     client.post("/matches/create", _form("duel", [deck, deck]))

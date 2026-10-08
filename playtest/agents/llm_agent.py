@@ -12,7 +12,7 @@ from .random_agent import RandomAgent
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = f"""You are playing a simplified game of Magic: The Gathering \
+SYSTEM_PROMPT = f"""You are playing a game of Magic: The Gathering \
 (Commander) against other players. Play to win: develop your mana, deploy \
 threats, and attack the opponent it pays most to attack.
 
