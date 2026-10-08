@@ -3,13 +3,14 @@
 A **Django** web app where **AI agents playtest Magic: The Gathering Commander decks**.
 Import your decks from a plain-text list (cards resolved through the **Scryfall** API),
 seat two to four of them at a table, and let the agents play the game out — a
-random baseline, or a language model of your choice through **OpenRouter**, with its
-reasoning written into the game log. Pages are **HTMX** over a precompiled stylesheet,
+random baseline, a deterministic heuristic player, or a language model of your choice
+through **OpenRouter**, with its reasoning written into the game log. Pages are **HTMX** over a precompiled stylesheet,
 data lives in **Postgres**.
 
-This is the project's skeleton: the game engine plays a deliberately **simplified**
-version of Magic (see [Rules](#rules)). Its structure — engine, agents, runner — is
-built so real rules can be added inside the engine without touching the rest.
+The game engine is a rules kernel — turn steps, priority and the stack, colored mana,
+blocks and combat keywords, state-based actions — that doesn't play card effects yet
+(see [Rules](#rules)). Its structure — engine, agents, runner — lets the rules grow
+inside the engine without touching the rest.
 
 ## Features
 
@@ -21,14 +22,15 @@ built so real rules can be added inside the engine without touching the rest.
 - **Commander and Duel Commander**: a deck declares its format. A Commander match
   seats 2–4 players at 40 life and tracks commander damage; a Duel Commander match
   seats exactly 2 at 20 life.
-- **Agents**: each seat gets its own agent — `random` (free, reproducible) or `llm`,
-  with an optional per-seat OpenRouter model id, so different models can play each
-  other. An LLM that fails to answer, or answers with no valid choice, falls back to a
+- **Agents**: each seat gets its own agent — `random` (free, reproducible),
+  `heuristic` (fixed rules: develop, attack when it pays, block to survive; no network,
+  the same play every time) or `llm`, with an optional per-seat OpenRouter model id, so
+  different models can play each other. An LLM that fails to answer, or answers with no valid choice, falls back to a
   random move and the fallback is logged: a match never stalls on a model.
 - **Live game log**: a match runs in the background; its page shows the table and the
   log as they happen (HTMX polling), including the reason each LLM gave for each move.
-- **Reproducible**: a match has a seed. The same seed with random agents replays the
-  same game, event for event.
+- **Reproducible**: a match has a seed. The same seed with random or heuristic agents
+  replays the same game, event for event.
 - **Scryfall cache in the database**: card JSON and images are cached in Postgres
   (`scryfall_cards`, `scryfall_images`) and shared by every deck.
 - **Ownership**: decks and matches belong to the user who created them; anyone
@@ -36,25 +38,40 @@ built so real rules can be added inside the engine without touching the rest.
 
 ## Rules
 
-The engine (`playtest/engine/`) supports:
+The engine (`playtest/engine/`) is a rules kernel. The docstring of
+`playtest/engine/rules.py` is the reference — it is also the rules text the agents are
+given. In short:
 
-- An opening hand of seven, no mulligans; the commander starts in the command zone.
-- Untap, draw (the first player of a two-player game skips the first draw), one land
-  per turn, then one attack.
-- Every land taps for one generic mana — colors are ignored.
-- A spell can be cast when untapped lands cover its mana value. Creatures and other
-  permanents enter the battlefield; instants and sorceries go to the graveyard with
-  no effect.
-- The commander is cast from the command zone for its mana value plus the commander
-  tax (2 per previous cast).
-- An attack sends every creature that can attack at one opponent. There are no
-  blockers: each attacker deals damage equal to its power.
-- A player is eliminated at 0 life, at 21 damage from a single commander (Commander
-  only), or when drawing from an empty library. The last player standing wins; a
-  match that reaches its round limit is a draw.
-
-Not supported yet: the stack and priority, instant-speed play, blocking, abilities
-and card effects, colored mana, mulligans.
+- **Turns** run the real steps: untap, upkeep, draw, two main phases, beginning of
+  combat, declare attackers and blockers, (first-strike) combat damage, end of combat,
+  end step, cleanup (discard to seven). The first player of a duel skips the first draw.
+- **Priority and the stack**: the active player gets priority first, then it passes
+  around the table. A spell goes on the stack and resolves only when every living
+  player passes in succession. A player who can only pass passes automatically.
+- **Timing**: one land per turn; lands and sorcery-speed spells only in your own main
+  phase with an empty stack; instants and flash whenever you have priority.
+- **Mana**: lands and rocks make the colors and amounts Scryfall says (Sol Ring makes
+  two). Payment is computed exactly (max-flow) and **is not a decision**: the engine
+  taps the sources least worth keeping, so a green spell never taps your only blue
+  source — but no agent can choose to hold a particular land up. `{X}` spells are
+  offered once per affordable X, up to 10.
+- **Card effects are not simulated yet**: permanents enter the battlefield; instants
+  and sorceries go to the graveyard. Keywords: flying, reach, menace, first and double
+  strike, trample, deathtouch, lifelink, vigilance, haste, defender, flash,
+  indestructible.
+- **Combat** is declared one creature at a time, so attacks can be split across
+  opponents and each defender blocks only what attacks them.
+- **State-based actions** run to a fixpoint before anyone gets priority: 0 life,
+  drawing from an empty library, 21 damage from one commander (Commander only), 0
+  toughness, lethal damage, the legend rule. A player who loses leaves the game with
+  everything they own. The commander returns to the command zone instead of staying in
+  the graveyard, and costs 2 more for every previous cast.
+- **Setup**: a deterministic London mulligan (keep 2–5 lands, at most two mulligans,
+  the first free with three or more players) — not a decision either.
+- **Limits** (`playtest/engine/limits.py`) keep every game finite: the round limit
+  (then the match is a draw), decisions per turn, stack depth, state-based action
+  passes, declaration steps, and 255 options per decision. Each one logs an event when
+  it bites.
 
 ### Card coverage
 
@@ -90,18 +107,20 @@ decks/                  # App: decks and the Scryfall cache
 └── importer.py         #   parse → fetch → validate, and the import job
 playtest/               # App: matches between agents
 ├── engine/             #   The game engine (pure Python, no Django)
-│   ├── cards.py        #     Card specs and in-game card instances
-│   ├── state.py        #     Game and player state, per-format game rules
-│   ├── actions.py      #     The actions offered to an agent
-│   ├── rules.py        #     What the actions do; eliminations
+│   ├── cards.py        #     Card specs: the printed facts the engine plays with
+│   ├── state.py        #     Steps, cards, permanents, the stack, invariants
+│   ├── mana.py         #     Mana payment: max-flow feasibility, auto-tapping
+│   ├── actions.py      #     The legal actions offered to an agent
+│   ├── rules.py        #     The rules text; actions, combat, state-based actions
+│   ├── limits.py       #     The caps that keep a game finite
 │   ├── view.py         #     What a seat may see (no hidden information)
-│   ├── game.py         #     Setup, turns, phases, asking agents, the result
+│   ├── game.py         #     Setup, steps, priority, asking agents, the result
 │   ├── manacost.py     #     Mana cost parser
 │   ├── cardrules.py    #     Card facts from Scryfall JSON; residual rules text
 │   ├── clauses.py      #     Residual text → abilities and clauses
 │   ├── dsl.py          #     The effect language and its validator
 │   └── coverage.py     #     How much of a deck is simulated
-├── agents/             #   Random agent, LLM agent, OpenRouter and Jev clients
+├── agents/             #   Random, heuristic and LLM agents; OpenRouter and Jev clients
 ├── judge.py            #   Compiles cards into effect programs (Jev), cached
 ├── management/         #   `card_coverage` command
 ├── forms.py            #   The new-match form

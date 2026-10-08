@@ -10,7 +10,7 @@
             <div class="flex flex-col gap-1.5 mb-4">
                 {% for seat in match.seats.all %}
                 <div class="flex items-center gap-2 text-[13px]">
-                    <span translate="no" class="ms text-[16px] {% if match.winner_id == seat.id %}text-gold{% else %}text-txt3{% endif %}">{% if seat.agent == 'llm' %}psychology{% else %}casino{% endif %}</span>
+                    <span translate="no" class="ms text-[16px] {% if match.winner_id == seat.id %}text-gold{% else %}text-txt3{% endif %}">{% if seat.agent == 'llm' %}psychology{% elif seat.agent == 'heuristic' %}rule{% else %}casino{% endif %}</span>
                     <span translate="no" class="{% if match.winner_id == seat.id %}text-gold font-semibold{% else %}text-txt2{% endif %}">{{ seat.deck_name }}</span>
                 </div>
                 {% endfor %}

@@ -22,7 +22,7 @@ swap); the finished render drops the trigger and polling stops.
             <div class="flex items-center justify-between gap-2 mb-2">
                 <span class="field-label">Seat {{ seat.position|add:1 }}</span>
                 <span class="chip">
-                    <span translate="no" class="ms text-[14px]">{% if seat.agent == 'llm' %}psychology{% else %}casino{% endif %}</span>{{ seat.get_agent_display }}
+                    <span translate="no" class="ms text-[14px]">{% if seat.agent == 'llm' %}psychology{% elif seat.agent == 'heuristic' %}rule{% else %}casino{% endif %}</span>{{ seat.get_agent_display }}
                 </span>
             </div>
             <div translate="no" class="font-cinzel font-semibold text-[16px] leading-[1.2] mb-1.5">{{ seat.deck_name }}</div>
@@ -50,7 +50,7 @@ swap); the finished render drops the trigger and polling stops.
             <div class="event-row{% if event.kind == 'turn' or event.kind == 'game_over' or event.kind == 'eliminated' %} event-headline{% endif %}">
                 <span class="font-mono2 text-[11px] text-txt3 min-w-[19px] flex-none">{{ event.seq }}</span>
                 <div class="min-w-0">
-                    <div class="{% if event.kind == 'agent_fallback' or event.kind == 'decision_limit' %}text-gold{% elif event.kind == 'eliminated' %}text-danger{% endif %}">{{ event.text }}</div>
+                    <div class="{% if event.kind == 'agent_fallback' or event.kind == 'decision_limit' or event.kind == 'limit' or event.kind == 'warning' %}text-gold{% elif event.kind == 'eliminated' %}text-danger{% endif %}">{{ event.text }}</div>
                     {% if event.reasoning %}<div class="event-reason">“{{ event.reasoning }}”</div>{% endif %}
                 </div>
             </div>
