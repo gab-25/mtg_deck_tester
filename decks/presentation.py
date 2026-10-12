@@ -41,17 +41,17 @@ TYPE_HEX = {
 
 
 def image_urls(card_data: dict) -> list:
-    """Maps a stored card's image basenames to servable URLs."""
-    return [f"/media/{name}" for name in card_data.get("image_paths", [])]
+    """A stored card's face images, on Scryfall's CDN."""
+    return card_data.get("image_urls", [])
 
 
 def image_query(card_data: dict) -> str:
-    """``name=…&name=…`` listing every cached face, for the zoom modal's ``hx-get``.
+    """``url=…&url=…`` listing every face, for the zoom modal's ``hx-get``.
 
-    Empty when the card has no cached image, which the template uses as its
+    Empty when the card has no image, which the template uses as its
     "no modal to open" guard.
     """
-    return urlencode([("name", name) for name in card_data.get("image_paths", [])])
+    return urlencode([("url", url) for url in image_urls(card_data)])
 
 
 def deck_pips(deck) -> list:

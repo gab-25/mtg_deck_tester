@@ -2,7 +2,7 @@
 
 from django.contrib import admin
 
-from .models import Deck, ScryfallCard, ScryfallImage
+from .models import Deck, ScryfallCard
 
 
 @admin.register(Deck)
@@ -17,11 +17,4 @@ class DeckAdmin(admin.ModelAdmin):
 class ScryfallCardAdmin(admin.ModelAdmin):
     list_display = ("key", "created_at")
     search_fields = ("key",)
-    readonly_fields = ("created_at",)
-
-
-@admin.register(ScryfallImage)
-class ScryfallImageAdmin(admin.ModelAdmin):
-    list_display = ("name", "created_at")
-    search_fields = ("name",)
     readonly_fields = ("created_at",)

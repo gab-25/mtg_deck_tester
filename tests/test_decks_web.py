@@ -130,10 +130,59 @@ def test_deleting_a_deck(client, user):
     assert not Deck.objects.exists()
 
 
-@pytest.mark.django_db
-def test_media_serves_cached_images_only(client):
-    from decks.cache import DbCardCache
+FRONT = "https://cards.scryfall.io/normal/front/a/b/ab.jpg?1"
+BACK = "https://cards.scryfall.io/normal/back/a/b/ab.jpg?1"
 
-    DbCardCache().set_image("img_x_en.jpg", b"\xff\xd8")
-    assert client.get("/media/img_x_en.jpg").content == b"\xff\xd8"
-    assert client.get("/media/nope.jpg").status_code == 404
+
+@pytest.mark.django_db
+def test_deck_page_loads_images_from_scryfall_cdn(client, user):
+    cards = [
+        {
+            "quantity": 1,
+            "is_commander": True,
+            "data": scryfall_card(
+                "Bear Lord", "Legendary Creature — Bear", 4.0, "5", "5", image_urls=[FRONT, BACK]
+            ),
+        }
+    ]
+    deck = make_deck(user, cards=cards)
+    content = client.get(f"/decks/{deck.id}").content.decode()
+    assert f'<img src="{FRONT}"' in content
+    # The thumbnail's zoom request carries both faces, for the flip.
+    assert "url=https%3A%2F%2Fcards.scryfall.io%2Fnormal%2Ffront" in content
+    assert "url=https%3A%2F%2Fcards.scryfall.io%2Fnormal%2Fback" in content
+
+
+@pytest.mark.django_db
+def test_card_image_modal_shows_every_face(client):
+    response = client.get("/card-image", {"url": [FRONT, BACK]})
+    assert response.status_code == 200
+    content = response.content.decode()
+    assert FRONT in content and BACK in content
+    assert "card-face-flip" in content
+
+
+@pytest.mark.django_db
+def test_card_image_modal_without_urls_is_empty(client):
+    response = client.get("/card-image")
+    assert response.status_code == 200
+    assert response.content == b""
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://evil.example/x.jpg",
+        "http://cards.scryfall.io/normal/front/x.jpg",
+        "https://cards.scryfall.io.evil.example/x.jpg",
+        "javascript:alert(1)",
+    ],
+)
+def test_card_image_modal_refuses_urls_outside_scryfall_cdn(client, url):
+    assert client.get("/card-image", {"url": [FRONT, url]}).status_code == 400
+
+
+@pytest.mark.django_db
+def test_images_are_no_longer_proxied(client):
+    assert client.get("/media/img_x_en.jpg").status_code == 404

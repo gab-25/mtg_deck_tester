@@ -15,13 +15,6 @@ def _exercise_cache(cache):
     cache.set_card("card_en_forest", {"name": "Forest", "lang": "en", "cmc": 0})
     assert cache.get_card("card_en_forest")["cmc"] == 0
 
-    # Images.
-    assert cache.has_image("img_x.jpg") is False
-    assert cache.get_image("img_x.jpg") is None
-    cache.set_image("img_x.jpg", b"\x01\x02\x03")
-    assert cache.has_image("img_x.jpg") is True
-    assert cache.get_image("img_x.jpg") == b"\x01\x02\x03"
-
 
 def test_file_card_cache_roundtrip(tmp_path):
     _exercise_cache(FileCardCache(str(tmp_path)))
@@ -52,7 +45,7 @@ def test_fetch_card_data_uses_cache_without_network():
     card = fetch_card_data("Forest", cache)
     assert card["name"] == "Forest"
     assert card["price_eur"] == 0.05
-    assert card["image_paths"] == []  # no image_uris in the cached payload
+    assert card["image_urls"] == []  # no image_uris in the cached payload
     assert card["faces"][0]["rules_text"] == "({T}: Add {G}.)"
 
 
@@ -85,15 +78,6 @@ def test_fetch_card_data_shares_one_cache_entry_across_both_dfc_spellings():
     assert card is not None
     assert card["name"] == "Sink into Stupor // Soporific Springs"
     assert ScryfallCard.objects.count() == 1
-
-
-@pytest.mark.django_db
-def test_storing_an_image_twice_is_a_no_op():
-    # Two concurrent imports can both see a miss and both download the image.
-    cache = DbCardCache()
-    cache.set_image("img_same_en.jpg", b"\x01")
-    cache.set_image("img_same_en.jpg", b"\x02")
-    assert cache.get_image("img_same_en.jpg") == b"\x01"
 
 
 @pytest.mark.django_db

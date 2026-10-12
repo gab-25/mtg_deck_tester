@@ -17,7 +17,9 @@ def engine_deck(name="Deck", *, lands=38, commander_power=5, commander_cost=4, l
     return DeckSpec(name=name, commander=commander, library=tuple(library))
 
 
-def scryfall_card(name, type_line, cmc=0.0, power=None, toughness=None, card_id=None):
+def scryfall_card(
+    name, type_line, cmc=0.0, power=None, toughness=None, card_id=None, image_urls=()
+):
     """A processed Scryfall card, as a Deck stores it in ``cards``."""
     return {
         "id": card_id or name,
@@ -26,7 +28,7 @@ def scryfall_card(name, type_line, cmc=0.0, power=None, toughness=None, card_id=
         "cmc": cmc,
         "power": power,
         "toughness": toughness,
-        "image_paths": [],
+        "image_urls": list(image_urls),
         "color_identity": ["G"],
         "legalities": {"commander": "legal", "duel": "legal"},
         "faces": [{"name": name, "type_line": type_line, "rules_text": "", "mana_cost": ""}],

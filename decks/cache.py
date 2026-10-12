@@ -1,9 +1,9 @@
-"""Scryfall cache backends: card JSON and image bytes.
+"""Scryfall cache backends for card JSON.
 
-Both expose ``get_card``/``set_card``/``has_image``/``get_image``/``set_image``,
-the interface :func:`decks.scryfall.fetch_card_data` expects. Cards are keyed
-by a string like ``card_en_lightning_bolt`` and images by their basename
-(``img_<id>_en.jpg``).
+Both expose ``get_card``/``set_card``, the interface
+:func:`decks.scryfall.fetch_card_data` expects. Cards are keyed by a string
+like ``card_en_lightning_bolt``. Images are not cached: the browser loads them
+straight from Scryfall's CDN.
 """
 
 import json
@@ -13,7 +13,7 @@ from django.db import IntegrityError, transaction
 
 
 class DbCardCache:
-    """Cache backed by the ``scryfall_cards`` / ``scryfall_images`` tables."""
+    """Cache backed by the ``scryfall_cards`` table."""
 
     def get_card(self, key: str) -> dict | None:
         from .models import ScryfallCard
@@ -32,35 +32,13 @@ class DbCardCache:
         except IntegrityError:
             ScryfallCard.objects.filter(pk=key).update(data=data)
 
-    def has_image(self, name: str) -> bool:
-        from .models import ScryfallImage
-
-        return ScryfallImage.objects.filter(pk=name).exists()
-
-    def get_image(self, name: str) -> bytes | None:
-        from .models import ScryfallImage
-
-        row = ScryfallImage.objects.filter(pk=name).first()
-        return bytes(row.data) if row is not None else None
-
-    def set_image(self, name: str, data: bytes) -> None:
-        from .models import ScryfallImage
-
-        # Images never change once cached, and concurrent imports may download
-        # the same one: whoever stores it first wins, the others are no-ops.
-        ScryfallImage.objects.bulk_create(
-            [ScryfallImage(name=name, data=data)], ignore_conflicts=True
-        )
-
 
 class FileCardCache:
     """Filesystem-backed cache, for using the importer without a database."""
 
     def __init__(self, cache_dir: str):
         self.cards_dir = os.path.join(cache_dir, "cards")
-        self.images_dir = os.path.join(cache_dir, "images")
         os.makedirs(self.cards_dir, exist_ok=True)
-        os.makedirs(self.images_dir, exist_ok=True)
 
     def get_card(self, key: str) -> dict | None:
         path = os.path.join(self.cards_dir, f"{key}.json")
@@ -77,25 +55,5 @@ class FileCardCache:
         try:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
-        except Exception:
-            pass
-
-    def has_image(self, name: str) -> bool:
-        return os.path.exists(os.path.join(self.images_dir, name))
-
-    def get_image(self, name: str) -> bytes | None:
-        path = os.path.join(self.images_dir, name)
-        if not os.path.exists(path):
-            return None
-        try:
-            with open(path, "rb") as f:
-                return f.read()
-        except Exception:
-            return None
-
-    def set_image(self, name: str, data: bytes) -> None:
-        try:
-            with open(os.path.join(self.images_dir, name), "wb") as f:
-                f.write(data)
         except Exception:
             pass
