@@ -135,3 +135,78 @@ class CardRule(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["oracle_id", "dsl_version"], name="unique_card_rule"),
         ]
+
+
+# Below this coverage a metagame deck is flagged in the opponent picker.
+LOW_COVERAGE_PERCENT = 70
+
+
+class MetagameDeck(models.Model):
+    """A top deck of a format, imported by ``manage.py sync_metagame``.
+
+    Shared and read-only: no owner, replaced as a whole by the next sync of its
+    format. Its cards have the same shape as :attr:`Deck.cards`.
+    """
+
+    class Source(models.TextChoices):
+        EDHTOP16 = "edhtop16", "EDHTop16"
+        MTGTOP8 = "mtgtop8", "MTGTop8"
+
+    class Status(models.TextChoices):
+        READY = "ready", "Ready"
+        FAILED = "failed", "Failed"
+
+    format = models.CharField(max_length=16, choices=format_choices())
+    source = models.CharField(max_length=16, choices=Source.choices)
+    archetype = models.CharField(max_length=255)
+    source_url = models.URLField(max_length=500, blank=True, default="")
+    # Percent of the format's metagame, when the source gives one.
+    meta_share = models.FloatField(null=True, blank=True)
+    rank = models.PositiveIntegerField(default=0)
+    fetched_at = models.DateTimeField(default=timezone.now)
+    raw_decklist = models.TextField(blank=True, default="")
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.READY)
+    error = models.TextField(blank=True, default="")
+    cards = models.JSONField(default=list)
+    commander = models.CharField(max_length=255, blank=True, default="")
+    color_identity = models.JSONField(default=list)
+    # The main deck's coverage report (playtest.engine.coverage), computed at sync.
+    coverage = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        db_table = "metagame_decks"
+        ordering = ["format", "rank", "archetype"]
+
+    def __str__(self) -> str:
+        return f"{self.archetype} ({self.format})"
+
+    @property
+    def main_cards(self) -> list:
+        return [item for item in self.cards if item.get("board") != "side"]
+
+    @property
+    def total_cards(self) -> int:
+        return sum(item["quantity"] for item in self.main_cards)
+
+    @property
+    def has_commander(self) -> bool:
+        return FORMATS[self.format].has_commander
+
+    @property
+    def coverage_percent(self) -> int | None:
+        return (self.coverage or {}).get("percent")
+
+    @property
+    def low_coverage(self) -> bool:
+        percent = self.coverage_percent
+        return percent is not None and percent < LOW_COVERAGE_PERCENT
+
+    @property
+    def label(self) -> str:
+        """``UR Aggro — 8.4% — coverage 46%``: what the opponent picker shows."""
+        parts = [self.archetype]
+        if self.meta_share is not None:
+            parts.append(f"{self.meta_share:g}%")
+        if self.coverage_percent is not None:
+            parts.append(f"coverage {self.coverage_percent}%")
+        return " — ".join(parts)

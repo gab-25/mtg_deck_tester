@@ -74,6 +74,11 @@ class Seat(models.Model):
         "decks.Deck", null=True, blank=True, on_delete=models.SET_NULL, related_name="seats"
     )
     deck_name = models.CharField(max_length=255)
+    # A metagame deck (decks.MetagameDeck) this seat plays; a later sync may
+    # delete it, and ``deck_name`` keeps its name.
+    metagame_deck = models.ForeignKey(
+        "decks.MetagameDeck", null=True, blank=True, on_delete=models.SET_NULL, related_name="seats"
+    )
     # The bundled benchmark deck this seat plays (playtest/benchmarks/), or
     # empty for a user's deck.
     benchmark = models.CharField(max_length=32, blank=True, default="")
