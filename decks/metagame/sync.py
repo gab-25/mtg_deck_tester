@@ -9,9 +9,15 @@ from django.utils import timezone
 from ..importer import import_decklist
 from ..models import MetagameDeck
 from ..rules.legality import board_of
-from . import source_for
+from . import SourceError, source_for
 
 logger = logging.getLogger(__name__)
+
+
+def _web_url(url: str) -> str:
+    """Only http(s) links reach the pages: a source could send anything."""
+    url = (url or "").strip()
+    return url[:500] if url.lower().startswith(("https://", "http://")) else ""
 
 
 @dataclass(frozen=True)
@@ -39,7 +45,7 @@ def sync_format(fmt: str, limit: int, cache, *, fetch=None, compile_coverage=Non
     """Replaces ``fmt``'s metagame decks with the current top ``limit`` decks.
 
     The source is read first: if it fails (:class:`~decks.metagame.SourceError`),
-    nothing is changed. A deck that cannot be imported is kept as ``failed`` with
+    or not one of its decks can be imported, nothing is changed. A deck that cannot be imported is kept as ``failed`` with
     the reason; the others are compiled and their coverage stored.
     """
     source = source_for(fmt)
@@ -54,7 +60,7 @@ def sync_format(fmt: str, limit: int, cache, *, fetch=None, compile_coverage=Non
             format=fmt,
             source=source.SOURCE,
             archetype=entry.archetype[:255],
-            source_url=entry.source_url[:500],
+            source_url=_web_url(entry.source_url),
             meta_share=entry.meta_share,
             rank=entry.rank,
             fetched_at=fetched_at,
@@ -73,6 +79,11 @@ def sync_format(fmt: str, limit: int, cache, *, fetch=None, compile_coverage=Non
             main = [item for item in deck.cards if board_of(item) == "main"]
             deck.coverage = compile_coverage(main)
         decks.append(deck)
+
+    if decks and not any(d.status == MetagameDeck.Status.READY for d in decks):
+        # Every deck failing means the source or Scryfall answered nonsense
+        # (an error page, an outage): keep the previous snapshot.
+        raise SourceError(f"no deck could be imported for {fmt} ({decks[0].error[:200]})")
 
     with transaction.atomic():
         MetagameDeck.objects.filter(format=fmt).delete()

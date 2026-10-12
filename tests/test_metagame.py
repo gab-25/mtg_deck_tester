@@ -126,3 +126,25 @@ def test_the_command_reports_each_format_and_fails_at_the_end(monkeypatch, fake_
         call_command("sync_metagame", stdout=out, stderr=err)
     assert "modern: 2 imported, 1 failed, mean coverage 61%" in out.getvalue()
     assert "pauper: down" in err.getvalue()
+
+
+@pytest.mark.django_db
+def test_a_sync_where_every_deck_fails_keeps_the_snapshot(fake_scryfall):
+    sync_format("modern", 1, DbCardCache(), fetch=_legal_fetch, compile_coverage=lambda cards: {"percent": 90})
+
+    def garbage(fmt, limit, **kwargs):
+        return [MetagameEntry("Oops", "https://example.test/x", "<html><body>Error</body></html>", None, 1)]
+
+    with pytest.raises(SourceError, match="no deck could be imported"):
+        sync_format("modern", 1, DbCardCache(), fetch=garbage, compile_coverage=lambda cards: {})
+    assert MetagameDeck.objects.get(format="modern").archetype == "Goblins"
+
+
+@pytest.mark.django_db
+def test_only_web_links_are_kept_as_source_urls(fake_scryfall):
+    def sneaky(fmt, limit, **kwargs):
+        [entry] = _legal_fetch(fmt, 1)
+        return [MetagameEntry(entry.archetype, "javascript:alert(1)", entry.decklist, None, 1)]
+
+    sync_format("modern", 1, DbCardCache(), fetch=sneaky, compile_coverage=lambda cards: {})
+    assert MetagameDeck.objects.get().source_url == ""
