@@ -22,7 +22,7 @@ from .dsl import Ability, CardProgram, Cost, Op, SelKind, Target, Trigger
 from .events import Event, EventKind
 from .manacost import ManaCost
 from .state import ChoiceOption, GameState, Permanent, Player, StackItem
-from .zones import Zone, enter_battlefield, leave_battlefield, put_card
+from .zones import Zone, enter_battlefield, leave_battlefield, put_card, queue_event_triggers
 
 # -- references to players, permanents and stack items --------------------------
 
@@ -295,6 +295,8 @@ class EffectContext:
     # spell or ability starts resolving: what "its controller" and "its power"
     # read after the object has left.
     lki: dict = field(default_factory=dict)
+    # A triggered ability: the player its event was about ("that player").
+    event_player: int | None = None
 
     def ask(self, state: GameState, seat: int, kind: str, prompt: str, options: list[ChoiceOption]) -> ChoiceOption:
         if len(options) == 1 or not state.player(seat).alive:
@@ -324,6 +326,9 @@ def _refs(state: GameState, ability: Ability, op: Op, ctx: EffectContext, index:
     if target.selector == "CONTROLLER_OF_IT":
         info = ctx.lki.get(f"{index}:{target.of}")
         return [player_ref(info["controller"])] if info and state.player(info["controller"]).alive else []
+    if target.selector == "THAT_PLAYER":
+        seat = ctx.event_player
+        return [player_ref(seat)] if seat is not None and state.player(seat).alive else []
     return members(state, target, ctx.controller, ctx.source_id)
 
 
@@ -337,6 +342,7 @@ def draw_cards(state: GameState, seat: int, count: int) -> list[Event]:
         card = player.library.pop(0)
         player.hand.append(card)
         drawn += 1
+        queue_event_triggers(state, Trigger.OPPONENT_DRAWS, lambda perm, ability: perm.controller != seat, seat)
         if card.spec.is_spell_only and not card.spec.supported:
             player.dead_drawn += 1
     events = []
@@ -405,6 +411,8 @@ def deal_damage(
 def gain_life(state: GameState, seat: int, amount: int, source_name: str) -> list[Event]:
     player = state.player(seat)
     player.life += amount
+    if amount > 0:
+        queue_event_triggers(state, Trigger.GAIN_LIFE, lambda perm, ability: perm.controller == seat)
     return [
         Event(
             EventKind.EFFECT,

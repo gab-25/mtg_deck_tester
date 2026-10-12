@@ -98,9 +98,14 @@ def test_ward_keeps_its_cost():
 
 
 def test_an_unsupported_keyword_is_blocked():
-    facts = characteristics(raw_card("Monk", oracle_text="Prowess", keywords=["Prowess"]))
+    facts = characteristics(raw_card("Hierarch", oracle_text="Exalted", keywords=["Exalted"]))
     assert facts.residual_class == ResidualClass.BLOCKED
-    assert "prowess" in facts.block_reason
+    assert "exalted" in facts.block_reason
+
+
+def test_a_keyword_standing_for_a_trigger_becomes_its_rules_text():
+    facts = characteristics(raw_card("Monk", oracle_text="Prowess", keywords=["Prowess"]))
+    assert facts.residual == "whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn."
 
 
 @pytest.mark.parametrize(
@@ -191,7 +196,7 @@ def test_split_turns_modes_into_abilities_sharing_a_group():
     "oracle_text, reason",
     [
         ("You may draw a card.", "may"),
-        ("Destroy target creature. That player gains 3 life.", "back-reference"),
+        ("Exile target creature. Return it to the battlefield.", "back-reference"),
         ("Whenever a creature dies, you gain 1 life.", "trigger"),
         ("Return target creature card from your graveyard to your hand.", "zone"),
         ("Choose two —\n• Draw a card.\n• Gain 3 life.", "choose one"),

@@ -22,13 +22,49 @@ from .manacost import ManaCostError, parse_mana_cost
 MAX_CLAUSES_PER_ABILITY = 4
 MAX_ABILITIES = 8
 
+_ENTERS = r"enters?(?: the battlefield)?"
+_TO_GRAVEYARD = r"is put into a graveyard from the battlefield"
+_CAST_WHO = {"you cast": "YOU", "an opponent casts": "OPPONENT", "a player casts": "ANY"}
+_CAST_WHAT = {
+    "spell": "SPELL",
+    "noncreature spell": "NONCREATURE",
+    "creature spell": "CREATURE",
+    "instant or sorcery spell": "INSTANT_OR_SORCERY",
+    "artifact spell": "ARTIFACT",
+    "colorless spell": "COLORLESS",
+}
+_ENTERS_WHAT = {"another creature": "OTHER_CREATURE", "a creature": "CREATURE", "a land": "LAND"}
+
+# (pattern, triggers): each trigger is (trigger, when); "when" may name a group.
 _TRIGGERS = (
-    (re.compile(r"^when(?:ever)? this \w+ enters(?: the battlefield)?, (.+)$"), Trigger.ETB),
-    (re.compile(r"^when(?:ever)? this \w+ dies, (.+)$"), Trigger.DIES),
-    (re.compile(r"^whenever this \w+ attacks, (.+)$"), Trigger.ATTACKS),
-    (re.compile(r"^at the beginning of your upkeep, (.+)$"), Trigger.UPKEEP),
-    (re.compile(r"^at the beginning of your end step, (.+)$"), Trigger.END_STEP),
+    (rf"^when(?:ever)? this \w+ {_ENTERS} or attacks, (?P<effect>.+)$", ((Trigger.ETB, ""), (Trigger.ATTACKS, ""))),
+    (rf"^when(?:ever)? this \w+ {_ENTERS} or {_TO_GRAVEYARD}, (?P<effect>.+)$", ((Trigger.ETB, ""), (Trigger.DIES, ""))),
+    (rf"^when(?:ever)? this \w+ {_ENTERS}, (?P<effect>.+)$", ((Trigger.ETB, ""),)),
+    (rf"^when(?:ever)? this \w+ (?:dies|{_TO_GRAVEYARD}), (?P<effect>.+)$", ((Trigger.DIES, ""),)),
+    (r"^whenever this \w+ attacks, (?P<effect>.+)$", ((Trigger.ATTACKS, ""),)),
+    (r"^at the beginning of your upkeep, (?P<effect>.+)$", ((Trigger.UPKEEP, ""),)),
+    (r"^at the beginning of your end step, (?P<effect>.+)$", ((Trigger.END_STEP, ""),)),
+    (
+        r"^whenever this \w+ deals combat damage to a player(?: or (?:planeswalker|battle))?, (?P<effect>.+)$",
+        ((Trigger.COMBAT_DAMAGE, ""),),
+    ),
+    (
+        rf"^whenever (?P<who>{'|'.join(_CAST_WHO)}) an? (?P<what>{'|'.join(_CAST_WHAT)}), (?P<effect>.+)$",
+        ((Trigger.CAST, "cast"),),
+    ),
+    (
+        rf"^whenever (?P<kind>{'|'.join(_ENTERS_WHAT)}) you control {_ENTERS}, (?P<effect>.+)$",
+        ((Trigger.ENTERS, "enters"),),
+    ),
+    (r"^whenever you attack, (?P<effect>.+)$", ((Trigger.YOU_ATTACK, ""),)),
+    (r"^at the beginning of combat on your turn, (?P<effect>.+)$", ((Trigger.BEGIN_COMBAT, ""),)),
+    (r"^when(?:ever)? this \w+ leaves the battlefield, (?P<effect>.+)$", ((Trigger.LEAVES, ""),)),
+    (r"^whenever you gain life, (?P<effect>.+)$", ((Trigger.GAIN_LIFE, ""),)),
+    (r"^whenever an opponent draws a card, (?P<effect>.+)$", ((Trigger.OPPONENT_DRAWS, ""),)),
 )
+_TRIGGERS = tuple((re.compile(pattern), triggers) for pattern, triggers in _TRIGGERS)
+# An ability word ("landfall —") has no rules meaning (CR 207.2c).
+_ABILITY_WORD = re.compile(r"^[a-z' ]+ — (?=(?:when|whenever|at) )")
 _OTHER_TRIGGER = re.compile(r"^(?:when|whenever|at the beginning|at end)\b")
 _ACTIVATED = re.compile(r"^([^:\"]+): (.+)$")
 _CHOOSE_ONE = re.compile(r"^(?:(.*?), )?choose one —$")
@@ -93,6 +129,8 @@ class ClauseSet:
     clauses: tuple[Clause, ...]
     cost: Cost | None = None
     mode_group: int | None = None
+    # The event filter of CAST / ENTERS triggers.
+    when: str = ""
 
 
 def _candidates(text: str) -> tuple[tuple, tuple]:
@@ -226,19 +264,26 @@ def split_effect(effect: str, line: str) -> tuple[Clause, ...]:
     return tuple(clauses)
 
 
-def _ability(line: str, facts: CardFacts, mode_group: int | None = None, trigger=None, effect=None):
-    if trigger is None:
-        trigger, cost, effect = _read_line(line, facts)
-    else:
-        cost = None
-    return ClauseSet(line, trigger, split_effect(effect, line), cost, mode_group)
+def _abilities(line: str, facts: CardFacts) -> list[ClauseSet]:
+    """One line's abilities: one, or two when one effect has two triggers ("enters or attacks")."""
+    triggers, cost, effect = _read_line(line, facts)
+    clauses = split_effect(effect, line)
+    return [ClauseSet(line, trigger, clauses, cost, None, when) for trigger, when in triggers]
 
 
-def _read_line(line: str, facts: CardFacts) -> tuple[str, Cost | None, str]:
-    for pattern, trigger in _TRIGGERS:
+def _when(kind: str, match: re.Match) -> str:
+    if kind == "cast":
+        return f"{_CAST_WHO[match.group('who')]}:{_CAST_WHAT[match.group('what')]}"
+    if kind == "enters":
+        return _ENTERS_WHAT[match.group("kind")]
+    return ""
+
+
+def _read_line(line: str, facts: CardFacts) -> tuple[tuple, Cost | None, str]:
+    for pattern, triggers in _TRIGGERS:
         match = pattern.match(line)
         if match:
-            return trigger, None, match.group(1)
+            return tuple((trigger, _when(kind, match)) for trigger, kind in triggers), None, match.group("effect")
     if _OTHER_TRIGGER.match(line):
         raise SplitError(line, "unsupported trigger")
     activated = _ACTIVATED.match(line)
@@ -247,10 +292,10 @@ def _read_line(line: str, facts: CardFacts) -> tuple[str, Cost | None, str]:
             # Mana is paid automatically from free {T} sources only: a mana
             # ability with a cost would compile but never be used.
             raise SplitError(line, "mana abilities with a cost are not supported")
-        return Trigger.ACTIVATED, _parse_cost(activated.group(1), line), activated.group(2)
+        return ((Trigger.ACTIVATED, ""),), _parse_cost(activated.group(1), line), activated.group(2)
     if facts.is_instant_or_sorcery:
-        return Trigger.SPELL, None, line
-    return Trigger.STATIC, None, line
+        return ((Trigger.SPELL, ""),), None, line
+    return ((Trigger.STATIC, ""),), None, line
 
 
 def split_abilities(residual: str, facts: CardFacts) -> list[ClauseSet]:
@@ -258,7 +303,7 @@ def split_abilities(residual: str, facts: CardFacts) -> list[ClauseSet]:
 
     Raises :class:`SplitError` naming the first line it cannot read.
     """
-    lines = [line.strip() for line in residual.splitlines() if line.strip()]
+    lines = [_ABILITY_WORD.sub("", line.strip()) for line in residual.splitlines() if line.strip()]
     abilities: list[ClauseSet] = []
     mode_groups = 0
     index = 0
@@ -281,12 +326,12 @@ def split_abilities(residual: str, facts: CardFacts) -> list[ClauseSet]:
                 raise SplitError(line, "modes are only supported on instants and sorceries")
             trigger = Trigger.SPELL
             for bullet in bullets:
-                abilities.append(_ability(bullet, facts, mode_groups, trigger, bullet))
+                abilities.append(ClauseSet(bullet, trigger, split_effect(bullet, bullet), None, mode_groups))
             mode_groups += 1
             continue
         if _BULLET.match(line):
             raise SplitError(line, "a mode outside “choose one”")
-        abilities.append(_ability(line, facts))
+        abilities += _abilities(line, facts)
         index += 1
 
     if len(abilities) > MAX_ABILITIES:

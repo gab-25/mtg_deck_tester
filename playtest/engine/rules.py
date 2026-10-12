@@ -67,6 +67,7 @@ auras and equipment, alternative costs, and choosing how to pay mana.
 """
 
 from .actions import Action, ActionKind, ability_sets, commander_cost, legal_actions
+from .dsl import Trigger
 from .effects import (
     EffectContext,
     deal_damage,
@@ -88,7 +89,16 @@ from .limits import Limits
 from .mana import pay
 from .manacost import parse_mana_cost
 from .state import GameState, PendingTarget, Player, StackItem
-from .zones import Zone, enter_battlefield, leave_battlefield, put_card, remove_player_objects, take_from
+from .zones import (
+    Zone,
+    enter_battlefield,
+    leave_battlefield,
+    put_card,
+    queue_event_triggers,
+    queue_triggers,
+    remove_player_objects,
+    take_from,
+)
 
 
 class IllegalAction(Exception):
@@ -200,6 +210,7 @@ def _cast(state: GameState, seat: int, action: Action) -> list[Event]:
         is_creature_spell=card.spec.is_creature,
     )
     state.stack.append(item)
+    queue_event_triggers(state, Trigger.CAST, lambda perm, ability: cast_matches(ability.when, perm, seat, card.spec), seat)
     missing = _missing_slot(item)
     if missing is not None:
         state.pending_target = PendingTarget(item.id, missing)
@@ -269,6 +280,25 @@ def _activate(state: GameState, seat: int, action: Action) -> list[Event]:
     return events
 
 
+def cast_matches(when: str, watcher, caster: int, spec) -> bool:
+    """Whether a CAST trigger filtered by ``when`` sees ``caster`` casting ``spec``."""
+    who, _, what = when.partition(":")
+    if who == "YOU" and watcher.controller != caster or who == "OPPONENT" and watcher.controller == caster:
+        return False
+    match what:
+        case "NONCREATURE":
+            return not spec.is_creature
+        case "CREATURE":
+            return spec.is_creature
+        case "INSTANT_OR_SORCERY":
+            return spec.is_spell_only
+        case "ARTIFACT":
+            return "artifact" in spec.types
+        case "COLORLESS":
+            return not spec.colors
+    return True
+
+
 def _choose_target(state: GameState, action: Action) -> list[Event]:
     pending = state.pending_target
     item = state.stack_item(pending.item_id)
@@ -316,6 +346,7 @@ def resolve_top(state: GameState, choose=None) -> list[Event]:
         deathtouch=bool(source and has(state, source, "deathtouch")),
         lifelink=bool(source and has(state, source, "lifelink")),
         choose=choose or first_option,
+        event_player=item.event_player,
     )
     events = [Event(EventKind.RESOLVE, item.controller, f"{item.name} resolves.", {"card": item.name, "spell": item.is_spell})]
     effects, fizzled = resolve_abilities(state, item, item.abilities, ctx)
@@ -336,6 +367,7 @@ def trigger_item(state: GameState, trigger) -> StackItem:
         source_name=trigger.source_name,
         source_id=trigger.source_id,
         abilities=(trigger.ability,),
+        event_player=trigger.player,
     )
 
 
@@ -527,6 +559,8 @@ def combat_damage(state: GameState, first_strike_step: bool, dealt_first: set[in
         if has(state, source, "lifelink"):
             total, perm = lifelink.get(source.id, (0, source))
             lifelink[source.id] = (total + amount, perm)
+        if ref.startswith("p"):
+            queue_triggers(state, source, Trigger.COMBAT_DAMAGE, int(ref[1:]))
     for total, source in lifelink.values():
         events += gain_life(state, source.controller, total, source.name)
     return events

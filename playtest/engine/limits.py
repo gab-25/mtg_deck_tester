@@ -16,6 +16,9 @@ class Limits:
     # passes for the rest of the turn.
     max_decisions_per_turn: int = 200
     max_stack_depth: int = 50
+    # Triggered abilities put on the stack in one turn: past it new triggers
+    # are dropped (a "whenever you gain life, gain 1 life" loop ends here).
+    max_triggers_per_turn: int = 100
     max_activations_per_permanent_per_turn: int = 20
     max_sba_iterations: int = 100
     # Attacker / blocker declarations in one combat, per declaring player.

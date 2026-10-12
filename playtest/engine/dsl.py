@@ -26,7 +26,7 @@ from .manacost import ManaCostError, parse_mana_cost, parse_mana_symbols
 
 # Bump only when the accepted vocabulary or a program's meaning changes: it is
 # part of the compiled-rules cache key.
-DSL_VERSION = "3"
+DSL_VERSION = "4"
 
 
 class DslError(ValueError):
@@ -50,6 +50,15 @@ class Trigger:
     END_STEP = "END_STEP"
     ACTIVATED = "ACTIVATED"
     STATIC = "STATIC"
+    # Event triggers: something happening anywhere, filtered by ``Ability.when``.
+    CAST = "CAST"
+    ENTERS = "ENTERS"
+    COMBAT_DAMAGE = "COMBAT_DAMAGE"
+    YOU_ATTACK = "YOU_ATTACK"
+    BEGIN_COMBAT = "BEGIN_COMBAT"
+    LEAVES = "LEAVES"
+    GAIN_LIFE = "GAIN_LIFE"
+    OPPONENT_DRAWS = "OPPONENT_DRAWS"
 
 
 TRIGGERS = {
@@ -61,9 +70,38 @@ TRIGGERS = {
     Trigger.END_STEP: "at the beginning of its controller's end step",
     Trigger.ACTIVATED: "an ability its controller activates by paying a cost",
     Trigger.STATIC: "always true while this permanent is on the battlefield",
+    Trigger.CAST: "whenever a player (you, an opponent, anyone) casts a spell of a kind",
+    Trigger.ENTERS: "whenever another permanent of a kind enters under its controller's control",
+    Trigger.COMBAT_DAMAGE: "whenever this creature deals combat damage to a player",
+    Trigger.YOU_ATTACK: "whenever its controller attacks with one or more creatures",
+    Trigger.BEGIN_COMBAT: "at the beginning of combat on its controller's turn",
+    Trigger.LEAVES: "when this permanent leaves the battlefield, whatever the zone",
+    Trigger.GAIN_LIFE: "whenever its controller gains life",
+    Trigger.OPPONENT_DRAWS: "whenever an opponent of its controller draws a card",
 }
 
-TRIGGERED = (Trigger.ETB, Trigger.DIES, Trigger.ATTACKS, Trigger.UPKEEP, Trigger.END_STEP)
+TRIGGERED = (
+    Trigger.ETB,
+    Trigger.DIES,
+    Trigger.ATTACKS,
+    Trigger.UPKEEP,
+    Trigger.END_STEP,
+    Trigger.CAST,
+    Trigger.ENTERS,
+    Trigger.COMBAT_DAMAGE,
+    Trigger.YOU_ATTACK,
+    Trigger.BEGIN_COMBAT,
+    Trigger.LEAVES,
+    Trigger.GAIN_LIFE,
+    Trigger.OPPONENT_DRAWS,
+)
+# What ``Ability.when`` may say for the event triggers that take a filter:
+# CAST is "<who>:<spell kind>", ENTERS the kind of permanent.
+CAST_WHO = ("YOU", "OPPONENT", "ANY")
+CAST_WHAT = ("SPELL", "NONCREATURE", "CREATURE", "INSTANT_OR_SORCERY", "ARTIFACT", "COLORLESS")
+ENTERS_WHAT = ("OTHER_CREATURE", "CREATURE", "LAND")
+# Triggers whose event has a player "that player" / "they" names.
+EVENT_PLAYER_TRIGGERS = (Trigger.COMBAT_DAMAGE, Trigger.OPPONENT_DRAWS, Trigger.CAST)
 
 
 # -- selectors --------------------------------------------------------------
@@ -149,6 +187,12 @@ SELECTORS: dict[str, SelectorSpec] = {
         SelKind.PLAYER,
         False,
         r"its controller",
+    ),
+    "THAT_PLAYER": SelectorSpec(
+        "the player the triggering event was about (who cast, drew, or was dealt damage)",
+        SelKind.PLAYER,
+        False,
+        r"that player|they",
     ),
     "YOU": SelectorSpec("the player who controls this card", SelKind.PLAYER, False, r"you"),
     "SELF": SelectorSpec(
@@ -727,6 +771,8 @@ class Ability:
     cost: Cost | None = None
     mode_group: int | None = None
     text: str = ""
+    # The event filter of CAST and ENTERS triggers (see CAST_WHO, ENTERS_WHAT).
+    when: str = ""
 
     def target(self, key: str) -> Target | None:
         return next((t for t in self.targets if t.key == key), None)
@@ -750,7 +796,7 @@ class CardProgram:
 
 
 _PROGRAM_KEYS = {"version", "abilities"}
-_ABILITY_KEYS = {"trigger", "ops", "targets", "cost", "mode_group", "text"}
+_ABILITY_KEYS = {"trigger", "ops", "targets", "cost", "mode_group", "text", "when"}
 _TARGET_KEYS = {"selector", "restriction", "of"}
 _RESTRICTION_KEYS = {"kind", "value"}
 _COST_KEYS = {"mana", "tap", "sacrifice_self", "life", "discard"}
@@ -865,6 +911,17 @@ def _validate_ability(data, path: str, facts, grounded: set[int], has_x: bool) -
     elif data.get("cost") is not None:
         raise DslError(f"{path}.cost", "only activated abilities have a cost")
 
+    when = data.get("when") or ""
+    if trigger == Trigger.CAST:
+        who, _, what = when.partition(":") if isinstance(when, str) else ("", "", "")
+        if who not in CAST_WHO or what not in CAST_WHAT:
+            raise DslError(f"{path}.when", f"unknown cast filter {when!r}")
+    elif trigger == Trigger.ENTERS:
+        if when not in ENTERS_WHAT:
+            raise DslError(f"{path}.when", f"unknown enters filter {when!r}")
+    elif when:
+        raise DslError(f"{path}.when", f"{trigger} takes no filter")
+
     mode_group = data.get("mode_group")
     if mode_group is not None:
         _int(mode_group, f"{path}.mode_group", 0, MAX_ABILITIES)
@@ -892,6 +949,11 @@ def _validate_ability(data, path: str, facts, grounded: set[int], has_x: bool) -
         _validate_op(op, f"{path}.ops[{i}]", by_key, trigger, grounded, has_x)
         for i, op in enumerate(raw_ops)
     ]
+
+    if any(t.selector == "THAT_PLAYER" for t in targets) and (
+        trigger not in EVENT_PLAYER_TRIGGERS or when.startswith("YOU:")
+    ):
+        raise DslError(f"{path}.targets", "“that player” needs an event about another player")
 
     used = {op.target for op in ops if op.target}
     unused = sorted(set(by_key) - used)
@@ -921,6 +983,7 @@ def _validate_ability(data, path: str, facts, grounded: set[int], has_x: bool) -
         cost=cost,
         mode_group=mode_group,
         text=str(data.get("text") or ""),
+        when=when,
     )
 
 
@@ -1139,6 +1202,8 @@ def to_json(program: CardProgram) -> dict:
             }
         if ability.mode_group is not None:
             data["mode_group"] = ability.mode_group
+        if ability.when:
+            data["when"] = ability.when
         for op in ability.ops:
             entry = {"op": op.op}
             for name in _OP_FIELDS - {"op"}:
@@ -1166,6 +1231,13 @@ _TRIGGER_TEXT = {
     Trigger.UPKEEP: "At your upkeep: ",
     Trigger.END_STEP: "At your end step: ",
     Trigger.STATIC: "",
+    Trigger.ENTERS: "When {when} you control enters: ",
+    Trigger.COMBAT_DAMAGE: "When it deals combat damage to a player: ",
+    Trigger.YOU_ATTACK: "When you attack: ",
+    Trigger.BEGIN_COMBAT: "At the beginning of combat on your turn: ",
+    Trigger.LEAVES: "When it leaves the battlefield: ",
+    Trigger.GAIN_LIFE: "When you gain life: ",
+    Trigger.OPPONENT_DRAWS: "When an opponent draws a card: ",
 }
 
 
@@ -1253,7 +1325,12 @@ def describe_ability(ability: Ability) -> str:
         if ability.cost.sacrifice_self:
             parts.append("sacrifice it")
         return f"{', '.join(parts)}: {body}"
-    prefix = _TRIGGER_TEXT[ability.trigger]
+    if ability.trigger == Trigger.CAST:
+        who, _, what = ability.when.partition(":")
+        caster = {"YOU": "you cast", "OPPONENT": "an opponent casts", "ANY": "a player casts"}[who]
+        prefix = f"When {caster} a {what.lower().replace('_', ' ')} spell: ".replace(" spell spell", " spell")
+    else:
+        prefix = _TRIGGER_TEXT[ability.trigger].format(when=ability.when.lower().replace("_", " "))
     if ability.mode_group is not None:
         prefix = "Mode: " + prefix
     return prefix + body

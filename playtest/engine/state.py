@@ -127,6 +127,8 @@ class StackItem:
     x: int = 0
     # The mana value of the source when it was cast (for "spell" selectors).
     is_creature_spell: bool = False
+    # A triggered ability: the player its event was about ("that player").
+    event_player: int | None = None
 
     @property
     def is_spell(self) -> bool:
@@ -145,6 +147,8 @@ class PendingTrigger:
     source_name: str
     source_id: int | None
     ability: Ability
+    # The player the triggering event was about ("that player"), if any.
+    player: int | None = None
 
 
 @dataclass(slots=True)

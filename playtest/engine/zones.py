@@ -20,9 +20,30 @@ class Zone:
     COMMAND = "command"
 
 
-def queue_triggers(state: GameState, perm: Permanent, trigger: str) -> None:
+def queue_triggers(state: GameState, perm: Permanent, trigger: str, player: int | None = None) -> None:
     for ability in perm.spec.abilities(trigger):
-        state.triggers.append(PendingTrigger(perm.controller, perm.name, perm.id, ability))
+        state.triggers.append(PendingTrigger(perm.controller, perm.name, perm.id, ability, player))
+
+
+def queue_event_triggers(state: GameState, trigger: str, accepts, player: int | None = None) -> None:
+    """Queues every ``trigger`` ability on the battlefield whose event filter ``accepts(perm, ability)``."""
+    for perm in sorted(state.battlefield, key=lambda p: p.id):
+        for ability in perm.spec.abilities(trigger):
+            if accepts(perm, ability):
+                state.triggers.append(PendingTrigger(perm.controller, perm.name, perm.id, ability, player))
+
+
+def _enters_matches(when: str, watcher: Permanent, perm: Permanent) -> bool:
+    if watcher.controller != perm.controller:
+        return False
+    match when:
+        case "OTHER_CREATURE":
+            return perm.spec.is_creature and perm.id != watcher.id
+        case "CREATURE":
+            return perm.spec.is_creature
+        case "LAND":
+            return perm.spec.is_land
+    return False
 
 
 def enter_battlefield(state: GameState, card: Card | None, controller: int, spec: CardSpec | None = None) -> Permanent:
@@ -39,6 +60,7 @@ def enter_battlefield(state: GameState, card: Card | None, controller: int, spec
     )
     state.battlefield.append(perm)
     queue_triggers(state, perm, Trigger.ETB)
+    queue_event_triggers(state, Trigger.ENTERS, lambda watcher, ability: _enters_matches(ability.when, watcher, perm))
     return perm
 
 
@@ -78,9 +100,12 @@ def leave_battlefield(state: GameState, perm: Permanent, zone: str) -> list[Even
     _detach_from_combat(state, perm)
     state.battlefield.remove(perm)
     events = []
-    if zone == Zone.GRAVEYARD and perm.spec.is_creature:
-        # "Dies" triggers look back at the object as it last existed.
+    # Leaving triggers look back at the object as it last existed.
+    queue_triggers(state, perm, Trigger.LEAVES)
+    if zone == Zone.GRAVEYARD:
+        # "Dies", or "is put into a graveyard from the battlefield" for any permanent.
         queue_triggers(state, perm, Trigger.DIES)
+    if zone == Zone.GRAVEYARD and perm.spec.is_creature:
         events.append(
             Event(EventKind.DIES, perm.controller, f"{perm.name} dies.", {"card": perm.name, "token": perm.is_token})
         )

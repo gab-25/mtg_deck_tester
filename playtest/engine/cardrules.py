@@ -21,6 +21,11 @@ class ResidualClass:
     NEEDS_JUDGE = "needs_judge"
 
 
+# Keywords that stand for a triggered ability the DSL states (CR 702.108 prowess).
+KEYWORD_RULES = {
+    "prowess": "whenever you cast a noncreature spell, {noun} gets +1/+1 until end of turn.",
+}
+
 # The printed keywords the kernel implements (lowercase).
 SUPPORTED_KEYWORDS = (
     "flying",
@@ -353,6 +358,10 @@ def characteristics(card: dict) -> CardFacts:
                     ward = int(ward_match.group(1))
                 elif keyword in SUPPORTED_KEYWORDS:
                     keywords.append(keyword)
+                elif keyword in KEYWORD_RULES:
+                    # A keyword that is shorthand for a triggered ability: its
+                    # rules text goes to the judge like any other line.
+                    residual_lines.append(KEYWORD_RULES[keyword].format(noun=noun))
                 else:
                     unsupported.append(keyword)
             if unsupported:

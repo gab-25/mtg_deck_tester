@@ -16,6 +16,7 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Callable
 
 from .actions import Action, ActionKind, can_attack, dead_spells, legal_actions
+from .dsl import Trigger
 from .effects import draw_cards, target_choices, target_slots
 from .events import Event, EventKind
 from .limits import Limits
@@ -35,7 +36,7 @@ from .rules import (
 )
 from .state import Card, Combat, GameRules, GameState, PendingChoice, PendingTarget, Player, Step, assert_invariants
 from .view import player_view
-from .zones import queue_triggers
+from .zones import queue_event_triggers, queue_triggers
 
 if TYPE_CHECKING:
     from ..agents.base import Agent
@@ -127,6 +128,7 @@ class Game:
         self.agent_calls = [0] * len(decks)
         self.decisions_by_seat = [0] * len(decks)
         self.decisions_this_turn = 0
+        self.triggers_this_turn = 0
         self.forced_pass = False
         self.started_at: float | None = None
         self.clock_expired = False
@@ -214,6 +216,7 @@ class Game:
         state.turn += 1
         state.active_seat = seat
         self.decisions_this_turn = 0
+        self.triggers_this_turn = 0
         self.forced_pass = False
         state.step = Step.UNTAP
         self._record([Event(EventKind.TURN, seat, f"Round {state.round}: {state.player(seat).name}'s turn.")])
@@ -243,8 +246,11 @@ class Game:
                     case Step.MAIN1 | Step.MAIN2:
                         self._priority()
                     case Step.BEGIN_COMBAT:
+                        self._queue_step_triggers(seat, Trigger.BEGIN_COMBAT)
                         if not any(can_attack(state, p) for p in state.battlefield):
                             skip_combat = True
+                            if state.triggers:
+                                self._priority()
                             continue
                         self._priority()
                     case Step.DECLARE_ATTACKERS:
@@ -345,6 +351,12 @@ class Game:
         for trigger in waiting:
             if not state.player(trigger.controller).alive:
                 continue
+            if self.triggers_this_turn >= self.limits.max_triggers_per_turn:
+                self._record(
+                    [Event(EventKind.LIMIT, trigger.controller, f"Too many triggers this turn: {trigger.source_name}'s trigger is dropped.", {"limit": "triggers"})]
+                )
+                continue
+            self.triggers_this_turn += 1
             if len(state.stack) >= self.limits.max_stack_depth:
                 self._record(
                     [Event(EventKind.LIMIT, trigger.controller, f"The stack is full: {trigger.source_name}'s trigger is dropped.", {"limit": "stack_depth"})]
@@ -439,6 +451,8 @@ class Game:
         attackers = sorted((p for p in state.battlefield if p.attacking is not None), key=lambda p: p.id)
         for perm in attackers:
             queue_triggers(state, perm, "ATTACKS")
+        if attackers:
+            queue_event_triggers(state, Trigger.YOU_ATTACK, lambda perm, ability: perm.controller == seat)
         return bool(attackers)
 
     def _declare_blockers(self, seat: int) -> None:

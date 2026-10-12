@@ -229,6 +229,8 @@ def assemble(abilities: list[ClauseSet], answers: dict) -> dict:
             }
         if ability.mode_group is not None:
             data["mode_group"] = ability.mode_group
+        if ability.when:
+            data["when"] = ability.when
         program_abilities.append(data)
     return {"version": dsl.DSL_VERSION, "abilities": program_abilities}
 

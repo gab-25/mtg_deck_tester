@@ -701,7 +701,9 @@ def test_treasure_clue_and_blood_tokens():
 
     assert perm.spec.program.abilities[0].trigger == "ETB"
     blood_hand = _hand(state, card("Junk", "Sorcery", "{5}"))
-    item = trigger_item(state, type("T", (), {"controller": 0, "source_name": "Epicure", "source_id": perm.id, "ability": perm.spec.program.abilities[0]})())
+    from playtest.engine.state import PendingTrigger
+
+    item = trigger_item(state, PendingTrigger(0, "Epicure", perm.id, perm.spec.program.abilities[0]))
     state.stack.append(item)
     resolve_top(state)
     assert state.player(1).life == 19
@@ -754,3 +756,140 @@ def test_a_game_with_the_new_mechanics_keeps_its_invariants():
         assert "agent_fallback" not in [e.event.kind for e in result.events]
         effects |= {e.event.payload.get("effect") for e in result.events}
     assert {"discard_chosen", "create_token", "put_back", "pay_unless", "gain_life"} <= effects
+
+
+# -- event triggers ------------------------------------------------------------------
+
+
+def _queued(state):
+    """The names of the sources of waiting triggers."""
+    return [t.source_name for t in state.triggers]
+
+
+def test_cast_triggers_match_who_cast_and_what():
+    game, state = _table()
+    _mana(state, amount=2)
+    _mana(state, amount=2, seat=1)
+    mine = _put(state, compiled_spec("Swift", "Creature — Monk", "{R}", "Prowess", "1", "2", keywords=("Prowess",)))
+    theirs = _put(state, compiled_spec("Study", "Enchantment", "{2}", "Whenever an opponent casts a spell, you draw a card."), seat=1)
+    assert mine.spec.supported and theirs.spec.supported
+    shock = _hand(state, card("Shock", "Instant", "{1}"))
+    apply(state, 0, next(a for a in legal_actions(state, 0) if a.card == shock.id))
+    assert _queued(state) == ["Swift", "Study"]
+    state.triggers.clear()
+    resolve_top(state)
+    bear_card = _hand(state, card("Bear", "Creature", "{1}", 2, 2))
+    apply(state, 0, next(a for a in legal_actions(state, 0) if a.card == bear_card.id))
+    # A creature spell is not a noncreature spell.
+    assert _queued(state) == ["Study"]
+
+
+def test_prowess_pumps_until_end_of_turn():
+    game, state = _table()
+    _mana(state, amount=1)
+    swift = _put(state, compiled_spec("Swift", "Creature — Monk", "{R}", "Prowess", "1", "2", keywords=("Prowess",)))
+    shock = _hand(state, card("Shock", "Instant", "{1}"))
+    _run_priority(game, [type("A", (), {"choose": lambda self, view, options: Decision(next((o for o in options if o.card == shock.id), options[0]))})()] * 2)
+    assert power(state, swift) == 2
+    cleanup_step(state, 0)
+    assert power(state, swift) == 1
+
+
+def test_enters_triggers_for_other_creatures_and_lands():
+    game, state = _table()
+    soul = _put(state, compiled_spec("Guide", "Creature — Human", "{W}", "Whenever another creature you control enters, you gain 1 life.", "1", "2"))
+    chocobo = _put(state, compiled_spec("Chocobo", "Creature — Bird", "{G}", "Landfall — Whenever a land you control enters, put a +1/+1 counter on this creature.", "1", "1"))
+    assert not state.triggers
+    _put_untouched = enter_battlefield(state, Card(state.new_id(), bear(), 0), 0)
+    assert _queued(state) == ["Guide"]
+    state.triggers.clear()
+    enter_battlefield(state, Card(state.new_id(), bear(), 1), 1)
+    assert _queued(state) == []
+    enter_battlefield(state, Card(state.new_id(), WASTES, 0), 0)
+    assert _queued(state) == ["Chocobo"]
+
+
+def test_combat_damage_to_a_player_triggers_and_you_attack_triggers():
+    from playtest.agents.heuristic import HeuristicAgent
+
+    game, state = _table()
+    ninja = _put(state, compiled_spec("Ninja", "Creature — Ninja", "{1}", "Whenever this creature deals combat damage to a player, draw a card.", "2", "1"))
+    guide = _put(state, compiled_spec("Leader", "Creature — Human", "{1}", "Whenever you attack, you gain 1 life.", "0", "4"))
+    hand = len(state.player(0).hand)
+    game.agents = [HeuristicAgent(0), HeuristicAgent(1)]
+    game._take_turn(0)
+    effects = [e.event.text for e in game.events]
+    assert any("Ninja's ability triggers" in t for t in effects)
+    assert any("Leader's ability triggers" in t for t in effects)
+    assert state.player(1).life == 18
+
+
+def test_beginning_of_combat_triggers_even_without_attackers():
+    from playtest.agents.heuristic import HeuristicAgent
+
+    game, state = _table()
+    _put(state, compiled_spec("Drummer", "Enchantment", "{1}", "At the beginning of combat on your turn, you gain 2 life."))
+    game.agents = [HeuristicAgent(0), HeuristicAgent(1)]
+    game._take_turn(0)
+    assert state.player(0).life == 22
+
+
+def test_leaves_gain_life_and_opponent_draw_triggers():
+    game, state = _table()
+    leaver = _put(state, compiled_spec("Leaver", "Creature — Spirit", "{1}", "When this creature leaves the battlefield, draw a card.", "1", "1"))
+    cleric = _put(state, compiled_spec("Cleric", "Creature — Cleric", "{1}", "Whenever you gain life, each opponent loses 1 life.", "1", "1"))
+    sheoldred = _put(state, compiled_spec("Sheol", "Creature — Phyrexian", "{1}", "Whenever an opponent draws a card, they lose 2 life.", "4", "5"), seat=1)
+    from playtest.engine.zones import Zone, leave_battlefield
+
+    leave_battlefield(state, leaver, Zone.EXILE)
+    assert _queued(state) == ["Leaver"]
+    state.triggers.clear()
+    from playtest.engine.effects import draw_cards, gain_life
+
+    gain_life(state, 0, 2, "test")
+    assert _queued(state) == ["Cleric"]
+    state.triggers.clear()
+    draw_cards(state, 0, 2)
+    # One trigger per card drawn; "they" is the player who drew.
+    assert _queued(state) == ["Sheol", "Sheol"]
+    game._flush_triggers()
+    resolve_top(state)
+    assert state.player(0).life == 20
+    resolve_top(state)
+    assert state.player(0).life == 18 and state.player(1).life == 20
+
+
+def test_enters_or_attacks_is_two_triggers_and_artifacts_to_the_graveyard_trigger():
+    viper = compiled_spec("Viper", "Creature — Snake", "{1}", "Whenever this creature enters or attacks, each opponent loses 1 life.", "2", "2")
+    assert [a.trigger for a in viper.program.abilities] == ["ETB", "ATTACKS"]
+    bomb = compiled_spec("Bomb", "Artifact", "{1}", "When this artifact is put into a graveyard from the battlefield, draw a card.")
+    game, state = _table()
+    perm = _put(state, bomb)
+    from playtest.engine.zones import Zone, leave_battlefield
+
+    leave_battlefield(state, perm, Zone.GRAVEYARD)
+    assert _queued(state) == ["Bomb"]
+
+
+def test_a_trigger_loop_ends_with_a_limit_event():
+    from playtest.agents.heuristic import HeuristicAgent
+    from playtest.engine.limits import Limits
+
+    loop = compiled_spec("Loop", "Creature — Elf", "{1}", "Whenever you gain life, you gain 1 life.", "1", "1")
+    game, state = _table()
+    game.limits = Limits(max_triggers_per_turn=30)
+    _put(state, loop)
+    from playtest.engine.effects import gain_life
+
+    gain_life(state, 0, 1, "test")
+    game.agents = [HeuristicAgent(0), HeuristicAgent(1)]
+    game._priority()
+    assert any(e.event.payload.get("limit") == "triggers" for e in game.events)
+    assert 20 < state.player(0).life <= 52
+
+
+def test_that_player_only_names_the_player_of_an_event():
+    you_cast = compiled_spec("Odd", "Enchantment", "{1}", "Whenever you cast a spell, that player draws a card.")
+    assert not you_cast.supported
+    rhystic = compiled_spec("Tithe", "Enchantment", "{1}", "Whenever an opponent casts a spell, that player loses 1 life.")
+    assert rhystic.program.abilities[0].when == "OPPONENT:SPELL"
