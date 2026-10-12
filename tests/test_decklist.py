@@ -80,3 +80,29 @@ def test_parse_decklist_text_parses_lines():
 
 def test_parse_decklist_text_empty_returns_empty():
     assert parse_decklist_text("\n  \n# only comment\n") == []
+
+
+def test_constructed_sideboard_is_kept_apart():
+    text = "4 Lightning Bolt\n\nSideboard\n2 Pyroblast\n"
+    assert parse_decklist_text(text, "modern") == [
+        {"quantity": 4, "name": "Lightning Bolt", "is_commander": False, "board": "main"},
+        {"quantity": 2, "name": "Pyroblast", "is_commander": False, "board": "side"},
+    ]
+
+
+def test_constructed_deck_header_switches_back_to_main():
+    text = "Sideboard\n1 Duress\nDeck\n4 Thoughtseize\n"
+    boards = [(c["name"], c["board"]) for c in parse_decklist_text(text, "legacy")]
+    assert boards == [("Duress", "side"), ("Thoughtseize", "main")]
+
+
+def test_constructed_maybeboard_is_ignored():
+    text = "4 Ponder\nMaybeboard\n1 Brainstorm\n"
+    assert [c["name"] for c in parse_decklist_text(text, "pauper")] == ["Ponder"]
+
+
+def test_commander_formats_still_count_the_sideboard_as_deck():
+    text = "Commander\n1 Atraxa, Praetors' Voice\nSideboard\n1 Sol Ring\n"
+    cards = parse_decklist_text(text, "commander")
+    assert [c.get("board") for c in cards] == [None, None]
+    assert cards[1]["is_commander"] is False
