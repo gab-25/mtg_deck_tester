@@ -352,3 +352,10 @@ def test_the_new_match_form_tags_decks_and_benchmarks_by_format(client, user):
     page = client.get("/matches/new").content.decode()
     assert 'data-format="modern"' in page
     assert 'value="benchmark:aggro60" data-family="constructed"' in page
+
+
+@pytest.mark.django_db
+def test_hidden_seats_and_decks_are_cleared_not_just_hidden(client):
+    page = client.get("/matches/new").content.decode()
+    # Hidden rows and options must not stay selected and be posted unseen.
+    assert 'select.value = ""' in page

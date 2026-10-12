@@ -133,7 +133,13 @@
       const fmt = chosen.value, family = chosen.dataset.family, seats = Number(chosen.dataset.maxSeats);
       document.querySelectorAll("option[data-format]").forEach((o) => { o.hidden = o.dataset.format !== fmt; });
       document.querySelectorAll("option[data-family]:not([data-max-seats])").forEach((o) => { o.hidden = o.dataset.family !== family; });
-      document.querySelectorAll("[data-seat-row]").forEach((row) => { row.hidden = Number(row.dataset.seatRow) >= seats; });
+      document.querySelectorAll("[data-seat-row]").forEach((row) => {
+        row.hidden = Number(row.dataset.seatRow) >= seats;
+        // A hidden seat or a hidden deck must not stay selected and be posted unseen.
+        row.querySelectorAll('select[name$="-deck"]').forEach((select) => {
+          if (row.hidden || (select.selectedOptions[0] && select.selectedOptions[0].hidden)) select.value = "";
+        });
+      });
     };
     select.addEventListener("change", apply);
     apply();

@@ -106,3 +106,21 @@ def test_commander_formats_still_count_the_sideboard_as_deck():
     cards = parse_decklist_text(text, "commander")
     assert [c.get("board") for c in cards] == [None, None]
     assert cards[1]["is_commander"] is False
+
+
+def test_mtgo_lists_put_the_sideboard_after_a_blank_line():
+    text = "4 Lightning Bolt\n56 Mountain\n\n4 Pyroblast\n"
+    boards = [(c["name"], c["board"]) for c in parse_decklist_text(text, "modern")]
+    assert boards == [("Lightning Bolt", "main"), ("Mountain", "main"), ("Pyroblast", "side")]
+
+
+def test_a_blank_line_inside_a_headed_list_changes_nothing():
+    text = "Deck\n4 Lightning Bolt\n\n56 Mountain\nSideboard\n4 Pyroblast\n"
+    boards = [c["board"] for c in parse_decklist_text(text, "modern")]
+    assert boards == ["main", "main", "side"]
+
+
+def test_arena_companion_section_is_not_main_deck():
+    text = "Companion\n1 Lurrus of the Dream-Den\n\nDeck\n4 Lightning Bolt\n\nSideboard\n1 Lurrus of the Dream-Den\n"
+    cards = parse_decklist_text(text, "legacy")
+    assert [(c["name"], c["board"]) for c in cards] == [("Lightning Bolt", "main"), ("Lurrus of the Dream-Den", "side")]

@@ -23,9 +23,10 @@ _MAIN_HEADERS = {
 _SECTION_HEADERS = _COMMANDER_HEADERS | _MAIN_HEADERS
 
 # In constructed formats the sideboard is its own zone, and the "maybe" lists
-# are notes, not cards.
+# are notes, not cards. Arena lists the companion twice — on its own and in the
+# sideboard, where it actually lives — so its own section is skipped too.
 _SIDEBOARD_HEADERS = {"sideboard"}
-_IGNORED_HEADERS = {"maybeboard", "considering"}
+_IGNORED_HEADERS = {"maybeboard", "considering", "companion"}
 
 # "4 Lightning Bolt" and the "4x Lightning Bolt" spelling used by several
 # deckbuilding sites.
@@ -42,10 +43,16 @@ def parse_decklist_text(text: str, fmt: str = DEFAULT_FORMAT) -> list:
     Commanders are the cards listed under a ``Commander`` section header or
     tagged with a trailing ``*CMDR*`` marker. In a Commander format every other
     card belongs to the deck, whatever its header. In a constructed format the
-    cards also carry ``board`` — ``"side"`` under a ``Sideboard`` header,
-    ``"main"`` otherwise — and the maybeboard is skipped.
+    cards also carry ``board`` — ``"side"`` under a ``Sideboard`` header (or,
+    in a list with no headers at all, after the first blank line), ``"main"``
+    otherwise — and the maybeboard and companion sections are skipped.
     """
     constructed = not FORMATS.get(fmt, FORMATS[DEFAULT_FORMAT]).has_commander
+    # MTGO and MTGGoldfish exports have no headers: the sideboard follows the
+    # main deck after a blank line.
+    headerless = constructed and not any(
+        line.strip().lower().rstrip(":") in _SECTION_HEADERS for line in text.splitlines()
+    )
     cards = []
     in_commander_section = False
     board = "main"
@@ -54,6 +61,8 @@ def parse_decklist_text(text: str, fmt: str = DEFAULT_FORMAT) -> list:
     for line in text.splitlines():
         line = line.strip()
         if not line:
+            if headerless and cards:
+                board = "side"
             continue
         # Ignore comments.
         if line.startswith("//") or line.startswith("#"):
