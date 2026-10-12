@@ -143,8 +143,8 @@ keywords. Hidden information never leaves the engine.
 
 ## From stored decks to `DeckSpec`
 
-`playtest/runner.py` compiles every seat's main deck through `playtest.judge` (or
-reads a bundled benchmark), stores each seat's coverage report, and builds the
+`playtest/runner.py` compiles every seat's main deck through `playtest.judge`,
+stores each seat's coverage report, and builds the
 `DeckSpec`s with `CardSpec.from_facts`. `deck_spec(..., has_commander=False)` builds a
 constructed deck; a Commander deck without a commander fails the match.
 

@@ -6,12 +6,9 @@ from dataclasses import dataclass
 from decks.formats import DEFAULT_FORMAT, FORMATS
 from decks.models import Deck, MetagameDeck
 
-from . import benchmarks
 from .agents import openrouter
 from .models import Seat
 
-# A seat's deck picker value for a bundled benchmark deck.
-BENCHMARK_PREFIX = "benchmark:"
 # A seat's deck picker value for a metagame deck.
 METAGAME_PREFIX = "metagame:"
 # Seats that ask a model through OpenRouter.
@@ -24,9 +21,8 @@ MAX_ROUNDS_LIMIT = 100
 
 @dataclass
 class SeatChoice:
-    # A user's deck, or None for a bundled benchmark or a metagame deck.
+    # A user's deck, or None for a metagame deck.
     deck: Deck | None
-    benchmark: str
     agent: str
     model: str
     metagame_deck: MetagameDeck | None = None
@@ -35,9 +31,7 @@ class SeatChoice:
     def name(self) -> str:
         if self.deck is not None:
             return self.deck.name
-        if self.metagame_deck is not None:
-            return self.metagame_deck.archetype
-        return benchmarks.label(self.benchmark)
+        return self.metagame_deck.archetype
 
 
 @dataclass
@@ -90,17 +84,7 @@ def parse_match_form(post, user) -> tuple[MatchForm | None, list[str]]:
             elif meta.status != MetagameDeck.Status.READY:
                 errors.append(f"Seat {row + 1}: {meta.archetype} could not be imported ({meta.error}).")
             else:
-                seats.append(SeatChoice(deck=None, benchmark="", agent=agent, model=model, metagame_deck=meta))
-            continue
-        if deck_id.startswith(BENCHMARK_PREFIX):
-            key = deck_id.removeprefix(BENCHMARK_PREFIX)
-            if key not in benchmarks.BENCHMARKS:
-                errors.append(f"Seat {row + 1}: unknown benchmark deck {key!r}.")
-                continue
-            if benchmarks.family(key) != rules.family:
-                errors.append(f"Seat {row + 1}: {benchmarks.label(key)} is not a {rules.label} benchmark.")
-                continue
-            seats.append(SeatChoice(deck=None, benchmark=key, agent=agent, model=model))
+                seats.append(SeatChoice(deck=None, agent=agent, model=model, metagame_deck=meta))
             continue
         deck = decks.get(deck_id)
         if deck is None:
@@ -108,7 +92,7 @@ def parse_match_form(post, user) -> tuple[MatchForm | None, list[str]]:
             continue
         if deck.format != fmt:
             errors.append(f"Seat {row + 1}: {deck.name} is not a {rules.label} deck.")
-        seats.append(SeatChoice(deck=deck, benchmark="", agent=agent, model=model))
+        seats.append(SeatChoice(deck=deck, agent=agent, model=model))
 
     if not rules.min_seats <= len(seats) <= rules.max_seats:
         if rules.min_seats == rules.max_seats:

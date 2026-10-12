@@ -33,8 +33,8 @@ from .engine.coverage import CoverageEntry, ReasonKind, Status, coverage_report
 
 logger = logging.getLogger(__name__)
 
-# Answers below this confidence make the card UNSUPPORTED. Tune it on the
-# benchmark decks; changing it does not change the DSL version.
+# Answers below this confidence make the card UNSUPPORTED; changing it does
+# not change the DSL version.
 JUDGE_MIN_CONFIDENCE = 0.8
 
 STATE_TEMPLATE = "{name}\n{type_line}\n\n{residual}"

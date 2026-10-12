@@ -79,9 +79,6 @@ class Seat(models.Model):
     metagame_deck = models.ForeignKey(
         "decks.MetagameDeck", null=True, blank=True, on_delete=models.SET_NULL, related_name="seats"
     )
-    # The bundled benchmark deck this seat plays (playtest/benchmarks/), or
-    # empty for a user's deck.
-    benchmark = models.CharField(max_length=32, blank=True, default="")
     agent = models.CharField(max_length=16, choices=Agent.choices, default=Agent.HEURISTIC)
     # OpenRouter model id for an LLM or Jev seat; empty means the default model.
     model = models.CharField(max_length=128, blank=True, default="")

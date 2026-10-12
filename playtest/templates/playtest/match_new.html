@@ -27,7 +27,7 @@
                     <label class="field-label mb-2">Format</label>
                     <select name="format" class="field" style="font-size:16px;font-weight:500">
                         {% for value, fmt in formats.items %}
-                        <option value="{{ value }}" data-max-seats="{{ fmt.max_seats }}" data-family="{{ fmt.family }}" {% if value == form_format %}selected{% endif %}>{{ fmt.label }}</option>
+                        <option value="{{ value }}" data-max-seats="{{ fmt.max_seats }}" {% if value == form_format %}selected{% endif %}>{{ fmt.label }}</option>
                         {% endfor %}
                     </select>
                     <div class="text-[12px] text-txt3 mt-2 font-light">
@@ -63,11 +63,6 @@
                                     {% endfor %}
                                 </optgroup>
                                 {% endif %}
-                                <optgroup label="Benchmark decks">
-                                    {% for value, label, family in benchmarks %}
-                                    <option value="{{ value }}" data-family="{{ family }}" {% if row.deck == value %}selected{% endif %}>{{ label }}</option>
-                                    {% endfor %}
-                                </optgroup>
                             </select>
                             <select name="seat-{{ row.index }}-agent" class="field">
                                 {% for value, label in agent_choices %}
@@ -119,7 +114,6 @@
                         <li>Constructed formats: 20 life, two players, no commander; the sideboard stays out of the game.</li>
                         <li>Cards do what their compiled rules say; a card the compiler cannot read plays as a blank.</li>
                         <li>Mana is paid automatically, and opening hands use a fixed mulligan rule.</li>
-                        <li>Benchmark decks are opponents built to be fully simulated.</li>
                         <li>Metagame decks are the top decks of each format (<span class="font-mono2">manage.py sync_metagame</span>); ⚠ marks a deck under 70% coverage.</li>
                     </ul>
                 </div>
@@ -132,15 +126,14 @@
     </form>
 </div>
 <script>
-  // Offer only the decks, benchmarks and seats of the chosen format; the
+  // Offer only the decks and seats of the chosen format; the
   // server still checks all of it.
   (() => {
     const select = document.querySelector('select[name="format"]');
     const apply = () => {
       const chosen = select.selectedOptions[0];
-      const fmt = chosen.value, family = chosen.dataset.family, seats = Number(chosen.dataset.maxSeats);
+      const fmt = chosen.value, seats = Number(chosen.dataset.maxSeats);
       document.querySelectorAll("option[data-format]").forEach((o) => { o.hidden = o.dataset.format !== fmt; });
-      document.querySelectorAll("option[data-family]:not([data-max-seats])").forEach((o) => { o.hidden = o.dataset.family !== family; });
       document.querySelectorAll("[data-seat-row]").forEach((row) => {
         row.hidden = Number(row.dataset.seatRow) >= seats;
         // A hidden seat or a hidden deck must not stay selected and be posted unseen.

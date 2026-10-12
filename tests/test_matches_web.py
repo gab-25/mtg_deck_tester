@@ -170,58 +170,12 @@ def test_deleting_a_match(client, user):
     assert not Match.objects.exists()
 
 
-# -- benchmarks, coverage, confidence and the summary ---------------------------------
-
-
-def test_every_benchmark_deck_compiles_to_full_coverage():
-    from decks.formats import COMMANDER_FAMILY
-    from playtest import benchmarks
-    from playtest.engine.coverage import coverage_report
-
-    for key in benchmarks.BENCHMARKS:
-        entries = benchmarks.entries(key)
-        report = coverage_report([e.coverage() for e in entries])
-        commanders = sum(1 for e in entries if e.is_commander)
-        if benchmarks.family(key) == COMMANDER_FAMILY:
-            assert report["total"] == 100 and commanders == 1, key
-        else:
-            assert report["total"] == 60 and commanders == 0, key
-        assert report["percent"] == 100 and not report["unsupported_cards"], key
-
-
-def test_benchmarks_are_offered_by_family():
-    from playtest import benchmarks
-
-    assert {k for k, _ in benchmarks.choices("constructed")} == {"aggro60", "midrange60", "control60"}
-    assert {k for k, _ in benchmarks.choices("commander")} == {"aggro", "midrange", "control"}
+# -- coverage, confidence and the summary ---------------------------------------------
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("fmt", ["duel", "commander"])
-def test_a_benchmark_deck_can_sit_at_any_table_with_no_scryfall_call(client, user, fmt):
-    deck = make_deck(user, fmt=fmt)
-    data = {
-        "format": fmt,
-        "max_rounds": "6",
-        "seed": "3",
-        "seat-0-deck": str(deck.id),
-        "seat-0-agent": "heuristic",
-        "seat-1-deck": "benchmark:control",
-        "seat-1-agent": "heuristic",
-    }
-    assert client.post("/matches/create", data).status_code == 302
-    match = Match.objects.get(owner=user)
-    assert match.status == Match.Status.FINISHED, match.error
-    seat = match.seats.get(position=1)
-    assert (seat.benchmark, seat.deck, seat.deck_name) == ("control", None, "Benchmark: Control")
-    assert seat.coverage["percent"] == 100
-
-
-@pytest.mark.django_db
-def test_the_form_offers_the_benchmarks_and_the_new_agents(client):
+def test_the_form_offers_the_new_agents(client):
     content = client.get("/matches/new").content.decode()
-    for value in ("benchmark:aggro", "benchmark:midrange", "benchmark:control"):
-        assert f'value="{value}"' in content
     for agent in ("heuristic", "jev", "llm", "random"):
         assert f'value="{agent}"' in content
 
@@ -322,36 +276,22 @@ def test_a_constructed_match_between_two_decks(client, user):
 
 
 @pytest.mark.django_db
-def test_a_constructed_match_against_a_60_card_benchmark(client, user):
-    from .factories import make_constructed_deck
-
-    deck = make_constructed_deck(user)
-    data = {"format": "modern", "max_rounds": "6", "seed": "3", "seat-0-deck": str(deck.id), "seat-0-agent": "heuristic",
-            "seat-1-deck": "benchmark:aggro60", "seat-1-agent": "heuristic"}
-    assert client.post("/matches/create", data).status_code == 302
-    assert Match.objects.get(owner=user).status == Match.Status.FINISHED
-
-
-@pytest.mark.django_db
-def test_constructed_tables_seat_two_and_take_their_own_benchmarks(client, user):
+def test_constructed_tables_seat_two(client, user):
     from .factories import make_constructed_deck
 
     decks = [make_constructed_deck(user, name=f"Goblins {i}") for i in range(3)]
     response = client.post("/matches/create", _form("modern", decks, agent="heuristic"))
     assert response.status_code == 422 and b"exactly 2 players; 3 chosen" in response.content
-    data = {"format": "modern", "seat-0-deck": str(decks[0].id), "seat-1-deck": "benchmark:aggro"}
-    response = client.post("/matches/create", data)
-    assert response.status_code == 422 and b"not a Modern benchmark" in response.content
 
 
 @pytest.mark.django_db
-def test_the_new_match_form_tags_decks_and_benchmarks_by_format(client, user):
+def test_the_new_match_form_tags_decks_by_format(client, user):
     from .factories import make_constructed_deck
 
     make_constructed_deck(user, name="Goblins")
     page = client.get("/matches/new").content.decode()
     assert 'data-format="modern"' in page
-    assert 'value="benchmark:aggro60" data-family="constructed"' in page
+    assert "benchmark" not in page
 
 
 @pytest.mark.django_db

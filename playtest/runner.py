@@ -16,7 +16,7 @@ from decks.cache import DbCardCache
 from decks.formats import FORMATS
 from mtg_deck_tester.logging_context import job_log_context
 
-from . import benchmarks, judge
+from . import judge
 from .agents import typesafe
 from .agents.heuristic import HeuristicAgent
 from .agents.jev_agent import JevAgent
@@ -92,9 +92,7 @@ def build_agent(seat: Seat, seed: int):
 
 
 def compile_seat(seat: Seat, cache) -> list[judge.DeckEntry]:
-    """The compiled cards of a seat's deck: a benchmark, a metagame deck, or the user's deck."""
-    if seat.benchmark:
-        return benchmarks.entries(seat.benchmark)
+    """The compiled cards of a seat's deck: a metagame deck, or the user's deck."""
     if seat.metagame_deck_id is not None:
         if seat.metagame_deck is None:
             raise ValueError(f"The metagame deck of seat {seat.position + 1} was replaced by a newer sync.")

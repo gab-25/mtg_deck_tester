@@ -10,9 +10,8 @@ from decks.models import Deck, MetagameDeck
 from mtg_deck_tester.access import get_owned_or_404
 from mtg_deck_tester.jobs import start_job
 
-from . import benchmarks
 from .agents import openrouter, typesafe
-from .forms import BENCHMARK_PREFIX, METAGAME_PREFIX, SEAT_ROWS, parse_match_form
+from .forms import METAGAME_PREFIX, SEAT_ROWS, parse_match_form
 from .models import Match, Seat
 from .runner import run_match
 
@@ -58,9 +57,6 @@ def _form_context(user, post=None, **extra) -> dict:
             (f"{METAGAME_PREFIX}{meta.id}", meta)
             for meta in MetagameDeck.objects.filter(status=MetagameDeck.Status.READY).order_by("format", "rank")
         ],
-        "benchmarks": [
-            (BENCHMARK_PREFIX + key, label, benchmarks.family(key)) for key, label in benchmarks.choices()
-        ],
         "default_model": openrouter.default_model(),
         "jev_model": typesafe.default_model(),
         "llm_available": openrouter.api_key() is not None,
@@ -98,7 +94,6 @@ def create_match(request):
                 match=match,
                 position=position,
                 deck=choice.deck,
-                benchmark=choice.benchmark,
                 metagame_deck=choice.metagame_deck,
                 deck_name=choice.name,
                 agent=choice.agent,

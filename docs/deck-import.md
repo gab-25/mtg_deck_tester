@@ -129,7 +129,7 @@ interface:
   are upserts, and a concurrent insert of the same key is resolved by overwriting.
   This is what the import job uses.
 - `FileCardCache(dir)` — one JSON file per key under `<dir>/cards/`, for using the
-  importer without a database (tests, `build_benchmarks --cache-dir`).
+  importer without a database (tests).
 
 Both also keep the compiled card rules (`get_rule` / `set_rule`, keyed by oracle id
 and DSL version — `card_rules` in the database, `<dir>/rules/` on disk); see
@@ -172,7 +172,7 @@ list.
 2. Generate migrations: `Deck.format` and `Match.format` take their `choices` from
    the registry, so both `decks` and `playtest` get one.
 3. Nothing else is needed for a format of an existing family: the import form, the
-   legality check, the match form (seat counts, benchmark decks of the family) and
+   legality check, the match form (seat counts) and
    the runner (`GameRules`) all read the registry.
 4. A new family needs its own `rules/<family>.py` and a branch in
    `rules/legality.py`.

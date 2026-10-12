@@ -3,7 +3,7 @@
 A **Django** web app where **AI agents playtest competitive Magic: The Gathering decks**:
 Standard, Pioneer, Modern, Legacy, Vintage, Pauper, Commander (cEDH included) and Duel
 Commander. Import your decks from a plain-text list (cards resolved through the
-**Scryfall** API), seat them at a table — or pit them against bundled benchmark decks — and
+**Scryfall** API), seat them at a table — or pit them against the top decks of the format — and
 let the agents play the game out under real rules: the stack and priority, colored mana,
 blockers, and each card's own effects. Pages are **HTMX** over a precompiled stylesheet,
 data lives in **Postgres**.
@@ -55,9 +55,6 @@ picks one of them.
   coverage (⚠ under 70%).
 - **Partner commanders**: Partner, Partner with, Friends forever and Backgrounds;
   each commander pays its own tax and deals its own commander damage.
-- **Benchmark decks**: bundled opponents (aggro, midrange, control) built to compile
-  at 100% coverage: three 100-card decks for the Commander formats and three 60-card
-  decks for the constructed ones.
 - **Live game log and summary**: a match runs in the background; its page shows the
   table and the log as they happen (HTMX polling), each Jev decision with its
   confidence, and at the end a deterministic summary per seat (damage by source,
@@ -131,8 +128,7 @@ equipment, alternative costs, and choosing how to pay mana.
    is compiled once; a card the judge could not be asked about is retried next time.
 
 `manage.py card_coverage --deck <id>` (or `card_coverage <decklist file>`) prints a
-deck's coverage report, and `manage.py build_benchmarks` regenerates the benchmark
-decks' `.rules.json` from their decklists in `playtest/benchmarks/`.
+deck's coverage report.
 
 ## Documentation
 
@@ -182,7 +178,6 @@ playtest/               # App: matches between agents
 │   ├── view.py         #     What a seat may see (no hidden information)
 │   └── game.py         #     Setup, turns, priority, triggers, asking agents
 ├── agents/             #   Heuristic, Jev, LLM and random agents; Jev and OpenRouter clients
-├── benchmarks/         #   Bundled benchmark decks and their compiled rules
 ├── judge.py            #   Compiles cards with Jev, through the card_rules cache
 ├── summary.py          #   The deterministic match summary
 ├── forms.py            #   The new-match form

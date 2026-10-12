@@ -99,8 +99,6 @@ compiling during a page view.
 
 - `manage.py card_coverage --deck <id>` or `card_coverage <decklist file>` prints a
   deck's report and every unsupported card with its reason.
-- `manage.py build_benchmarks [keys] [--cache-dir DIR]` regenerates the bundled
-  benchmark decks (`playtest/benchmarks/`), refusing any that is not at 100%.
 
 ## Extending the DSL
 

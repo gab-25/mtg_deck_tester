@@ -6,7 +6,7 @@ MTG Deck Tester is one Django project (`mtg_deck_tester`) with three apps:
 |---|---|
 | `mtg_deck_tester/` | Settings, root URLs, the layout templates and the home page, plus the plumbing every app shares: background jobs (`jobs.py`), the ownership check (`access.py`), per-job log stamping (`logging_context.py`). |
 | `decks/` | Decks and the Scryfall card cache: decklist parsing, card fetching, legality, the format registry. See [Deck import](deck-import.md). |
-| `playtest/` | Matches: the rules kernel, the card compiler (judge) and its cache, the agents that play, bundled benchmark decks, the match summary, and the runner that connects them to the database. See [Game engine](engine.md), [Card compilation](card-compilation.md) and [Agents](agents.md). |
+| `playtest/` | Matches: the rules kernel, the card compiler (judge) and its cache, the agents that play, the match summary, and the runner that connects them to the database. See [Game engine](engine.md), [Card compilation](card-compilation.md) and [Agents](agents.md). |
 | `theme/` | Static assets only: the precompiled stylesheet, vendored fonts, favicons. No Python beyond its `AppConfig`. |
 
 ## Request → background job → stored result
@@ -33,8 +33,8 @@ POST form ──► cheap validation ──► row created (status = pending) �
    - `decks.importer.run_import` moves the deck `pending → processing → ready | failed`
      and stores `cards`, `commander`, `color_identity` (or `error`).
    - `playtest.runner.run_match` moves the match `pending → running → finished | failed`,
-     first compiles every seat's main deck (through the `card_rules` cache; a
-     benchmark seat reads its bundled file) and stores each seat's coverage, then
+     first compiles every seat's main deck (through the `card_rules` cache) and
+     stores each seat's coverage, then
      writes one `MatchEvent` per engine event as it happens, keeps `Match.round`
      current, and at the end stores the winner, the end reason, each seat's final
      life / elimination round and the deterministic `Match.summary`.
@@ -67,7 +67,7 @@ jobs can be told apart on the console.
   the cache.
 - **Formats are data.** `decks/formats.py` holds the registry both apps read: deck
   legality uses `legality_key` and the family's construction rules, the match form
-  uses the seat counts and the family's benchmark decks, the runner builds
+  uses the seat counts, the runner builds
   `GameRules` from `starting_life`, `commander_damage_limit` and the label.
 
 ## Data model
@@ -80,7 +80,7 @@ jobs can be told apart on the console.
 | `metagame_decks` | `decks.MetagameDeck` | The top decks of each format, replaced by every `sync_metagame`; shared and read-only, with source, archetype, meta share, rank, cards and coverage. |
 | `card_rules` | `decks.CardRule` | Compiled card programs keyed by `oracle_id` + DSL version; opaque JSON to `decks`. |
 | `matches` | `playtest.Match` | UUID primary key, `seed`, `max_rounds`, status, winner (a `Seat`), end reason, `summary` (JSON). |
-| `seats` | `playtest.Seat` | Position, agent (`heuristic`/`jev`/`llm`/`random`), optional model id, the deck it plays — a user `deck`, a `benchmark` key or a `metagame_deck` — and `coverage` (JSON). `deck` is `SET_NULL` on delete; `deck_name` keeps the name. |
+| `seats` | `playtest.Seat` | Position, agent (`heuristic`/`jev`/`llm`/`random`), optional model id, the deck it plays — a user `deck` or a `metagame_deck` — and `coverage` (JSON). `deck` is `SET_NULL` on delete; `deck_name` keeps the name. |
 | `match_events` | `playtest.MatchEvent` | The log: `seq`, `round`, `turn`, `step`, `seat_position`, `kind`, `text`, `payload` (Jev confidence and probabilities live here), `reasoning`. |
 
 **Ownership.** `Deck` and `Match` have an `owner`. Every view loads them through

@@ -129,8 +129,7 @@ Things that produce a migration without looking like a schema change:
   value.
 
 Changing the DSL's vocabulary or the meaning of a program needs a `DSL_VERSION`
-bump instead (the compiled-rules cache key), and a rebuild of the benchmark decks
-(`manage.py build_benchmarks`).
+bump instead (the compiled-rules cache key).
 
 Changing the shape of the stored card data (`Deck.cards[*]["data"]`) needs a data
 migration for decks already imported, like `decks/migrations/0002_card_image_urls.py`,
