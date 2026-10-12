@@ -38,7 +38,8 @@ docker compose exec web python manage.py createsuperuser
 - `web`: the `Dockerfile` image — `uv sync --frozen --no-dev`, `collectstatic` at
   build time, `DEBUG=0`, gunicorn on port 8000 as an unprivileged user.
   `docker-entrypoint.sh` runs `migrate` before starting the server.
-- `OPENROUTER_API_KEY` / `OPENROUTER_MODEL` are passed through from your shell.
+- `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `JEV_MODEL` and `JEV_MIN_CONFIDENCE`
+  are passed through from your shell.
 
 CI (`.github/workflows/ci.yml`) runs on pushes to `main` only: `uv sync --frozen`,
 `uv run pytest`, then builds and pushes a multi-arch image to
@@ -59,20 +60,30 @@ The suite is **hermetic**:
 - `RUN_JOBS_IN_BACKGROUND = False`: imports and matches run inline, so a test can
   POST a form and assert on the finished row.
 - **No network.** Tests never reach Scryfall or OpenRouter. They monkeypatch
-  `decks.importer.fetch_card_data`, `requests.get` / `requests.post` on the module
-  under test, or `openrouter.chat`, or pass a fake `chat` to `LLMAgent`. A new test
-  that would hit the network is a bug.
-- Shared fixtures are plain functions in `tests/factories.py`: engine decks
-  (`engine_deck`, `bear`, `FOREST`), processed Scryfall cards (`scryfall_card`,
-  `stored_cards`), `make_deck(owner, …)` and `legal_decklist()`.
+  `decks.importer.fetch_card_data`, `playtest.judge.fetch_card_raw`,
+  `requests.get` / `requests.post` on the module under test, or `openrouter.chat`,
+  or pass a fake `chat` / `ask`. `tests/conftest.py` makes any request that reaches
+  the transport fail the test.
+- Shared fixtures are plain functions:
+  - `tests/factories.py`: engine decks (`engine_deck`, `constructed_deck`, `bear`,
+    `FOREST`), processed Scryfall cards (`scryfall_card`, `stored_cards`,
+    `constructed_cards`), `make_deck(owner, …)` / `make_constructed_deck(…)` (which
+    also cache the raw cards, as a real import does), `legal_decklist()` and
+    `legal_constructed_decklist()`;
+  - `tests/cards.py`: raw Scryfall cards (`raw_card`, `basic_land`), a stand-in Jev
+    that answers like a perfect judge (`FakeJev`, `stub_jev_http`) and
+    `compiled_spec(...)` to build kernel cards from oracle text;
+  - `tests/decks.py`: a synthetic deck whose cards really do things.
 - `Deck.status` defaults to `ready`, so decks created directly in tests need no
   import.
 
 | File | Covers |
 |---|---|
-| `test_decklist.py`, `test_cards.py`, `test_commander.py` | Parsing, card classification, legality |
+| `test_decklist.py`, `test_cards.py`, `test_commander.py`, `test_constructed.py`, `test_formats.py` | Parsing, card classification, legality, the format registry |
 | `test_scryfall.py`, `test_cache.py`, `test_load_oracle_cards.py` | Fetching, cache backends, bulk load |
-| `test_engine.py`, `test_agents.py`, `test_runner.py` | Engine, agents and OpenRouter client, runner |
+| `test_cardrules.py`, `test_dsl.py`, `test_judge.py`, `test_typesafe.py` | Pre-pass, clause splitter, DSL and validator, judge, coverage, Jev client |
+| `test_engine.py`, `test_effects.py` | Kernel rules and card effects, whole games with invariants checked |
+| `test_agents.py`, `test_jev_agent.py`, `test_runner.py` | Agents, budgets, the match summary, the runner |
 | `test_decks_web.py`, `test_matches_web.py` | Views end to end through the Django test client |
 | `test_migrations.py` | The `0002_card_image_urls` data migration |
 | `test_assets.py` | Template classes and icons vs. the vendored assets (below) |
@@ -116,6 +127,10 @@ Things that produce a migration without looking like a schema change:
   see [Deck import](deck-import.md#adding-a-format));
 - adding a `Seat.Agent`, a `Deck.Status`, a `Match.Status` or `Match.EndReason`
   value.
+
+Changing the DSL's vocabulary or the meaning of a program needs a `DSL_VERSION`
+bump instead (the compiled-rules cache key), and a rebuild of the benchmark decks
+(`manage.py build_benchmarks`).
 
 Changing the shape of the stored card data (`Deck.cards[*]["data"]`) needs a data
 migration for decks already imported, like `decks/migrations/0002_card_image_urls.py`,

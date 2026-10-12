@@ -3,6 +3,13 @@
 An agent is whatever plays a seat. The engine never trusts it: it offers a list of
 legal actions, the agent picks one, and anything not on the list fails the game.
 
+| `Seat.Agent` | Class | Network | Notes |
+|---|---|---|---|
+| `heuristic` (default) | `HeuristicAgent` | none | Fixed rules; the Jev agent's fallback; drives every test. |
+| `jev` | `JevAgent` | OpenRouter | One Jev `choice` per decision; logs its confidence. |
+| `llm` | `LLMAgent` | OpenRouter | One chat completion per decision; logs its reason. |
+| `random` | `RandomAgent` | none | The free baseline. |
+
 ## The interface
 
 `playtest/agents/base.py`:
@@ -11,98 +18,114 @@ legal actions, the agent picks one, and anything not on the list fails the game.
 @dataclass(frozen=True)
 class Decision:
     action: Action
-    reasoning: str = ""        # why, in the agent's own words
-    fallback_reason: str = ""  # set when a fallback chose instead
+    reasoning: str = ""         # why, in the agent's own words (LLM)
+    fallback_reason: str = ""   # set when another agent chose instead
+    fallback_agent: str = ""    # "heuristic", "random"
+    fallback_kind: str = ""     # "error" or "low_confidence"
+    confidence: float | None = None              # Jev
+    probabilities: tuple[tuple[str, float], ...] = ()  # top actions by label
+    model: str = ""             # the versioned model id that answered
 
 class Agent(Protocol):
     def choose(self, view: dict, options: list[Action]) -> Decision: ...
 ```
 
-- `view` is `playtest.engine.view.player_view(state, seat)`: plain JSON-ready data,
-  no hidden information (see [Game engine](engine.md#what-a-seat-can-see)).
-- `options` is `legal_actions(...)`, never empty; `pass` is always last. The engine
-  does not call the agent when `pass` is the only option.
-- The returned `action` must be one of `options` (compared by `kind`, `card_uid`,
-  `target_seat`; the `label` is ignored).
+- `view` is `player_view(state, seat)` (see [Game engine](engine.md#what-a-seat-can-see)).
+- `options` is `legal_actions(...)`: never empty, at most 255, the do-nothing action
+  first. The engine does not call the agent when there is a single option.
+- The returned `action` must be one of `options` (the `label` is not compared).
 
-It is a `Protocol`: an agent is any object with a matching `choose` method.
+The engine logs a `decision` event (or `pass`) for every decision with a reason or a
+confidence, and an `agent_fallback` event whenever `fallback_reason` is set; both
+carry `Decision.payload()` — confidence, top probabilities, model, fallback kind —
+which the match page and the summary read.
 
-## Random agent
+## Heuristic agent
 
-`playtest/agents/random_agent.py` — `RandomAgent(seed)` picks uniformly with its own
-`random.Random(seed)`. It is the free baseline, and the fallback of the LLM agent.
+`playtest/agents/heuristic.py` — deterministic ordered rules, first match wins,
+ties broken by name and id: land → commander → removal on the best target →
+highest-MV creature → other useful spell → counter an opponent's spell → safe or
+lethal attacks at the opponent it pays most to attack (even trades when it
+outnumbers the blockers) → blocks to survive and favourable trades → pass.
 
-The runner seeds each seat with `match.seed + seat.position`, so two random seats do
-not mirror each other and the same match seed replays the same game, event for
-event.
+Its evaluations are **pure public helpers over the view** — `combat_outcome`,
+`attack_facts`, `lethal_on_board`, `block_facts`, `removal_value`,
+`incoming_damage`, `action_value` — so the Jev agent reuses them to annotate each
+option.
+
+## Jev agent
+
+`playtest/agents/jev_agent.py` — `JevAgent(model=None, *, seed=None, ask=None, min_confidence=None)`.
+
+One Jev request per decision:
+
+- **state**: the view filtered to what a decision needs (life, mana, hand with
+  rendered effects, battlefields, stack); no ids, no history, no oracle text;
+- **one `choice` named `action`**, whose instructions name the format, the active
+  player and the step; its options are exactly the legal actions, keyed `a0…aN`,
+  described by their label **plus facts computed in code** ("lethal if unblocked",
+  "dies to: X", "kills Y", "you take 5 combat damage (life 7 -> 2)");
+- the options are **shuffled with the agent's seeded RNG** before each request and
+  mapped back by key, because Jev leans toward the first option.
+
+`gate()` is the one place an uncertain decision is handed over: below
+`JEV_MIN_CONFIDENCE` (default 0.2) the heuristic agent decides, with a
+`low_confidence` fallback that keeps Jev's distribution. Jev's confidence measures
+how peaked its distribution is, not the chosen option's probability; on 222
+measured decisions its median was ~0.4. A missing key, a transport error or a
+malformed answer hands the decision to the heuristic agent too (`error`), never to
+the random agent.
+
+The agent is `metered`: the game hands it to its fallback past `max_agent_calls`
+(400) for the seat or `max_wall_clock_seconds` (300) for the match.
+
+## Jev client
+
+`playtest/agents/typesafe.py` — `system_one(state, questions, *, model=None, key=None, sleep=time.sleep)`
+against OpenRouter's `POST /api/v1/systemone`, which serves Jev in TypeSafe's native
+`state` / `questions` format. No SDK.
+
+| | |
+|---|---|
+| API key | `OPENROUTER_API_KEY` (shared with the LLM client) |
+| Model | `JEV_MODEL`, else `~typesafe/jev-latest`; the response's versioned id is returned |
+| Retries | up to 4 attempts on `429` / `529`, honouring `retry-after`, exponential back-off |
+| Timeout | `REQUEST_TIMEOUT = 30` seconds per request |
+| Limits | `choice()` refuses more than 255 options |
+
+`read_choice(answer, options)` checks an answer names an offered option. Every
+failure is a `TypeSafeError`. The card judge uses the same client
+([Card compilation](card-compilation.md)).
 
 ## LLM agent
 
 `playtest/agents/llm_agent.py` — `LLMAgent(model=None, *, seed=None, chat=None)`.
-
-Each decision is **one chat completion** with two messages (`build_messages`):
-
-- **system**: a short brief ("play to win…"), the engine rules — the docstring of
-  `playtest/engine/rules.py`, imported verbatim as `RULES_TEXT` — and the required
-  reply format: `{"choice": <number>, "reason": "<one short sentence>"}`.
-- **user**: the view as indented JSON, then the options numbered from 1 by their
-  `label`.
-
-`parse_choice` takes the first `{...}` block of the reply (models often wrap JSON in
-prose or code fences), accepts `choice` as an int or a digit string, checks it is in
-range, and returns the 0-based index plus the reason. The reason becomes the
-`Decision.reasoning`, which the engine logs on the `decision` / `pass` event and the
-match page shows.
-
-There is no conversation memory: every decision is a fresh, stateless request.
-
-### Fallback
-
-The agent never blocks a game. If the chat call raises `openrouter.ChatError` (no
-key, network error, non-200, empty or malformed response) or `parse_choice` raises
-`ValueError` (no JSON, invalid choice), it:
-
-1. logs a warning (`LLM agent (<model>) fell back to random: <reason>`);
-2. asks its internal `RandomAgent(seed)` instead;
-3. returns that action with `fallback_reason` set.
-
-The engine then records an `agent_fallback` event with the reason, so a fallback is
-visible in the match log. Any other exception is not caught and fails the match.
+Each decision is one chat completion: a system message with a short brief, the
+engine rules (the docstring of `playtest/engine/rules.py`) and the reply format
+`{"choice": <number>, "reason": "<one short sentence>"}`; a user message with the
+format, the view as JSON and the numbered options. `parse_choice` reads the first
+`{...}` block. On a `ChatError` or an invalid reply it falls back to its internal
+`RandomAgent`. It is kept as it is; whether it moves onto the heuristic fallback or
+is removed is decided in #44.
 
 ## OpenRouter client
 
-`playtest/agents/openrouter.py` — one function, `chat(messages, model=None, key=None) -> str`,
-against OpenRouter's OpenAI-compatible `/chat/completions` endpoint. The model is a
-setting, not a dependency: any id from <https://openrouter.ai/models> works.
+`playtest/agents/openrouter.py` — `chat(messages, model=None, key=None) -> str`
+against `/chat/completions`. Default model `OPENROUTER_MODEL`, else
+`google/gemini-2.5-flash`; per-seat `Seat.model`. Failures raise `ChatError`.
 
-| | |
-|---|---|
-| API key | `OPENROUTER_API_KEY` (`api_key()` returns `None` when unset or empty) |
-| Default model | `OPENROUTER_MODEL`, else `DEFAULT_MODEL = "google/gemini-2.5-flash"` (`default_model()`) |
-| Per-seat model | `Seat.model`; empty means the default |
-| Timeout | `REQUEST_TIMEOUT = 60` seconds per request |
-| Attribution | `HTTP-Referer` / `X-Title` headers |
-
-Every failure is raised as `ChatError` with a readable message (the HTTP body is
-truncated to 300 characters).
-
-Without a key, the new-match form refuses LLM seats ("LLM seats need an OpenRouter
-API key") and the home page shows "LLM players: Off".
-
-**Cost.** One request per decision, up to `max_decisions_per_turn` (30) per turn,
-for every turn of every LLM seat until `max_rounds`. Keep round limits low while
-experimenting.
+Without `OPENROUTER_API_KEY` the new-match form refuses Jev and LLM seats, the
+home page shows the model players as off, and the card judge leaves cards that need
+it unsupported (retried once a key is set).
 
 ## Adding an agent
 
 1. Write a class with `choose(view, options) -> Decision` under `playtest/agents/`.
-   Return one of `options`; put any explanation in `reasoning`; if it has to fall
-   back, say why in `fallback_reason`.
-2. Add a value to `playtest.models.Seat.Agent` and generate a migration (the field's
-   `choices` are part of the migration state).
+   Return one of `options`; explain fallbacks in `fallback_reason`. Set
+   `metered = True` and a `fallback` attribute if it calls a model.
+2. Add a value to `playtest.models.Seat.Agent` (a migration) and an icon in
+   `Seat.agent_icon`.
 3. Build it in `playtest.runner.build_agent` from the `Seat` and the match seed.
-4. If it needs configuration on the form (like the LLM's model), extend
-   `playtest/forms.py` and `playtest/templates/playtest/match_new.html`.
-5. Test it without network: `tests/test_agents.py` passes a fake `chat` callable to
-   `LLMAgent`, the OpenRouter tests monkeypatch `requests.post`, and
-   `tests/test_matches_web.py` monkeypatches `openrouter.chat` for a full LLM match.
+4. Extend `playtest/forms.py` and `match_new.html` if it needs configuration.
+5. Test it without network: pass a fake `ask` / `chat`, or monkeypatch
+   `requests.post` (`tests/test_jev_agent.py`, `tests/test_agents.py`).

@@ -1,134 +1,162 @@
 # Game engine
 
-`playtest/engine/` plays a deliberately simplified game of Commander. It is pure
-Python — no Django, no I/O — and its only randomness is the seeded
-`random.Random` owned by the `Game`, so a game is reproducible whenever its agents
-are.
+`playtest/engine/` is the rules kernel. It is pure Python — no Django, no I/O — and
+every bit of randomness comes from `random.Random` instances derived from the match
+seed, one per purpose (`"<seed>:shuffle"`, `"<seed>:order"`), so a game replays
+event for event whenever its agents are deterministic. Nothing iterates a `set` on a
+path that produces actions, log lines or payments: the log is the same across
+`PYTHONHASHSEED` values.
+
+No model is the rules engine. The kernel decides which actions are legal; an agent
+only picks one of them.
 
 ## Modules
 
 | Module | Contents |
 |---|---|
-| `cards.py` | `Kind` (`land`, `creature`, `permanent`, `spell`), `CardSpec` (the printed facts: name, kind, mana value, power, toughness), `DeckSpec` (commander + library), `CardInstance` (one physical card with `uid`, `tapped`, `summoning_sick`, `is_commander`), `Uids`. |
-| `state.py` | `GameRules` (per-format parameters: starting life, commander-damage limit, opening hand, lands per turn, commander tax), `PlayerState` (zones, life, commander casts, land drops, commander damage taken, elimination round), `GameState` (players, round, turn, active seat, phase). |
-| `actions.py` | `Phase` (`main`, `combat`), `ActionKind`, the frozen `Action` dataclass, `legal_actions(state, seat, phase)` and `commander_cost`. |
-| `rules.py` | What actions do: `apply`, `begin_turn` (untap), `draw`, `eliminate`, combat. Raises `IllegalAction`. **Its module docstring is the rules summary given to the LLM agent** (see below). |
-| `events.py` | `EventKind` and the `Event` dataclass (`kind`, `seat`, `text`, `payload`, `reasoning`). |
-| `view.py` | `player_view(state, seat)`: the JSON-ready game as one seat may see it. |
-| `game.py` | `Game`: setup, the turn loop, asking agents, recording events, the `GameResult`. |
+| `manacost.py` | `ManaCost` (generic, pips, X) and `parse_mana_cost` / `parse_mana_symbols`. Phyrexian and `{2/W}` pips are paid with their color (never cheaper than on paper). |
+| `cardrules.py` | The deterministic pre-pass: `characteristics(raw_json) -> CardFacts` (types, cost, P/T, colors, keywords, enters tapped, mana production, the *residual* rules text and its class: empty / blocked / needs the judge). See [Card compilation](card-compilation.md). |
+| `clauses.py` | `split_abilities`: residual text → abilities (trigger, cost, modes) → atomic clauses with their candidate numbers and selector phrases. |
+| `dsl.py` | The closed effect language: 18 ops, selectors, triggers, each with a one-line description; per-op grammars (`parse_clause`); `validate_program`; the `CardProgram` dataclasses; `describe_ability` for views and logs. |
+| `coverage.py` | `coverage_report(entries)`: how much of a deck can be simulated, weighted by quantity. |
+| `cards.py` | `CardSpec` (printed facts + compiled `program`, or `None` when unsupported), `card(...)` to build one by hand, `DeckSpec` (library and an optional commander). |
+| `state.py` | `Step`, `GameRules`, `Card` (stable id), `Permanent` (fresh id on every zone change, CR 400.7), `StackItem`, `Player`, `GameState`, `assert_invariants`. |
+| `mana.py` | Payment feasibility by exact max-flow and automatic payment (`sources`, `can_pay`, `choose_payment`, `pay`). |
+| `effects.py` | Derived characteristics (static abilities), selectors and targets, the 18 operations (`apply_op`), resolution with target re-checks. |
+| `zones.py` | Entering and leaving the battlefield, the command zone, a player leaving the game. |
+| `actions.py` | `Action`, `ActionKind`, `legal_actions(state, seat)`. |
+| `rules.py` | `apply(state, seat, action)`, stack resolution, state-based actions, combat damage, untap/cleanup, the London mulligan. **Its module docstring is the rules summary given to the LLM agent.** |
+| `limits.py` | `Limits`: every cap of the kernel. |
+| `events.py` | `EventKind` and `Event` (`kind`, `seat`, `text`, `payload`, `reasoning`); payloads are always JSON-safe. |
+| `view.py` | `player_view(state, seat)`: the game as one seat may see it. |
+| `game.py` | `Game`: setup, turns and steps, priority, triggers, asking agents, budgets, the `GameResult`. |
 
-## The turn loop
+## A game
 
-`Game(decks, agents, rules, seed=..., max_rounds=20, max_decisions_per_turn=30, on_event=None)`:
+`Game(decks, agents, rules, *, seed, max_rounds=None, limits=None, on_event=None, clock=time.monotonic, check_invariants=False)`:
 
-1. **Setup** — each library is shuffled with the game's RNG, the commander goes to
-   the command zone, and the opening hand (7) is drawn. No mulligans.
-2. **`run()`** picks the first player at random, then plays rounds `1..max_rounds`.
-   A round is one turn for every player still alive, in seat order starting from the
-   first player.
-3. **A turn** (`_take_turn`):
-   - `begin_turn`: untap, summoning sickness ends, land drops reset.
-   - Draw — except the very first turn of a two-player game (CR 103.8a). Drawing
-     from an empty library eliminates the player.
-   - **Main phase**, then **combat phase**. In each, the engine computes
-     `legal_actions`; if the only option is `pass` it moves on without calling the
-     agent. Otherwise it asks the agent, applies the action, and asks again, until
-     the agent passes (main) or has attacked once (combat).
-   - After `max_decisions_per_turn` decisions in one turn the engine logs
-     `decision_limit` and ends the turn, so a looping agent cannot stall a game.
+1. **Setup** — each library is shuffled; a commander (Commander formats only) goes
+   to the command zone; the first player is drawn at random; every player draws a
+   deterministic London mulligan hand (keep 2–5 lands, at most two mulligans, the
+   first free with three or more players). No agent decides any of this.
+2. **Rounds** `1..max_rounds`, one turn per living player in turn order.
+3. **A turn** walks the `Step`s: untap, upkeep, draw (the first player of a
+   two-player game skips it), main 1, beginning of combat, declare attackers,
+   declare blockers, first-strike damage (only when a combatant has first or double
+   strike), combat damage, end of combat, main 2, end step, cleanup. Combat steps
+   are skipped when nobody can attack or nobody was declared.
 4. The game ends when at most one player is alive (`last_standing`) or after
-   `max_rounds` (`turn_limit`, a draw).
+   `max_rounds` (`turn_limit`, a draw). A player who loses leaves the game with
+   everything they own (CR 800.4a); if it was their turn, the turn ends.
 
-Every event goes through `_record`, which stamps it with `seq`, `round` and `turn`
-(a `RecordedEvent`) and calls `on_event`. The runner uses that callback to write
-`MatchEvent` rows while the game runs.
+### Priority
 
-### Asking an agent
+Inside each step with a priority window, the loop:
 
-`_decide` calls `agent.choose(player_view(state, seat), options)` and gets back a
-`Decision`. Then:
+- runs state-based actions to a fixpoint at the top of every iteration (0 life,
+  drew from an empty library, commander damage, toughness ≤ 0, lethal damage,
+  deathtouch, the legend rule, +1/+1 and -1/-1 counters cancelling);
+- puts waiting triggers on the stack in APNAP order, asking for their targets;
+- asks the seat with priority — **without an agent call when `Pass` is the only
+  legal action**;
+- resolves the top of the stack only after every living player passed in
+  succession, and is iterative, never recursive.
 
-- if `decision.fallback_reason` is set, an `agent_fallback` event is logged;
-- an action that is not one of `options` raises `IllegalAction` (the match fails);
-- a pass, or any decision with `reasoning`, is logged as `pass` / `decision` with
-  the reasoning attached — that is how an LLM's explanation reaches the match log.
+A player who acts keeps priority. Sorcery-speed actions need the active player's
+main phase with an empty stack.
+
+### Combat
+
+Attackers and blockers are declared one creature at a time (`DECLARE_ATTACKER` per
+creature and opponent, then `END_ATTACKERS`; each defending player in turn order
+declares `DECLARE_BLOCKER` / `UNDO_BLOCKER`, then `END_BLOCKERS`). Menace withholds
+`END_BLOCKERS` while an attacker has exactly one blocker. Damage is assigned in
+blocker order with trample excess to the player, deathtouch makes 1 lethal,
+lifelink gains its controller life, and commander combat damage is tracked per
+commander owner.
+
+### Mana
+
+`mana.sources` lists the untapped permanents that make mana for free (`{T}: Add`,
+read by the pre-pass from Scryfall's `produced_mana`) plus floating mana.
+`can_pay` is a max-flow from sources to colors to pips; `choose_payment` drops the
+most valuable sources first while the rest still pays, then swaps a spent source
+for an unspent one when that keeps more colors open. A source that makes more than
+needed floats the rest. **Payment is automatic, never an agent decision.**
+
+## The contract of `legal_actions`
+
+Tested as such:
+
+- the first action is the do-nothing one — `Pass`, `End attackers` or `End
+  blockers` (menace can withhold `End blockers`);
+- the order is deterministic (sorted by rank, name, ids, targets);
+- every listed action is legal and applying it never raises or breaks
+  `assert_invariants`;
+- it is pure: it never changes the state;
+- identical permanents and cards are offered once.
+
+Spells with targets enumerate the target combinations when there are at most
+`max_enumerated_targets` (8); otherwise the cast commits and `CHOOSE_TARGET`
+decisions follow. `rules.apply` re-checks that an action is one of
+`legal_actions` and raises `IllegalAction` otherwise: whatever an agent answers,
+the kernel never applies an illegal action.
+
+## Card effects
+
+A card's `program` (see [Card compilation](card-compilation.md)) is a list of
+abilities: spell effects, triggers (enters, dies, attacks, upkeep, end step),
+activated abilities with a cost, and static abilities. Targets are chosen on cast
+and checked again on resolution: a spell whose every target is gone fizzles; if only
+some are, the rest still happens. Static abilities (anthems, granted keywords) are a
+derived view — `effects.power`, `toughness`, `keywords` — never written onto the
+permanents.
+
+A card the compiler could not read has `program=None`: a permanent enters as a
+vanilla object with its printed body and keywords; an **instant or sorcery cannot be
+cast** at all, and the first time it could have been, an `unsupported_skipped`
+event says so.
+
+## Guards
+
+`Limits` caps rounds, decisions per turn (past it everyone passes until the turn
+ends, with a `decision_limit` event), stack depth, activations per permanent per
+turn, state-based-action iterations, declaration steps, options per decision (255,
+Jev's limit), agent calls per metered seat and the match wall clock. Every cap ends
+cleanly with an event: a match runs in a daemon thread, where a hang would leave it
+`running` forever.
+
+Metered agents (`metered = True`, the Jev agent) are handed to their `fallback` past
+`max_agent_calls` for that seat or `max_wall_clock_seconds` for the match, with a
+`warning` event.
 
 ## What a seat can see
 
-`player_view` returns plain data: the seat's own hand, battlefield, command zone,
-current commander cost, graveyard names, library count, land drops and untapped
-lands; and for each living opponent their life, hand and library **counts**,
-battlefield, command zone, and the commander damage this seat has dealt them.
-Hidden information (opponents' hands, every library's order) never leaves the
-engine.
+`player_view` returns plain data: format, round, step, active seat; the seat's own
+life, available mana and colors, hand (with each card's compiled effects rendered as
+short text, never the oracle text), battlefield, command zone and commander cost,
+graveyard names, library count; for each living opponent their life, hand and
+library counts, battlefield and commander damage; the stack; and, while a target is
+being chosen, what it is for. Permanents show their current power, toughness and
+keywords. Hidden information never leaves the engine.
 
-## Rules supported
+## From stored decks to `DeckSpec`
 
-Kept in sync with the README's *Rules* section and with the docstring of
-`playtest/engine/rules.py`:
-
-- Opening hand of seven, no mulligans; the commander starts in the command zone.
-- Untap, draw (first player of a two-player game skips the first draw), one land per
-  turn, then one attack.
-- Every land taps for one generic mana — colors are ignored.
-- A spell can be cast when untapped lands cover its mana value. Creatures and other
-  permanents enter the battlefield (creatures with summoning sickness); instants and
-  sorceries go to the graveyard with no effect.
-- The commander is cast from the command zone for its mana value plus the commander
-  tax (2 per previous cast). Once cast it stays on the battlefield: nothing returns
-  it to the command zone.
-- An attack sends every untapped, non-sick creature at one opponent. No blockers:
-  each attacker deals damage equal to its power. Commander combat damage is tracked
-  per attacking seat.
-- A player is eliminated at 0 life, at the format's commander-damage limit (21 in
-  Commander, untracked in Duel Commander), or when drawing from an empty library.
-
-**Not supported:** the stack and priority, instant-speed play, blocking, activated
-and triggered abilities, any card effect, colored mana, mulligans, toughness /
-creature death, partner or background commanders.
-
-### From stored cards to `CardSpec`
-
-`playtest/runner.py` builds the engine's cards from a deck's stored Scryfall data:
-
-- `Kind` from `decks.rules.cards.classify_card` (front face): Land → `land`,
-  Creature → `creature`, Artifact / Enchantment / Planeswalker / Battle →
-  `permanent`, everything else → `spell`.
-- `mana_value` is Scryfall's `cmc` truncated to an int.
-- `power` / `toughness` take the leading integer of the printed value
-  (`"3"` → 3, `"1+*"` → 1, `"*"` → 0).
-- The first card flagged `is_commander` becomes the commander; a deck without one
-  fails the match.
+`playtest/runner.py` compiles every seat's main deck through `playtest.judge` (or
+reads a bundled benchmark), stores each seat's coverage report, and builds the
+`DeckSpec`s with `CardSpec.from_facts`. `deck_spec(..., has_commander=False)` builds a
+constructed deck; a Commander deck without a commander fails the match.
 
 ## Adding a rule
 
-The engine is built so a rule can be added without touching agents, the runner or
-the UI. The usual path:
-
-1. **State** — add whatever the rule needs to `PlayerState` / `GameState` /
-   `CardInstance`, or a parameter to `GameRules` if it varies by format.
-2. **Actions** — if players get a new choice, add an `ActionKind` and offer it from
-   `legal_actions` with a clear `label` (agents read labels; the LLM sees them as its
-   numbered options). Keep `pass` last.
-3. **Effects** — implement it in `rules.py`: extend `apply`, raise `IllegalAction`
-   for anything an agent should not have been offered, and return `Event`s for what
-   happened (add an `EventKind` if it is a new kind of thing).
-4. **Turn structure** — only if the rule adds a step or phase, change
-   `Game._take_turn`.
-5. **Visibility** — if agents need to see the new state, add it to `player_view`,
-   keeping hidden information hidden.
-6. **Docs** — update the docstring of `rules.py` (it is part of the LLM's system
-   prompt), the README's *Rules* section and the list above.
-7. **Tests** — `tests/test_engine.py` drives games with the synthetic decks in
-   `tests/factories.py` (`engine_deck`, `bear`, `FOREST`) and scripted agents.
-
-The random agent needs no change: it picks among whatever `legal_actions` returns.
-The runner needs a change only when the rule needs a card fact `CardSpec` does not
-carry yet — then extend `CardSpec`, fill it in `runner.card_spec`, and make sure the
-fact is in the stored card data (`decks.scryfall.process_cached_card`). Decks
-imported before that change lack the new field: read it with a safe default, or
-backfill it with a data migration as `decks/migrations/0002_card_image_urls.py`
-does.
-
-A new format parameter goes in `decks.formats.Format`, then in `GameRules`, and is
-wired through `runner.game_rules`.
+1. **State** — add what the rule needs to `state.py`, or a parameter to `GameRules`
+   when it varies by format (then wire it in `runner.game_rules`).
+2. **Actions** — offer new choices from `legal_actions` with a clear `label` and keep
+   the contract above.
+3. **Effects** — implement them in `rules.py` / `effects.py`, returning `Event`s.
+4. **Visibility** — extend `player_view` when agents need to see it.
+5. **Docs** — update the docstring of `rules.py` (it is part of the LLM's system
+   prompt), the README's *Rules* section and this page.
+6. **Tests** — `tests/test_engine.py` and `tests/test_effects.py` drive games with
+   synthetic decks (`tests/factories.py`, `tests/decks.py`) and run with
+   `check_invariants=True`.

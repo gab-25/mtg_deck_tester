@@ -6,7 +6,7 @@ MTG Deck Tester is one Django project (`mtg_deck_tester`) with three apps:
 |---|---|
 | `mtg_deck_tester/` | Settings, root URLs, the layout templates and the home page, plus the plumbing every app shares: background jobs (`jobs.py`), the ownership check (`access.py`), per-job log stamping (`logging_context.py`). |
 | `decks/` | Decks and the Scryfall card cache: decklist parsing, card fetching, legality, the format registry. See [Deck import](deck-import.md). |
-| `playtest/` | Matches: the game engine, the agents that play it, and the runner that connects them to the database. See [Game engine](engine.md) and [Agents](agents.md). |
+| `playtest/` | Matches: the rules kernel, the card compiler (judge) and its cache, the agents that play, bundled benchmark decks, the match summary, and the runner that connects them to the database. See [Game engine](engine.md), [Card compilation](card-compilation.md) and [Agents](agents.md). |
 | `theme/` | Static assets only: the precompiled stylesheet, vendored fonts, favicons. No Python beyond its `AppConfig`. |
 
 ## Request → background job → stored result
@@ -33,9 +33,11 @@ POST form ──► cheap validation ──► row created (status = pending) �
    - `decks.importer.run_import` moves the deck `pending → processing → ready | failed`
      and stores `cards`, `commander`, `color_identity` (or `error`).
    - `playtest.runner.run_match` moves the match `pending → running → finished | failed`,
+     first compiles every seat's main deck (through the `card_rules` cache; a
+     benchmark seat reads its bundled file) and stores each seat's coverage, then
      writes one `MatchEvent` per engine event as it happens, keeps `Match.round`
-     current, and at the end stores the winner, the end reason and each seat's
-     final life / elimination round.
+     current, and at the end stores the winner, the end reason, each seat's final
+     life / elimination round and the deterministic `Match.summary`.
 5. **The page polls**. The deck list and match list re-fetch their grid partial while
    anything is busy (`has_busy` in the context; the view returns the partial when
    `request.htmx` is set). The match page polls `matches/<id>/live`, which renders
@@ -51,9 +53,12 @@ jobs can be told apart on the console.
   agents at runtime (only a `TYPE_CHECKING` import of the `Agent` protocol). It
   takes `DeckSpec`s, agents and `GameRules`, and reports `Event`s through a callback.
   Everything it needs from the database is translated by `playtest/runner.py`:
-  stored cards → `CardSpec` (`card_spec`), stored deck → `DeckSpec` (`deck_spec`),
-  `decks.formats.Format` → `GameRules` (`game_rules`), `Seat` → agent
-  (`build_agent`).
+  compiled cards → `CardSpec` (`card_spec`), compiled deck → `DeckSpec`
+  (`deck_spec`), `decks.formats.Format` → `GameRules` (`game_rules`), `Seat` →
+  agent (`build_agent`).
+- **No model is the rules engine.** The kernel decides which actions are legal;
+  the judge only picks among closed options for each clause, and an agent only
+  picks one legal action. Every program is validated in code before use.
 - **Agents only see what the engine hands them**: a per-seat view (`player_view`)
   and the list of legal actions. They return one of those actions; the engine
   rejects anything else.
@@ -61,19 +66,21 @@ jobs can be told apart on the console.
   dicts, no I/O. The importer is the one place that combines them with Scryfall and
   the cache.
 - **Formats are data.** `decks/formats.py` holds the registry both apps read: deck
-  legality uses `legality_key`, the match form uses the seat counts, the runner
-  builds `GameRules` from `starting_life` and `commander_damage_limit`.
+  legality uses `legality_key` and the family's construction rules, the match form
+  uses the seat counts and the family's benchmark decks, the runner builds
+  `GameRules` from `starting_life`, `commander_damage_limit` and the label.
 
 ## Data model
 
 | Table | Model | Notes |
 |---|---|---|
-| `decks` | `decks.Deck` | UUID primary key. `cards` is a JSON list of `{"quantity", "is_commander", "data"}` where `data` is the processed Scryfall card (see [Deck import](deck-import.md#stored-card-shape)). |
+| `decks` | `decks.Deck` | UUID primary key. `cards` is a JSON list of `{"quantity", "is_commander", "board"?, "data"}` where `data` is the processed Scryfall card (see [Deck import](deck-import.md#stored-card-shape)) and `board` is `"side"` for a constructed sideboard card. |
 | `scryfall_cards` | `decks.ScryfallCard` | Raw Scryfall JSON keyed by `card_en_<slug>`, shared by every user. `{"error": "not_found"}` caches a miss. |
 | `scryfall_bulk_loads` | `decks.BulkDataLoad` | One row per `load_oracle_cards` run (for `--if-newer`). |
-| `matches` | `playtest.Match` | UUID primary key, `seed`, `max_rounds`, status, winner (a `Seat`), end reason. |
-| `seats` | `playtest.Seat` | Position, agent (`random`/`llm`), optional OpenRouter model id. `deck` is `SET_NULL` on delete; `deck_name` keeps the name. |
-| `match_events` | `playtest.MatchEvent` | The log: `seq`, `round`, `turn`, `seat_position`, `kind`, `text`, `payload`, `reasoning`. |
+| `card_rules` | `decks.CardRule` | Compiled card programs keyed by `oracle_id` + DSL version; opaque JSON to `decks`. |
+| `matches` | `playtest.Match` | UUID primary key, `seed`, `max_rounds`, status, winner (a `Seat`), end reason, `summary` (JSON). |
+| `seats` | `playtest.Seat` | Position, agent (`heuristic`/`jev`/`llm`/`random`), optional model id, `benchmark` key (empty for a user deck), `coverage` (JSON). `deck` is `SET_NULL` on delete; `deck_name` keeps the name. |
+| `match_events` | `playtest.MatchEvent` | The log: `seq`, `round`, `turn`, `step`, `seat_position`, `kind`, `text`, `payload` (Jev confidence and probabilities live here), `reasoning`. |
 
 **Ownership.** `Deck` and `Match` have an `owner`. Every view loads them through
 `mtg_deck_tester.access.get_owned_or_404`, which answers 404 (not 403) for someone

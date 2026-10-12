@@ -132,12 +132,15 @@ decks' `.rules.json` from their decklists in `playtest/benchmarks/`.
 
 - [Architecture](docs/architecture.md) — how the apps fit together, the request →
   background job → stored result flow, the data model and the boundaries.
-- [Game engine](docs/engine.md) — state, actions, rules, per-seat views, the turn
-  loop, and how to add a rule.
-- [Agents](docs/agents.md) — the agent interface, the random and LLM agents, the
-  OpenRouter client and the fallback.
-- [Deck import](docs/deck-import.md) — parsing, Scryfall fetching, the card cache,
-  legality checks and the format registry.
+- [Game engine](docs/engine.md) — the rules kernel: steps and priority, the stack,
+  mana, combat, card effects, guards, per-seat views, and how to add a rule.
+- [Card compilation](docs/card-compilation.md) — the pre-pass, the clause splitter,
+  the effect DSL, the Jev judge, the compiled-rules cache and coverage.
+- [Agents](docs/agents.md) — the agent interface, the heuristic, Jev, LLM and random
+  agents, the Jev and OpenRouter clients and the fallbacks.
+- [Deck import](docs/deck-import.md) — parsing (sideboards included), Scryfall
+  fetching, the card cache, legality checks per format family and the format
+  registry.
 - [Development](docs/development.md) — running locally and with Docker, tests,
   template/asset constraints, migrations.
 

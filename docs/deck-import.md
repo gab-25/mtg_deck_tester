@@ -6,11 +6,11 @@ card data. `decks/importer.py` is the one place that workflow lives.
 
 ```
 create_deck (view)
-  └─ decklist_errors(text)            parse + check_decklist      → 422 with every error
+  └─ decklist_errors(text, fmt)       parse + check_decklist      → 422 with every error
   └─ Deck(status=pending) + start_job(run_import, deck.id)
         run_import(deck_id)           status = processing
           └─ import_decklist(text, DbCardCache(), fmt)
-               parse_decklist_text
+               parse_decklist_text(text, fmt)
                fetch_card_data per entry  → unresolved names? ValueError
                check_deck(cards, fmt)     → issues? ValueError
           status = ready (cards, commander, color_identity) | failed (error)
@@ -20,21 +20,32 @@ Every rule violation is collected and reported at once, never just the first.
 
 ## Parsing
 
-`decks/rules/decklist.py` — `parse_decklist_text(text)` returns
-`[{"quantity", "name", "is_commander"}]`.
+`decks/rules/decklist.py` — `parse_decklist_text(text, fmt)` returns
+`[{"quantity", "name", "is_commander"}]`, plus `"board"` (`"main"` / `"side"`) in
+constructed formats.
 
 - One card per line: `1 Sol Ring`, `1x Sol Ring`, or just `Sol Ring` (quantity 1).
 - Blank lines and comments (`//…`, `#…`) are skipped.
-- A bare header switches section: `Commander` / `Commanders` mark the following cards
-  as commanders; `Deck`, `Main`, `Mainboard`, `Sideboard`, `Maybeboard`, `Companion`,
-  `Considering` switch back to the main deck. A trailing `:` is allowed. Commander has
-  no sideboard, so cards under those headers count towards the 100.
-- A trailing `*CMDR*` (or `*COMMANDER*`) marks a commander inline, as Moxfield and
-  Archidekt exports do.
+- A bare header switches section (a trailing `:` is allowed):
+  - `Commander` / `Commanders` mark the following cards as commanders; a trailing
+    `*CMDR*` (or `*COMMANDER*`) marks one inline, as Moxfield and Archidekt exports do.
+  - **Commander formats**: `Deck`, `Main`, `Mainboard`, `Sideboard`, `Maybeboard`,
+    `Companion`, `Considering` switch back to the deck. Commander has no sideboard,
+    so cards under those headers count towards the 100.
+  - **Constructed formats**: `Sideboard` cards get `board="side"`; `Deck` / `Main`
+    switch back; `Maybeboard`, `Considering` and `Companion` are skipped (Arena lists
+    the companion again in its sideboard). A list with **no headers at all** (MTGO,
+    MTGGoldfish) puts the sideboard after the first blank line.
 
 ## Legality, in two passes
 
-`decks/rules/commander.py`, pure functions:
+`decks/rules/legality.py` is the single entry point — `check_decklist(entries, fmt)`
+on submit (names only) and `check_deck(cards, fmt)` in the job — and dispatches on
+the format's family to `rules/commander.py` or `rules/constructed.py`, pure
+functions both. `board_of(item)` reads an entry's zone (`"main"` when absent, so
+decks stored before sideboards existed are all main deck).
+
+### Commander and Duel Commander
 
 | Rule | `check_decklist` (names only, on submit) | `check_deck` (fetched cards, in the job) |
 |---|---|---|
@@ -45,12 +56,27 @@ Every rule violation is collected and reported at once, never just the first.
 | Color identity | — | every card within the commander's identity |
 | Ban list of the format | — | Scryfall `legalities[<format legality_key>]` is `banned` or `not_legal` |
 
+The deck's stored `color_identity` is the union of its commanders' identities.
+
+### Constructed formats
+
+| Rule | `check_decklist` | `check_deck` |
+|---|---|---|
+| Main deck of at least 60 cards | ✓ | ✓ |
+| Sideboard of at most 15 cards | ✓ | ✓ |
+| No commander | ✓ | ✓ |
+| At most 4 copies, main deck and sideboard together | by name, same exemptions as above | by card |
+| Restricted cards (Vintage): at most 1 copy | — | `legalities[...] == "restricted"` |
+| Ban list of the format | — | `banned` or `not_legal`, sideboard included |
+
+The stored `color_identity` of a constructed deck is the union of its main deck's
+identities. `Deck.main_cards`, `sideboard_cards`, `total_cards` (main deck) and
+`sideboard_total` split the stored cards; only the main deck is ever played or
+counted for coverage.
+
 A missing `legalities` or `color_identity` field (cards cached by older versions)
 never fails a deck: legality counts as legal, and color identity falls back to the
 mana symbols on the faces.
-
-The deck's stored `color_identity` is the union of its commanders' identities
-(`deck_color_identity`).
 
 ## Fetching from Scryfall
 
@@ -86,7 +112,10 @@ Any `None` makes the import fail with the list of unresolved names.
 }
 ```
 
-The raw JSON stays in `scryfall_cards`; only this processed copy is on the deck. A
+The raw JSON stays in `scryfall_cards`; only this processed copy is on the deck.
+The card compiler reads the raw JSON back with `fetch_card_raw(name, cache)` (same
+key, same network fallback), because it needs fields the processed copy drops
+(`oracle_id`, `keywords`, `colors`). A
 new field added here reaches newly imported decks only — existing decks need a data
 migration or a safe default where the field is read.
 
@@ -99,7 +128,11 @@ interface:
   are upserts, and a concurrent insert of the same key is resolved by overwriting.
   This is what the import job uses.
 - `FileCardCache(dir)` — one JSON file per key under `<dir>/cards/`, for using the
-  importer without a database (tests).
+  importer without a database (tests, `build_benchmarks --cache-dir`).
+
+Both also keep the compiled card rules (`get_rule` / `set_rule`, keyed by oracle id
+and DSL version — `card_rules` in the database, `<dir>/rules/` on disk); see
+[Card compilation](card-compilation.md).
 
 ### Bulk loading
 
@@ -120,34 +153,27 @@ Usage and scheduling are in the README's *Local card database* section.
 
 ## Formats
 
-`decks/formats.py` is the registry both apps read:
+`decks/formats.py` is the registry both apps read. Each `Format` has a `family`:
 
-```python
-FORMATS = {
-    "commander": Format(label="Commander", legality_key="commander", starting_life=40,
-                        min_seats=2, max_seats=4, commander_damage_limit=21),
-    "duel":      Format(label="Duel Commander", legality_key="duel", starting_life=20,
-                        min_seats=2, max_seats=2, commander_damage_limit=None),
-}
-DEFAULT_FORMAT = "commander"
-```
+| Key | Family | Life | Seats | Deck | Copies | Commander damage |
+|---|---|---|---|---|---|---|
+| `commander` | `commander` | 40 | 2–4 | exactly 100 | 1 | 21 |
+| `duel` | `commander` | 20 | 2 | exactly 100 | 1 | — |
+| `standard`, `pioneer`, `modern`, `legacy`, `vintage`, `pauper` | `constructed` | 20 | 2 | 60+ and ≤15 sideboard | 4 | — |
 
-Deck construction (100 cards, singleton, one commander) is the same for every
-format; what varies is the ban list (`legality_key`) and the game (life, seats,
-commander damage).
+`DEFAULT_FORMAT = "commander"`. cEDH decks are Commander decks: same rules, same ban
+list.
 
 ### Adding a format
 
-1. Add an entry to `FORMATS`. `legality_key` must be a key of Scryfall's
-   `legalities` object.
+1. Add an entry to `FORMATS` (or to `CONSTRUCTED_FORMATS` for a 60-card format).
+   `legality_key` must be a key of Scryfall's `legalities` object.
 2. Generate migrations: `Deck.format` and `Match.format` take their `choices` from
-   the registry, so both `decks` and `playtest` get one
-   (`uv run python manage.py makemigrations`).
-3. Nothing else is needed for a Commander-style format: the deck form, the match
-   form (seat counts), the legality check and the runner (`GameRules`) all read the
-   registry. The match form shows `max(max_seats)` rows.
-4. A format with different **construction** rules (deck size, no commander, more
-   copies) does not fit yet: `decks/rules/commander.py` and the engine's setup
-   assume Commander.
-5. Add tests next to the existing ones in `tests/test_commander.py` and
+   the registry, so both `decks` and `playtest` get one.
+3. Nothing else is needed for a format of an existing family: the import form, the
+   legality check, the match form (seat counts, benchmark decks of the family) and
+   the runner (`GameRules`) all read the registry.
+4. A new family needs its own `rules/<family>.py` and a branch in
+   `rules/legality.py`.
+5. Add tests next to `tests/test_formats.py`, `tests/test_constructed.py` and
    `tests/test_matches_web.py`.
