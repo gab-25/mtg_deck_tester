@@ -15,15 +15,22 @@ Two layers:
   pass is what makes "casting a green spell doesn't tap your only blue
   source" true.
 
+Sources with a cost (pay life, take damage, sacrifice it, or only while you
+control a land type) are spent last, and only when the free ones cannot pay;
+their cost is paid when the colors they supply need it.
+
 Payment is automatic, not an agent decision: see the rules text.
 """
 
 from collections import deque
 from dataclasses import dataclass
 
+from .cardrules import ManaAbility
 from .effects import has
+from .events import Event, EventKind
 from .manacost import MANA_SYMBOLS, ManaCost
 from .state import GameState, Permanent
+from .zones import Zone, leave_battlefield
 
 _INF = 10**6
 
@@ -39,6 +46,8 @@ class Source:
     colors: str
     amount: int
     pool_color: str = ""
+    # The permanent's mana abilities usable right now.
+    abilities: tuple[ManaAbility, ...] = ()
 
 
 def _source_rank(perm: Permanent) -> int:
@@ -50,10 +59,24 @@ def _source_rank(perm: Permanent) -> int:
 
 
 def can_tap_for_mana(state: GameState, perm: Permanent) -> bool:
-    if perm.tapped or not perm.spec.is_mana_source:
+    if perm.tapped or not perm.spec.mana_abilities:
         return False
     # A creature's {T} ability needs it to have been under control since the turn began.
     return not (perm.spec.is_creature and perm.sick and not has(state, perm, "haste"))
+
+
+def usable_abilities(state: GameState, perm: Permanent) -> tuple[ManaAbility, ...]:
+    """The mana abilities whose "activate only if you control …" condition holds."""
+    lands = {
+        subtype for p in state.battlefield if p.controller == perm.controller and p.spec.is_land for subtype in p.spec.subtypes
+    }
+    return tuple(a for a in perm.spec.mana_abilities if not a.needs or lands & set(a.needs))
+
+
+def _cost_rank(abilities) -> int:
+    if any(a.free for a in abilities):
+        return 0
+    return 2 if all(a.sacrifice for a in abilities) else 1
 
 
 def sources(state: GameState, seat: int) -> list[Source]:
@@ -65,8 +88,13 @@ def sources(state: GameState, seat: int) -> list[Source]:
             found.append(Source((0, 1, 0, index), None, color, 1, color))
     for perm in state.battlefield:
         if perm.controller == seat and can_tap_for_mana(state, perm):
-            colors = "".join(perm.spec.produced_mana)
-            found.append(Source((1, len(colors), _source_rank(perm), perm.id), perm.id, colors, perm.spec.mana_amount))
+            abilities = usable_abilities(state, perm)
+            if not abilities:
+                continue
+            colors = "".join(c for c in MANA_SYMBOLS if any(c in a.colors for a in abilities))
+            amount = max(a.amount for a in abilities)
+            key = (1, _cost_rank(abilities), len(colors), _source_rank(perm), perm.id)
+            found.append(Source(key, perm.id, colors, amount, abilities=abilities))
     found.sort(key=lambda s: s.key)
     return found
 
@@ -108,13 +136,13 @@ def _max_flow(capacity: list[dict[int, int]], source: int, sink: int) -> int:
         flow += bottleneck
 
 
-def can_pay(srcs: list[Source], cost: ManaCost) -> bool:
-    """Whether ``srcs`` can pay ``cost`` (with ``{X}`` already turned into generic)."""
+def _flow(srcs: list[Source], cost: ManaCost):
+    """Solves the payment flow; returns (paid in full, per-source colors used)."""
     needed = cost.generic + len(cost.pips)
     if needed == 0:
-        return True
+        return True, [{} for _ in srcs]
     if available_mana(srcs) < needed:
-        return False
+        return False, None
     requirements: dict[str, int] = {}
     for pip in cost.pips:
         requirements[pip] = requirements.get(pip, 0) + 1
@@ -137,7 +165,22 @@ def can_pay(srcs: list[Source], cost: ManaCost) -> bool:
                 capacity[node][rnode] = _INF
     for req, rnode in req_node.items():
         capacity[rnode][sink] = requirements[req]
-    return _max_flow(capacity, 0, sink) == needed
+    original = [dict(edges) for edges in capacity]
+    paid = _max_flow(capacity, 0, sink) == needed
+    used = []
+    for i, src in enumerate(srcs, start=1):
+        colors = {}
+        for color in src.colors:
+            flow = original[i][color_node[color]] - capacity[i][color_node[color]]
+            if flow > 0:
+                colors[color] = flow
+        used.append(colors)
+    return paid, used
+
+
+def can_pay(srcs: list[Source], cost: ManaCost) -> bool:
+    """Whether ``srcs`` can pay ``cost`` (with ``{X}`` already turned into generic)."""
+    return _flow(srcs, cost)[0]
 
 
 def _distinct_colors(srcs) -> int:
@@ -172,8 +215,20 @@ def choose_payment(srcs: list[Source], cost: ManaCost) -> list[Source] | None:
     return sorted(chosen, key=lambda s: s.key)
 
 
-def pay(state: GameState, seat: int, cost: ManaCost) -> list[str]:
-    """Spends ``seat``'s mana on ``cost``; returns the names of what was tapped.
+def _free_colors(src: Source) -> str:
+    return "".join(c for c in src.colors if any(a.free and c in a.colors for a in src.abilities))
+
+
+def _ability_for(abilities, colors: dict[str, int]) -> ManaAbility:
+    """The cheapest ability that supplies ``colors``: free, then life, then a sacrifice."""
+    total = sum(colors.values())
+    fitting = [a for a in abilities if set(colors) <= set(a.colors) and a.amount >= total]
+    order = lambda a: (not a.free, a.sacrifice, a.life, -a.amount)  # noqa: E731
+    return min(fitting or abilities, key=order)
+
+
+def pay(state: GameState, seat: int, cost: ManaCost) -> list[Event]:
+    """Spends ``seat``'s mana on ``cost``; returns the events of any cost paid with it.
 
     Raises ``ValueError`` when the cost cannot be paid — callers only pay
     costs they checked with :func:`can_pay`.
@@ -182,22 +237,44 @@ def pay(state: GameState, seat: int, cost: ManaCost) -> list[str]:
     chosen = choose_payment(srcs, cost)
     if chosen is None:
         raise ValueError(f"cannot pay {cost}")
+    # Prefer the free colors of the chosen sources; costly ones only when needed.
+    free_only = [
+        Source(src.key, src.permanent_id, _free_colors(src), src.amount, src.pool_color, src.abilities)
+        if src.permanent_id is not None and _free_colors(src)
+        else src
+        for src in chosen
+    ]
+    paid_free, used = _flow(free_only, cost)
+    if not paid_free:
+        _, used = _flow(chosen, cost)
     player = state.player(seat)
-    tapped = []
-    # A source making more than the cost still needs (Sol Ring for {1}) leaves
-    # the rest floating, in its first color, until the step ends.
-    excess = sum(s.amount for s in chosen) - cost.total()
-    spare = next((s for s in reversed(chosen) if s.amount > 1), None)
-    if excess > 0 and spare is not None:
-        color = spare.colors[0]
-        player.mana_pool[color] = player.mana_pool.get(color, 0) + excess
-    for src in chosen:
+    events: list[Event] = []
+    for src, colors in zip(chosen, used):
         if src.permanent_id is None:
             player.mana_pool[src.pool_color] -= 1
             if not player.mana_pool[src.pool_color]:
                 del player.mana_pool[src.pool_color]
-        else:
-            perm = state.permanent(src.permanent_id)
-            perm.tapped = True
-            tapped.append(perm.name)
-    return tapped
+            continue
+        perm = state.permanent(src.permanent_id)
+        perm.tapped = True
+        ability = _ability_for(src.abilities, colors)
+        spent = sum(colors.values())
+        if ability.free and ability.amount > spent and ability.colors:
+            # A source making more than the cost still needs (Sol Ring for {1})
+            # leaves the rest floating, in its first color, until the step ends.
+            color = ability.colors[0]
+            player.mana_pool[color] = player.mana_pool.get(color, 0) + ability.amount - spent
+        if ability.life:
+            player.life -= ability.life
+            events.append(
+                Event(
+                    EventKind.EFFECT,
+                    seat,
+                    f"{player.name} pays {ability.life} life for {perm.name}'s mana ({player.life}).",
+                    {"effect": "lose_life", "amount": ability.life, "life": player.life, "source": perm.name, "source_seat": seat},
+                )
+            )
+        if ability.sacrifice:
+            events.append(Event(EventKind.EFFECT, seat, f"{perm.name} is sacrificed for mana.", {"effect": "sacrifice", "card": perm.name}))
+            events += leave_battlefield(state, perm, Zone.GRAVEYARD)
+    return events

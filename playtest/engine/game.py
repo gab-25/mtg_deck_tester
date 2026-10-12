@@ -33,7 +33,7 @@ from .rules import (
     trigger_item,
     untap_step,
 )
-from .state import Card, Combat, GameRules, GameState, PendingTarget, Player, Step, assert_invariants
+from .state import Card, Combat, GameRules, GameState, PendingChoice, PendingTarget, Player, Step, assert_invariants
 from .view import player_view
 from .zones import queue_triggers
 
@@ -138,7 +138,7 @@ class Game:
     # -- setup -------------------------------------------------------------
 
     def _setup(self) -> GameState:
-        state = GameState(rules=self.rules, players=[])
+        state = GameState(rules=self.rules, players=[], rng=random.Random(f"{self.seed}:effects"))
         for seat, deck in enumerate(self.decks):
             library = [Card(state.new_id(), spec, seat) for spec in deck.library]
             command = [Card(state.new_id(), spec, seat, is_commander=True) for spec in deck.commanders]
@@ -323,7 +323,7 @@ class Game:
                 if passes >= len(state.alive_players()):
                     if not state.stack:
                         return
-                    self._record(resolve_top(state))
+                    self._record(resolve_top(state, self._choose))
                     passes = 0
                     seat = state.active_seat
                     continue
@@ -379,6 +379,15 @@ class Game:
             action = self._decide(item.controller)
             self._record(apply(state, item.controller, action, self.limits))
             self._check()
+
+    def _choose(self, state: GameState, seat: int, kind: str, prompt: str, options) -> str:
+        """Asks ``seat``'s agent to answer a choice an effect needs while it resolves."""
+        state.pending_choice = PendingChoice(seat, kind, prompt, list(options))
+        try:
+            action = self._decide(seat)
+        finally:
+            state.pending_choice = None
+        return action.ref
 
     def _report_dead_spells(self, seat: int) -> None:
         player = self.state.player(seat)

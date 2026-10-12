@@ -16,8 +16,10 @@ Turn and priority:
 Mana:
 
 * Lands and mana rocks make the colors Scryfall lists for them; a source that
-  makes two mana (Sol Ring) makes two. Mana is paid **automatically**: the
-  engine taps the sources that keep the most colors open. Players do not
+  makes two mana (Sol Ring) makes two. Sources with a cost (pay life, take
+  damage, sacrifice it, or only while you control a land type) are spent only
+  when the free ones cannot pay. Mana is paid **automatically**: the engine
+  taps the sources that keep the most colors open. Players do not
   choose how to pay, so holding up a specific land is not a decision anyone
   makes.
 * In Commander formats the commander is cast from the command zone for its
@@ -27,7 +29,9 @@ Mana:
 Spells and abilities:
 
 * Cards do what their compiled program says (damage, life, cards, removal,
-  counterspells, tokens, pump, counters, mana…). Targets are chosen when a
+  counterspells, tokens, pump, counters, mana, library searches, scry,
+  surveil…). When an effect needs a choice (which card to find, what to keep
+  on top), the player makes it. Targets are chosen when a
   spell is cast and checked again when it resolves: a spell whose every
   target is gone does nothing.
 * Triggered abilities ("when this enters", "when this dies", "whenever this
@@ -75,6 +79,7 @@ from .effects import (
     toughness,
     ward_cost,
     counter_item,
+    first_option,
     player_ref,
     perm_ref,
 )
@@ -159,6 +164,9 @@ def apply(state: GameState, seat: int, action: Action, limits: Limits = Limits()
             return []
         case ActionKind.CHOOSE_TARGET:
             return _choose_target(state, action)
+        case ActionKind.CHOOSE:
+            # The resolving effect reads the answer; nothing else changes.
+            return []
     raise IllegalAction(f"Unknown action {action.kind!r}.")
 
 
@@ -174,7 +182,7 @@ def _cast(state: GameState, seat: int, action: Action) -> list[Event]:
     base = commander_cost(state, seat, card.id) if commander else card.spec.cost
     ward = sum(ward_cost(state, ref, seat) for _, ref in action.targets)
     cost = base.with_x(action.x or 0).plus_generic(ward)
-    pay(state, seat, cost)
+    paid = pay(state, seat, cost)
     take_from(zone, card.id)
     tax = state.rules.commander_tax * player.commander_casts.get(card.id, 0) if commander else 0
     if commander:
@@ -198,7 +206,7 @@ def _cast(state: GameState, seat: int, action: Action) -> list[Event]:
     text = f"{player.name} casts {card.name}"
     if action.x is not None:
         text += f" with X={action.x}"
-    return [
+    return paid + [
         Event(
             EventKind.CAST,
             seat,
@@ -223,9 +231,20 @@ def _activate(state: GameState, seat: int, action: Action) -> list[Event]:
     if cost.tap:
         perm.tapped = True
     ward = sum(ward_cost(state, ref, seat) for _, ref in action.targets)
-    pay(state, seat, parse_mana_cost(cost.mana).plus_generic(ward))
+    paid = pay(state, seat, parse_mana_cost(cost.mana).plus_generic(ward))
     perm.activations += 1
-    events = [Event(EventKind.ACTIVATE, seat, f"{state.player(seat).name} activates {perm.name}.", {"card": perm.name})]
+    events = paid + [Event(EventKind.ACTIVATE, seat, f"{state.player(seat).name} activates {perm.name}.", {"card": perm.name})]
+    if cost.life:
+        player = state.player(seat)
+        player.life -= cost.life
+        events.append(
+            Event(
+                EventKind.EFFECT,
+                seat,
+                f"{player.name} pays {cost.life} life ({player.life}).",
+                {"effect": "lose_life", "amount": cost.life, "life": player.life, "source": perm.name, "source_seat": seat},
+            )
+        )
     if cost.sacrifice_self:
         events += leave_battlefield(state, perm, Zone.GRAVEYARD)
     item = StackItem(
@@ -253,7 +272,7 @@ def _choose_target(state: GameState, action: Action) -> list[Event]:
     ward = ward_cost(state, action.ref, item.controller)
     if ward:
         try:
-            pay(state, item.controller, parse_mana_cost(f"{{{ward}}}"))
+            events += pay(state, item.controller, parse_mana_cost(f"{{{ward}}}"))
             events.append(Event(EventKind.EFFECT, item.controller, f"{state.player(item.controller).name} pays ward {{{ward}}}.", {"effect": "ward", "amount": ward}))
         except ValueError:
             return events + counter_item(state, item, "countered by ward")
@@ -266,8 +285,9 @@ def _choose_target(state: GameState, action: Action) -> list[Event]:
 # -- the stack -------------------------------------------------------------------
 
 
-def resolve_top(state: GameState) -> list[Event]:
-    """Resolves the top of the stack."""
+def resolve_top(state: GameState, choose=None) -> list[Event]:
+    """Resolves the top of the stack; ``choose`` answers the choices effects ask for
+    (the :class:`~.game.Game` asks the agents; default: the first option)."""
     item = state.stack.pop()
     controller = state.player(item.controller)
     if item.card is not None and item.card.spec.is_permanent:
@@ -289,6 +309,7 @@ def resolve_top(state: GameState) -> list[Event]:
         x=item.x,
         deathtouch=bool(source and has(state, source, "deathtouch")),
         lifelink=bool(source and has(state, source, "lifelink")),
+        choose=choose or first_option,
     )
     events = [Event(EventKind.RESOLVE, item.controller, f"{item.name} resolves.", {"card": item.name, "spell": item.is_spell})]
     effects, fizzled = resolve_abilities(state, item, item.abilities, ctx)

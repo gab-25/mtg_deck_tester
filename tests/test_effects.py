@@ -13,7 +13,7 @@ from playtest.engine.zones import enter_battlefield
 
 from .cards import compiled_spec
 from .factories import bear
-from .test_engine import COMMANDER, _hand, _put, _table
+from .test_engine import COMMANDER, DUEL, _hand, _put, _table
 
 WASTES = card("Wastes", "Basic Land", produces="C")
 
@@ -420,3 +420,82 @@ def test_random_games_with_real_effects_keep_the_invariants(seed):
     players = 2 + seed
     decks = [spell_deck(c) for c in "ABCD"[:players]]
     Game(decks, [RandomAgent(seed + i) for i in range(players)], COMMANDER, seed=seed, max_rounds=20, check_invariants=True).run()
+
+
+# -- library searches, scry, surveil, costs with life --------------------------------
+
+
+FETCH = "{T}, Pay 1 life, Sacrifice this land: Search your library for a Forest or Island card, put it onto the battlefield, then shuffle."
+
+
+def test_a_fetch_land_finds_the_land_the_agent_picks():
+    from playtest.engine.state import Card
+
+    game, state = _table()
+    fetch = _put(state, compiled_spec("Fetch", "Land", "", FETCH))
+    island = card("Island", "Basic Land", produces="U")
+    state.player(0).library.append(Card(state.new_id(), island, 0))
+    action = next(a for a in legal_actions(state, 0) if a.kind == ActionKind.ACTIVATE)
+    events = apply(state, 0, action)
+    assert fetch not in state.battlefield and state.player(0).life == 19
+    asked = []
+
+    def choose(state_, seat, kind, prompt, options):
+        asked.append((kind, [o.label for o in options]))
+        return next(o.key for o in options if o.label == "Find Island")
+
+    resolve_top(state, choose)
+    assert asked[0][0] == "search" and "Find nothing" in asked[0][1] and "Find Forest" in asked[0][1]
+    assert any(p.name == "Island" for p in state.battlefield)
+
+
+def test_wasteland_destroys_only_nonbasic_lands():
+    game, state = _table()
+    waste = _put(state, compiled_spec("Waste", "Land", "", "{T}, Sacrifice this land: Destroy target nonbasic land."))
+    basic = _put(state, card("Forest", "Basic Land", produces="G"), seat=1)
+    dual = _put(state, card("Dual", "Land", produces="UG"), seat=1)
+    actions = [a for a in legal_actions(state, 0) if a.kind == ActionKind.ACTIVATE]
+    # Targets are chosen before the cost is paid, so Wasteland may even target itself.
+    targets = {dict(a.targets)["0:t1"] for a in actions}
+    assert f"o{dual.id}" in targets and f"o{basic.id}" not in targets
+    apply(state, 0, next(a for a in actions if dict(a.targets)["0:t1"] == f"o{dual.id}"))
+    resolve_top(state)
+    assert dual not in state.battlefield and basic in state.battlefield and waste not in state.battlefield
+
+
+def test_a_life_cost_needs_enough_life():
+    game, state = _table()
+    _put(state, compiled_spec("Fetch", "Land", "", FETCH))
+    state.player(0).life = 0
+    assert not [a for a in legal_actions(state, 0) if a.kind == ActionKind.ACTIVATE]
+
+
+def test_scry_and_surveil_ask_card_by_card():
+    game, state = _table()
+    _mana(state, amount=2)
+    top = [c.name for c in state.player(0).library[:2]]
+    answers = iter(["c01", "c00"])
+    _hand(state, compiled_spec("Peek", "Sorcery", "{1}", "Surveil 2."))
+    item = state.player(0).hand[-1]
+    apply(state, 0, next(a for a in legal_actions(state, 0) if a.card == item.id))
+    resolve_top(state, lambda *args: next(answers))
+    assert [c.name for c in state.player(0).graveyard][:1] == [top[0]]
+    assert state.player(0).library[0].name == top[1]
+
+
+def test_a_game_with_fetch_lands_and_scry_keeps_its_invariants():
+    from playtest.agents.heuristic import HeuristicAgent
+    from playtest.engine.cards import DeckSpec
+    from playtest.engine.game import Game
+
+    fetch = compiled_spec("Fetch", "Land", "", FETCH)
+    look = compiled_spec("Look", "Sorcery", "{G}", "Scry 2.\nDraw a card.")
+    forest = card("Forest", "Basic Land", produces="G")
+    library = [fetch] * 8 + [forest] * 22 + [look] * 10 + [card(f"Bear {i}", "Creature", "{1}{G}", 2, 2) for i in range(20)]
+    decks = [DeckSpec(name, None, tuple(library)) for name in "AB"]
+    result = Game(decks, [HeuristicAgent(0), HeuristicAgent(1)], DUEL, seed=5, max_rounds=30, check_invariants=True).run()
+    kinds = [e.event.kind for e in result.events]
+    assert result.winner_seat is not None
+    assert any(e.event.payload.get("effect") == "search" for e in result.events)
+    assert any(e.event.payload.get("effect") == "scry" for e in result.events)
+    assert "agent_fallback" not in kinds

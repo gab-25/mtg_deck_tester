@@ -138,6 +138,7 @@ def player_view(state: GameState, seat: int) -> dict:
             for p in (state.player(s) for s in state.turn_order_from(seat) if s != seat)
         ],
         "choosing_target": _choosing_target(state, seat),
+        "choice": _choice(state, seat),
         "stack": [
             {
                 "id": item.id,
@@ -165,4 +166,16 @@ def _choosing_target(state: GameState, seat: int) -> dict | None:
         "source": item.name,
         "selector": target.selector,
         "ops": [{"op": op.op, "amount": op.amount, "power": op.power, "toughness": op.toughness, "counter": op.counter} for op in ops],
+    }
+
+
+def _choice(state: GameState, seat: int) -> dict | None:
+    """The choice ``seat`` is answering, when an effect asked one."""
+    pending = state.pending_choice
+    if pending is None or pending.seat != seat:
+        return None
+    return {
+        "kind": pending.kind,
+        "prompt": pending.prompt,
+        "options": [{"key": o.key, "label": o.label, "score": o.score} for o in pending.options],
     }

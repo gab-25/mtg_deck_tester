@@ -65,6 +65,9 @@ SAMPLES = {
     "SACRIFICE": ("Sorcery", "Each opponent sacrifices a creature."),
     "MILL": ("Sorcery", "Target player mills three cards."),
     "COUNTER_SPELL": ("Instant", "Counter target spell."),
+    "SEARCH_LIBRARY": ("Sorcery", "Search your library for a basic land card, put it onto the battlefield tapped, then shuffle."),
+    "SCRY": ("Sorcery", "Scry 2."),
+    "SURVEIL": ("Sorcery", "Surveil 2."),
 }
 
 
@@ -135,11 +138,12 @@ def test_the_cache_key_includes_the_dsl_version(monkeypatch):
     jev = FakeJev()
     cache = DbCardCache()
     judge.compile_card(BOLT, cache, ask=jev)
-    monkeypatch.setattr(dsl, "DSL_VERSION", "2")
+    newer = str(int(dsl.DSL_VERSION) + 1)
+    monkeypatch.setattr(dsl, "DSL_VERSION", newer)
     with pytest.raises(dsl.DslError):
         # A program cached for v1 is not a v2 program: it is recompiled, not reused.
         dsl.validate_program(CardRule.objects.get().program, judge.characteristics(BOLT))
-    assert DbCardCache().get_rule("oracle-Lightning Bolt", "2") is None
+    assert DbCardCache().get_rule("oracle-Lightning Bolt", newer) is None
 
 
 @pytest.mark.django_db
@@ -196,7 +200,7 @@ def test_card_coverage_command_names_unsupported_cards(tmp_path, monkeypatch):
     raws = {
         "Lightning Bolt": BOLT,
         "Forest": basic_land(),
-        "Tutor": raw_card("Tutor", "Sorcery", "{1}{B}", "Search your library for a card."),
+        "Tutor": raw_card("Tutor", "Sorcery", "{1}{B}", "Copy target instant or sorcery spell."),
         "Bear Lord": raw_card("Bear Lord", "Legendary Creature — Bear"),
     }
     monkeypatch.setattr(judge, "fetch_card_raw", lambda name, cache: raws[name])
@@ -208,4 +212,4 @@ def test_card_coverage_command_names_unsupported_cards(tmp_path, monkeypatch):
     text = out.getvalue()
     assert "99% of 100 cards" in text
     assert "1 dead spell" in text
-    assert "1x Tutor [spell] — library search" in text
+    assert "1x Tutor [spell] — copies" in text

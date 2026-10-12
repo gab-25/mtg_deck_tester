@@ -48,6 +48,8 @@ class ActionKind:
     UNDO_BLOCKER = "undo_blocker"
     END_BLOCKERS = "end_blockers"
     CHOOSE_TARGET = "choose_target"
+    # An answer to a choice an effect asks for while it resolves.
+    CHOOSE = "choose"
 
 
 # The do-nothing actions: what a forced or capped decision falls back to.
@@ -65,6 +67,7 @@ _RANK = {
     ActionKind.DECLARE_BLOCKER: 5,
     ActionKind.UNDO_BLOCKER: 6,
     ActionKind.CHOOSE_TARGET: 7,
+    ActionKind.CHOOSE: 8,
 }
 
 
@@ -289,6 +292,9 @@ def _activations(state: GameState, seat: int, limits: Limits) -> list[Action]:
             cost = ability.cost
             if cost.tap and (perm.tapped or (perm.spec.is_creature and perm.sick and not has(state, perm, "haste"))):
                 continue
+            if cost.life and state.player(seat).life < cost.life:
+                # CR 119.4: a player can pay life only if their life total is at least that much.
+                continue
             srcs = [s for s in sources(state, seat) if not (cost.tap and s.permanent_id == perm.id)]
             mana = parse_mana_cost(cost.mana)
             combos = _target_combos(state, seat, (ability,), limits)
@@ -391,6 +397,12 @@ def _sort_key(action: Action):
 
 def legal_actions(state: GameState, seat: int, limits: Limits = Limits()) -> list[Action]:
     """Every action ``seat`` may take now (see the module docstring for the contract)."""
+    if state.pending_choice is not None:
+        # The options keep the order the effect gave them (keys sort that way).
+        pending = state.pending_choice
+        if seat != pending.seat:
+            return []
+        return [Action(ActionKind.CHOOSE, ref=o.key, label=o.label) for o in pending.options]
     if state.pending_target is not None:
         actions = _target_actions(state)
     elif state.combat is not None and state.combat.phase == "attackers":
@@ -404,7 +416,7 @@ def legal_actions(state: GameState, seat: int, limits: Limits = Limits()) -> lis
 
 def dead_spells(state: GameState, seat: int) -> list[Card]:
     """Unsupported instants and sorceries ``seat`` could cast now, were they supported."""
-    if state.pending_target is not None or state.combat is not None:
+    if state.pending_target is not None or state.pending_choice is not None or state.combat is not None:
         return []
     srcs = sources(state, seat)
     return [

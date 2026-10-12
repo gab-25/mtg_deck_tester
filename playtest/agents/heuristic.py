@@ -263,6 +263,8 @@ def _op_value(view: dict, op: dict, ref: str | None, x: int) -> float:
             total += sign * 5
         elif name == "GAIN_LIFE":
             total -= sign * 0.5 * amount
+        elif name in ("SEARCH_LIBRARY", "SCRY", "SURVEIL"):
+            total -= sign * (3 if name == "SEARCH_LIBRARY" else 1)
         elif name == "DRAW_CARDS":
             total -= sign * 3 * amount
         elif name == "UNTAP" and perm is not None:
@@ -373,6 +375,10 @@ class HeuristicAgent:
 
     def _pick(self, view: dict, options: list[Action]) -> Action:
         kinds = {o.kind for o in options}
+        if ActionKind.CHOOSE in kinds:
+            # Follow the kernel's estimate of each answer; ties keep the effect's order.
+            scores = {o["key"]: o["score"] for o in (view.get("choice") or {}).get("options", [])}
+            return max(options, key=lambda o: scores.get(o.ref, 0))
         if ActionKind.CHOOSE_TARGET in kinds:
             return self._target(view, options)
         if kinds & {ActionKind.DECLARE_ATTACKER, ActionKind.END_ATTACKERS}:
@@ -419,6 +425,14 @@ class HeuristicAgent:
             other = _best(spells, lambda o: action_value(view, o)) or _best(permanents_, lambda o: 1 + (_card(view, o.card) or {}).get("mana_value", 0))
             if other:
                 return other
+        if main:
+            # Crack fetch lands and other land searches right away: the land is worth more now.
+            fetch = _best(
+                [o for o in by_kind(ActionKind.ACTIVATE) if any(op["op"] == "SEARCH_LIBRARY" for a in action_abilities(view, o) for op in a["ops"])],
+                lambda o: 1,
+            )
+            if fetch:
+                return fetch
         if instant_window and (view["step"] == "main2" or not my_turn):
             activation = _best(by_kind(ActionKind.ACTIVATE), lambda o: action_value(view, o) - 0.5)
             if activation:

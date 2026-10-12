@@ -106,7 +106,7 @@ def test_an_unsupported_keyword_is_blocked():
 @pytest.mark.parametrize(
     "oracle_text, reason",
     [
-        ("Search your library for a basic land card.", "library search"),
+        ("Search target player's library for a card.", "library search"),
         ("Cascade", "cascade"),
         ("Creatures you control get +1/+1 for each Elf you control.", "for each"),
         ("Target creature can't block this turn.", "can't"),
@@ -195,7 +195,7 @@ def test_split_turns_modes_into_abilities_sharing_a_group():
         ("Whenever a creature dies, you gain 1 life.", "trigger"),
         ("Return target creature card from your graveyard to your hand.", "zone"),
         ("Choose two —\n• Draw a card.\n• Gain 3 life.", "choose one"),
-        ("Pay 3 life: Draw a card.", "cost"),
+        ("Exile a card from your hand: Draw a card.", "cost"),
     ],
 )
 def test_split_refuses_what_it_cannot_read(oracle_text, reason):
@@ -227,7 +227,9 @@ def test_a_costed_ability_does_not_lend_its_colors_to_the_free_one():
     assert nykthos.produced_mana == ("C",)
 
 
-def test_a_painland_taps_freely_only_for_colorless():
+def test_a_painland_taps_for_colorless_free_and_colors_for_damage():
+    from playtest.engine.cardrules import ManaAbility
+
     pain = characteristics(
         raw_card(
             "Pain",
@@ -237,7 +239,24 @@ def test_a_painland_taps_freely_only_for_colorless():
             produced_mana=["R", "G", "C"],
         )
     )
-    assert pain.produced_mana == ("C",)
+    assert pain.mana_abilities == (ManaAbility("C"), ManaAbility("RG", life=1))
+    assert pain.residual_class == ResidualClass.EMPTY
+
+
+def test_costed_mana_sources_are_read_without_the_judge():
+    from playtest.engine.cardrules import ManaAbility
+
+    tomb = characteristics(raw_card("Tomb", "Land", "", "{T}: Add {C}{C}. This land deals 2 damage to you.", produced_mana=["C"]))
+    assert tomb.mana_abilities == (ManaAbility("C", amount=2, life=2),)
+    petal = characteristics(raw_card("Petal", "Artifact", "{0}", "{T}, Sacrifice this artifact: Add one mana of any color.", produced_mana=list("WUBRG")))
+    assert petal.mana_abilities == (ManaAbility("WUBRG", sacrifice=True),)
+    town = characteristics(raw_card("Town", "Land", "", "{T}: Add {C}.\n{T}, Pay 1 life: Add one mana of any color.", produced_mana=list("WUBRGC")))
+    assert town.mana_abilities[1] == ManaAbility("WUBRG", life=1)
+    verge = characteristics(
+        raw_card("Verge", "Land", "", "{T}: Add {B}.\n{T}: Add {R}. Activate only if you control a Swamp or a Mountain.", produced_mana=["B", "R"])
+    )
+    assert verge.mana_abilities == (ManaAbility("B"), ManaAbility("R", needs=("swamp", "mountain")))
+    assert all(f.residual_class == ResidualClass.EMPTY for f in (tomb, petal, town, verge))
 
 
 def test_typed_lands_read_their_reminder_text():

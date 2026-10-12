@@ -9,6 +9,7 @@ permanents, stack items) comes from one monotone counter.
 No floats anywhere in the kernel.
 """
 
+import random
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -187,6 +188,28 @@ class Combat:
 
 
 @dataclass(slots=True)
+class ChoiceOption:
+    """One answer to a choice an effect asks for while it resolves."""
+
+    key: str
+    label: str
+    # The kernel's own estimate of the option for the chooser (higher is
+    # better), a computed fact a rule-based agent may follow; never binding.
+    score: int = 0
+    card_id: int | None = None
+
+
+@dataclass(slots=True)
+class PendingChoice:
+    """A choice the resolving effect waits for (which card to find, scry…)."""
+
+    seat: int
+    kind: str
+    prompt: str
+    options: list[ChoiceOption]
+
+
+@dataclass(slots=True)
 class PendingTarget:
     """A stack item still waiting for one of its targets to be chosen."""
 
@@ -211,6 +234,9 @@ class GameState:
     order: list[int] = field(default_factory=list)
     combat: Combat | None = None
     pending_target: PendingTarget | None = None
+    pending_choice: PendingChoice | None = None
+    # Shuffles effects ask for (library searches); seeded by the game.
+    rng: random.Random = field(default_factory=lambda: random.Random(0), compare=False)
     # Every commander's card id -> (owner seat, name), for damage and messages.
     commanders: dict[int, tuple[int, str]] = field(default_factory=dict)
     next_id: int = 1

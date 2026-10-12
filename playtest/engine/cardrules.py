@@ -47,7 +47,7 @@ BLOCKLIST = (
     (r"\bstorm\b", "storm"),
     (r"\bcop(?:y|ies)\b", "copies"),
     (r"\binstead\b", "replacement effect (instead)"),
-    (r"\bsearch(?:es)? (?:your|their|his or her) library\b", "library search"),
+    (r"\bsearch(?:es)? (?:their|his or her|target player's|an opponent's|that player's) library\b", "library search"),
     (r"\bfor each\b", "for each"),
     (r"\bas long as\b", "as long as"),
     (r"\bprotection from\b", "protection"),
@@ -80,7 +80,13 @@ _LEADING_INT = re.compile(r"^\d+")
 _ENTERS_TAPPED = re.compile(r"\benters(?: the battlefield)? tapped\b")
 # A free mana ability: "{T}: Add ..." with nothing but the tap as its cost and
 # nothing else on the line (a painland's damage makes its line not free).
-_MANA_ABILITY = re.compile(r"^\{T\}: Add ([^.]*)\.$")
+_MANA_ABILITY = re.compile(
+    r"^\{T\}(?:, (?:pay (?P<life>\d+) life|(?P<sac>sacrifice) this (?:artifact|land|creature|permanent)))?"
+    r": Add (?P<add>[^.]*)\."
+    r"(?:\s*This (?:land|artifact|creature|permanent) deals (?P<damage>\d+) damage to you\.)?"
+    r"(?:\s*Activate only if you control an? (?P<need1>\w+)(?: or an? (?P<need2>\w+))?\.)?$",
+    re.I,
+)
 # What such an ability may add: fixed symbols, a choice of symbols, or N mana of
 # any color. Anything else ("{G} for each creature you control") is not read here.
 _ADD_CLAUSE = re.compile(
@@ -103,6 +109,24 @@ NUMBER_WORDS = {
     "nine": 9,
     "ten": 10,
 }
+
+
+@dataclass(frozen=True, slots=True)
+class ManaAbility:
+    """One way a permanent taps for mana, read from its text (never by a model)."""
+
+    # The colors (and C) it can make; always a subset of Scryfall's produced_mana.
+    colors: str
+    amount: int = 1
+    # Life paid (or damage dealt to its controller) per activation.
+    life: int = 0
+    sacrifice: bool = False
+    # Land subtypes one of which its controller must control to activate it.
+    needs: tuple[str, ...] = ()
+
+    @property
+    def free(self) -> bool:
+        return not (self.life or self.sacrifice or self.needs)
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,6 +158,11 @@ class CardFacts:
     residual: str
     residual_class: str
     block_reason: str = ""
+    # Every blocking reason, not just the first (for measuring what to extend).
+    block_reasons: tuple[str, ...] = ()
+    # Every mana ability, free or with a cost; ``produced_mana`` / ``mana_amount``
+    # summarize them.
+    mana_abilities: tuple[ManaAbility, ...] = ()
     # Multi-faced cards are played as their front face only.
     partial: bool = False
 
@@ -257,12 +286,13 @@ def characteristics(card: dict) -> CardFacts:
     supertypes, types, subtypes = _split_type_line(type_line)
 
     raw_cost = face.get("mana_cost") if "mana_cost" in face else card.get("mana_cost", "")
-    block_reason = ""
+    # Every reason the card cannot be compiled without the judge, in order.
+    reasons: list[str] = []
     try:
         mana_value = parse_mana_cost(raw_cost or "").mana_value
     except ManaCostError as exc:
         mana_value = int(card.get("cmc") or 0)
-        block_reason = str(exc)
+        reasons.append(str(exc))
 
     if "power" in face:
         power, toughness = printed_stat(face.get("power")), printed_stat(face.get("toughness"))
@@ -278,8 +308,7 @@ def characteristics(card: dict) -> CardFacts:
     keywords: list[str] = []
     ward = 0
     enters_tapped = False
-    mana_amount = 0
-    mana_colors: set[str] = set()
+    mana_abilities: list[ManaAbility] = []
     residual_lines: list[str] = []
     for raw_line in oracle_text.splitlines():
         reminder = _REMINDER_MANA.match(raw_line.strip())
@@ -290,12 +319,22 @@ def characteristics(card: dict) -> CardFacts:
             line = line.replace(self_name, noun)
 
         mana = _MANA_ABILITY.match(line)
-        if mana and produced and _ADD_CLAUSE.match(mana.group(1)):
-            mana_amount = max(mana_amount, _mana_amount(mana.group(1)))
+        if mana and produced and _ADD_CLAUSE.match(mana.group("add")) and "any one color" not in mana.group("add"):
             # The colors this ability names; "any color" takes Scryfall's list.
-            named = set(re.findall(r"\{([WUBRGC])\}", mana.group(1)))
-            mana_colors |= named or set(produced)
-            continue
+            named = set(re.findall(r"\{([WUBRGC])\}", mana.group("add")))
+            # "Any color" never includes colorless.
+            colors = "".join(c for c in produced if c in (named or set("WUBRG")))
+            if colors:
+                mana_abilities.append(
+                    ManaAbility(
+                        colors=colors,
+                        amount=_mana_amount(mana.group("add")),
+                        life=int(mana.group("life") or 0) + int(mana.group("damage") or 0),
+                        sacrifice=bool(mana.group("sac")),
+                        needs=tuple(n.lower() for n in (mana.group("need1"), mana.group("need2")) if n),
+                    )
+                )
+                continue
 
         lowered = line.lower()
         if _ENTERS_TAPPED.search(lowered) and (
@@ -317,7 +356,7 @@ def characteristics(card: dict) -> CardFacts:
                 else:
                     unsupported.append(keyword)
             if unsupported:
-                block_reason = block_reason or f"unsupported keyword: {', '.join(unsupported)}"
+                reasons += [f"unsupported keyword: {keyword}" for keyword in unsupported]
                 residual_lines.append(lowered)
             continue
 
@@ -326,11 +365,9 @@ def characteristics(card: dict) -> CardFacts:
     residual = "\n".join(residual_lines)
     blocked_type = next((BLOCKED_TYPES[t] for t in types + subtypes if t in BLOCKED_TYPES), "")
     if blocked_type:
-        block_reason = block_reason or f"unsupported card type: {blocked_type}"
-    if not block_reason:
-        block_reason = next(
-            (reason for pattern, reason in BLOCKLIST if re.search(pattern, residual, re.M)), ""
-        )
+        reasons.append(f"unsupported card type: {blocked_type}")
+    reasons += [reason for pattern, reason in BLOCKLIST if re.search(pattern, residual, re.M)]
+    block_reason = reasons[0] if reasons else ""
 
     if block_reason:
         residual_class = ResidualClass.BLOCKED
@@ -352,8 +389,9 @@ def characteristics(card: dict) -> CardFacts:
         toughness=toughness if "creature" in types else None,
         colors=tuple(c for c in "WUBRG" if c in colors),
         # Always a subset of Scryfall's produced_mana: never a model's guess.
-        produced_mana=tuple(c for c in produced if c in mana_colors),
-        mana_amount=mana_amount if mana_colors & set(produced) else 0,
+        produced_mana=tuple(c for c in produced if any(c in a.colors for a in mana_abilities)),
+        mana_amount=max((a.amount for a in mana_abilities), default=0),
+        mana_abilities=tuple(mana_abilities),
         enters_tapped=enters_tapped,
         keywords=tuple(sorted(set(keywords), key=SUPPORTED_KEYWORDS.index)),
         ward=ward,
@@ -361,5 +399,6 @@ def characteristics(card: dict) -> CardFacts:
         residual=residual,
         residual_class=residual_class,
         block_reason=block_reason,
+        block_reasons=tuple(reasons),
         partial=partial,
     )

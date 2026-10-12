@@ -11,7 +11,7 @@ from playtest.agents.base import Decision
 from playtest.agents.heuristic import HeuristicAgent
 from playtest.agents.random_agent import RandomAgent
 from playtest.engine.actions import Action, ActionKind, commander_cost, legal_actions
-from playtest.engine.cards import DeckSpec, card
+from playtest.engine.cards import CardSpec, DeckSpec, card
 from playtest.engine.events import EventKind
 from playtest.engine.game import EndReason, Game
 from playtest.engine.limits import Limits
@@ -635,3 +635,56 @@ def test_commander_damage_is_counted_per_commander():
     events = check_state(state)
     assert not state.player(1).alive  # 22 from one commander
     assert any("P A" in e.text for e in events)
+
+
+# -- mana sources with a cost ------------------------------------------------------
+
+from playtest.engine.cardrules import ManaAbility  # noqa: E402
+
+
+def _source(name, *abilities, types="Land", subtypes=()):
+    spec = card(name, types)
+    return CardSpec(**{f: getattr(spec, f) for f in spec.__slots__ if f not in ("mana_abilities", "subtypes")},
+                    mana_abilities=abilities, subtypes=subtypes)
+
+
+def test_a_painland_is_free_for_generic_and_costs_life_for_colors():
+    from playtest.engine.mana import pay
+
+    game, state = _table()
+    pain = _put(state, _source("Pain", ManaAbility("C"), ManaAbility("RG", life=1)))
+    pay(state, 0, parse_mana_cost("{1}"))
+    assert state.player(0).life == 20
+    pain.tapped = False
+    events = pay(state, 0, parse_mana_cost("{R}"))
+    assert state.player(0).life == 19 and events[0].payload["effect"] == "lose_life"
+
+
+def test_costly_sources_are_spent_only_when_needed():
+    from playtest.engine.mana import pay
+
+    game, state = _table()
+    _put(state, FOREST)
+    petal = _put(state, _source("Petal", ManaAbility("WUBRG", sacrifice=True), types="Artifact"))
+    pay(state, 0, parse_mana_cost("{G}"))
+    assert petal in state.battlefield
+    events = pay(state, 0, parse_mana_cost("{U}"))
+    assert petal not in state.battlefield and [c.name for c in state.player(0).graveyard] == ["Petal"]
+    assert any("sacrificed" in e.text for e in events)
+
+
+def test_a_verge_makes_its_second_color_only_with_the_right_land():
+    game, state = _table()
+    _put(state, _source("Verge", ManaAbility("B"), ManaAbility("R", needs=("swamp", "mountain"))))
+    assert not can_pay(sources(state, 0), parse_mana_cost("{R}"))
+    _put(state, _source("Swamp", ManaAbility("B"), subtypes=("swamp",)))
+    assert can_pay(sources(state, 0), parse_mana_cost("{R}{B}"))
+
+
+def test_ancient_tomb_makes_two_and_deals_two():
+    from playtest.engine.mana import pay
+
+    game, state = _table()
+    _put(state, _source("Tomb", ManaAbility("C", amount=2, life=2)))
+    pay(state, 0, parse_mana_cost("{2}"))
+    assert state.player(0).life == 18 and not state.player(0).mana_pool

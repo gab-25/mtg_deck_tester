@@ -14,12 +14,13 @@ Pure: no Django, no I/O.
 """
 
 from dataclasses import dataclass
+from typing import Callable
 
 from .cards import CardSpec
 from .dsl import Ability, CardProgram, Op, SelKind, Target, Trigger
 from .events import Event, EventKind
 from .manacost import ManaCost
-from .state import GameState, Permanent, Player, StackItem
+from .state import ChoiceOption, GameState, Permanent, Player, StackItem
 from .zones import Zone, enter_battlefield, leave_battlefield, put_card
 
 # -- references to players, permanents and stack items --------------------------
@@ -142,6 +143,8 @@ def _object_matches(state: GameState, selector: str, perm: Permanent, controller
             return not perm.spec.is_land
         case "TARGET_LAND":
             return perm.spec.is_land
+        case "TARGET_NONBASIC_LAND":
+            return perm.spec.is_land and "basic" not in perm.spec.supertypes
         case "TARGET_PERMANENT":
             return True
     return False
@@ -259,6 +262,11 @@ def target_slots(abilities) -> list[tuple[str, Target]]:
 # -- applying operations ---------------------------------------------------------
 
 
+def first_option(state: GameState, seat: int, kind: str, prompt: str, options: list[ChoiceOption]) -> str:
+    """The chooser used outside a :class:`~.game.Game` (unit tests): the first option."""
+    return options[0].key
+
+
 @dataclass
 class EffectContext:
     controller: int
@@ -272,6 +280,14 @@ class EffectContext:
     deathtouch: bool = False
     lifelink: bool = False
     commander: bool = False
+    # Asks the agent of ``seat`` to pick one of ``options``; returns its key.
+    choose: Callable = first_option
+
+    def ask(self, state: GameState, seat: int, kind: str, prompt: str, options: list[ChoiceOption]) -> ChoiceOption:
+        if len(options) == 1 or not state.player(seat).alive:
+            return options[0]
+        key = self.choose(state, seat, kind, prompt, options)
+        return next((o for o in options if o.key == key), options[0])
 
 
 def _amount(op: Op, ctx: EffectContext) -> int:
@@ -552,12 +568,119 @@ def apply_op(state: GameState, ability: Ability, op: Op, ctx: EffectContext, ind
                     for perm in _sacrifice_choice(state, seat, op.what)[:amount]:
                         events.append(Event(EventKind.EFFECT, seat, f"{state.player(seat).name} sacrifices {perm.name}.", {"effect": "sacrifice", "card": perm.name}))
                         events += leave_battlefield(state, perm, Zone.GRAVEYARD)
+        case "SEARCH_LIBRARY":
+            events += _search(state, op, ctx, amount)
+        case "SCRY" | "SURVEIL":
+            for ref in refs:
+                events += _look_at_top(state, op, ctx, parse_ref(ref)[1], amount)
         case "COUNTER_SPELL":
             for ref in refs:
                 item = state.stack_item(parse_ref(ref)[1])
                 if item is not None:
                     events += counter_item(state, item, f"countered by {name}")
     return events
+
+
+# -- library searches, scry and surveil -----------------------------------------------
+
+
+def matches_filter(spec: CardSpec, filt: str) -> bool:
+    if filt == "CARD":
+        return True
+    if filt == "LAND":
+        return spec.is_land
+    if filt == "BASIC_LAND":
+        return spec.is_land and "basic" in spec.supertypes
+    if filt.startswith("TYPES:"):
+        return spec.is_land and bool(set(filt.removeprefix("TYPES:").split("|")) & set(spec.subtypes))
+    if filt == "INSTANT_OR_SORCERY":
+        return spec.is_spell_only
+    return filt.lower() in spec.types
+
+
+def _needed_colors(state: GameState, seat: int) -> set[str]:
+    """Colors the seat's hand asks for that its lands do not make yet."""
+    made = {c for p in state.battlefield if p.controller == seat for a in p.spec.mana_abilities for c in a.colors}
+    wanted = {c for card in state.player(seat).hand for pip in card.spec.cost.pips for c in pip}
+    return wanted - made
+
+
+def _land_count(state: GameState, seat: int) -> int:
+    in_play = sum(1 for p in state.battlefield if p.controller == seat and p.spec.is_land)
+    return in_play + sum(1 for c in state.player(seat).hand if c.spec.is_land)
+
+
+def card_value(state: GameState, seat: int, spec: CardSpec) -> int:
+    """The kernel's estimate of a card for ``seat`` right now (a fact for agents, never binding)."""
+    if spec.is_land:
+        needed = _needed_colors(state, seat)
+        return 2 + 5 * len(needed & {c for a in spec.mana_abilities for c in a.colors}) + (4 if _land_count(state, seat) < 4 else 0)
+    castable_soon = spec.mana_value <= _land_count(state, seat) + 1
+    return spec.mana_value * 2 + (3 if castable_soon else 0) + (1 if spec.is_creature else 0) - (20 if not spec.supported else 0)
+
+
+def _search(state: GameState, op: Op, ctx: EffectContext, amount: int) -> list[Event]:
+    player = state.player(ctx.controller)
+    found = []
+    for _ in range(amount):
+        seen, options = set(), []
+        for card in player.library:
+            if matches_filter(card.spec, op.filter) and card.name not in seen:
+                seen.add(card.name)
+                options.append(ChoiceOption(f"c{len(options):02d}", f"Find {card.name}", card_value(state, ctx.controller, card.spec), card.id))
+        # The library is hidden: a player may always fail to find.
+        options.append(ChoiceOption(f"c{len(options):02d}", "Find nothing", -1))
+        picked = ctx.ask(state, ctx.controller, "search", f"{ctx.source_name}: search your library", options)
+        if picked.card_id is None:
+            break
+        card = next(c for c in player.library if c.id == picked.card_id)
+        player.library.remove(card)
+        found.append(card)
+    state.rng.shuffle(player.library)
+    events = [Event(EventKind.EFFECT, ctx.controller, f"{player.name} searches their library" + (f" and finds {', '.join(c.name for c in found)}." if found else " and finds nothing."), {"effect": "search", "found": [c.name for c in found]})]
+    for card in found:
+        if op.to == "HAND":
+            player.hand.append(card)
+        elif op.to == "TOP":
+            player.library.insert(0, card)
+        elif op.to == "GRAVEYARD":
+            put_card(state, card, Zone.GRAVEYARD)
+        else:
+            perm = enter_battlefield(state, card, ctx.controller)
+            if op.to == "BATTLEFIELD_TAPPED":
+                perm.tapped = True
+    return events
+
+
+def _look_at_top(state: GameState, op: Op, ctx: EffectContext, seat: int, amount: int) -> list[Event]:
+    player = state.player(seat)
+    top = player.library[:amount]
+    del player.library[:amount]
+    away = "graveyard" if op.op == "SURVEIL" else "bottom"
+    kept, sent = [], []
+    for card in top:
+        value = card_value(state, seat, card.spec)
+        keep = value >= 5 if not card.spec.is_land else _land_count(state, seat) < 5
+        options = [
+            ChoiceOption("c00", f"Keep {card.name} on top", 1 if keep else 0, card.id),
+            ChoiceOption("c01", f"Put {card.name} {'into the graveyard' if away == 'graveyard' else 'on the bottom'}", 0 if keep else 1, card.id),
+        ]
+        picked = ctx.ask(state, seat, op.op.lower(), f"{ctx.source_name}: {op.op.lower()}", options)
+        (kept if picked.key == "c00" else sent).append(card)
+    player.library[0:0] = kept
+    for card in sent:
+        if away == "graveyard":
+            put_card(state, card, Zone.GRAVEYARD)
+        else:
+            player.library.append(card)
+    return [
+        Event(
+            EventKind.EFFECT,
+            seat,
+            f"{player.name} {op.op.lower()}s {len(top)}: {len(kept)} on top, {len(sent)} {'to the graveyard' if away == 'graveyard' else 'to the bottom'}.",
+            {"effect": op.op.lower(), "kept": len(kept), "away": len(sent)},
+        )
+    ]
 
 
 def counter_item(state: GameState, item: StackItem, why: str) -> list[Event]:

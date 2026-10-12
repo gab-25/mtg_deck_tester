@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from .cardrules import SUPPORTED_KEYWORDS, CardFacts
+from .cardrules import SUPPORTED_KEYWORDS, CardFacts, ManaAbility
 from .dsl import CardProgram, Trigger
 from .manacost import ManaCost, ManaCostError, parse_mana_cost
 
@@ -34,6 +34,8 @@ class CardSpec:
     colors: tuple[str, ...] = ()
     produced_mana: tuple[str, ...] = ()
     mana_amount: int = 0
+    # How it taps for mana: free abilities, and ones that cost life or a sacrifice.
+    mana_abilities: tuple[ManaAbility, ...] = ()
     enters_tapped: bool = False
     keywords: tuple[str, ...] = ()
     ward: int = 0
@@ -52,6 +54,7 @@ class CardSpec:
             colors=facts.colors,
             produced_mana=facts.produced_mana,
             mana_amount=facts.mana_amount,
+            mana_abilities=facts.mana_abilities,
             enters_tapped=facts.enters_tapped,
             keywords=facts.keywords,
             ward=facts.ward,
@@ -124,6 +127,7 @@ def card(
     program: CardProgram | None = CardProgram(),
     colors: tuple[str, ...] | None = None,
     ward: int = 0,
+    subtypes: tuple[str, ...] = (),
 ) -> CardSpec:
     """A card built by hand (tests, scripted games): ``card("Bear", "Creature", "{1}{G}", 2, 2)``."""
     words = type_line.lower().split()
@@ -136,16 +140,21 @@ def card(
     if colors is None:
         colors = tuple(c for c in "WUBRG" if any(c in pip for pip in parsed.pips))
     is_creature = "creature" in types
+    if not subtypes and "basic" in supertypes and name.lower() in ("plains", "island", "swamp", "mountain", "forest"):
+        # A basic land has its basic land type (fetch lands search for it).
+        subtypes = (name.lower(),)
     return CardSpec(
         name=name,
         types=types,
         cost=parsed,
         supertypes=supertypes,
+        subtypes=tuple(subtypes),
         power=(power or 0) if is_creature else None,
         toughness=(toughness or 0) if is_creature else None,
         colors=colors,
         produced_mana=tuple(c for c in "WUBRGC" if c in produces),
         mana_amount=amount if produces else 0,
+        mana_abilities=(ManaAbility("".join(c for c in "WUBRGC" if c in produces), amount),) if produces else (),
         enters_tapped=enters_tapped,
         keywords=tuple(keywords),
         ward=ward,

@@ -26,7 +26,7 @@ from .manacost import ManaCostError, parse_mana_cost, parse_mana_symbols
 
 # Bump only when the accepted vocabulary or a program's meaning changes: it is
 # part of the compiled-rules cache key.
-DSL_VERSION = "1"
+DSL_VERSION = "2"
 
 
 class DslError(ValueError):
@@ -117,6 +117,7 @@ SELECTORS: dict[str, SelectorSpec] = {
     "TARGET_NONLAND_PERMANENT": SelectorSpec(
         "one target permanent that is not a land", SelKind.PERMANENT, True, r"target nonland permanent"
     ),
+    "TARGET_NONBASIC_LAND": SelectorSpec("one target land that is not a basic land", SelKind.PERMANENT, True, r"target nonbasic land"),
     "TARGET_LAND": SelectorSpec("one target land", SelKind.PERMANENT, True, r"target land"),
     "TARGET_PERMANENT": SelectorSpec("one target permanent of any type", SelKind.PERMANENT, True, r"target permanent"),
     "TARGET_NONCREATURE_SPELL": SelectorSpec(
@@ -369,6 +370,30 @@ OPS: dict[str, OpSpec] = {
         _PLAYERS,
         (rf"^{_T} mills? {_N} cards?$", rf"^mill {_N} cards?$"),
     ),
+    "SEARCH_LIBRARY": OpSpec(
+        "its controller searches their library for cards of a kind and puts them in a zone, then shuffles",
+        ("target", "amount", "filter", "to"),
+        (),
+        _PLAYERS,
+        (
+            rf"^search your library for {_N} (?:(?P<filter>[a-z ,]+?) )?cards?, put (?:it|that card|them|those cards) "
+            r"(?P<to>onto the battlefield(?: tapped)?|into your hand|on top of your library|into your graveyard)$",
+        ),
+    ),
+    "SCRY": OpSpec(
+        "a player looks at the top cards of their library and puts each on the top or the bottom",
+        ("target", "amount"),
+        (),
+        _PLAYERS,
+        (rf"^scry {_N}$",),
+    ),
+    "SURVEIL": OpSpec(
+        "a player looks at the top cards of their library and puts each on the top or into their graveyard",
+        ("target", "amount"),
+        (),
+        _PLAYERS,
+        (rf"^surveil {_N}$",),
+    ),
     "COUNTER_SPELL": OpSpec(
         "counters a spell on the stack, which goes to its owner's graveyard without effect",
         ("target",),
@@ -392,6 +417,49 @@ AMOUNT_MAX = 20
 PT_MAX = 20
 MAX_ABILITIES = 12
 MAX_OPS = 6
+
+
+BASIC_LAND_TYPES = ("plains", "island", "swamp", "mountain", "forest")
+SEARCH_FILTERS = (
+    "CARD",
+    "LAND",
+    "BASIC_LAND",
+    "CREATURE",
+    "ARTIFACT",
+    "ENCHANTMENT",
+    "INSTANT",
+    "SORCERY",
+    "INSTANT_OR_SORCERY",
+)
+SEARCH_DESTINATIONS = {
+    "onto the battlefield": "BATTLEFIELD",
+    "onto the battlefield tapped": "BATTLEFIELD_TAPPED",
+    "into your hand": "HAND",
+    "on top of your library": "TOP",
+    "into your graveyard": "GRAVEYARD",
+}
+
+
+def search_filter(phrase: str) -> str | None:
+    """The filter code of a library-search phrase (``"forest or island"`` -> ``TYPES:forest|island``)."""
+    phrase = phrase.strip()
+    simple = {
+        "": "CARD",
+        "land": "LAND",
+        "basic land": "BASIC_LAND",
+        "creature": "CREATURE",
+        "artifact": "ARTIFACT",
+        "enchantment": "ENCHANTMENT",
+        "instant": "INSTANT",
+        "sorcery": "SORCERY",
+        "instant or sorcery": "INSTANT_OR_SORCERY",
+    }
+    if phrase in simple:
+        return simple[phrase]
+    words = [w for w in re.split(r",? or |, ", phrase) if w]
+    if words and all(w in BASIC_LAND_TYPES for w in words):
+        return "TYPES:" + "|".join(words)
+    return None
 
 
 def parse_clause(op: str, clause: str) -> dict | None:
@@ -431,6 +499,11 @@ def parse_clause(op: str, clause: str) -> dict | None:
             fields["duration"] = "EOT" if "eot" in groups else "STATIC"
         if "c" in groups:
             fields["counter"] = groups["c"]
+        if op == "SEARCH_LIBRARY":
+            fields["filter"] = search_filter(groups.get("filter", ""))
+            fields["to"] = SEARCH_DESTINATIONS[groups["to"]]
+            if fields["filter"] is None:
+                return None
         if "what" in groups:
             fields["what"] = groups["what"]
         if "mana" in groups:
@@ -479,6 +552,9 @@ class Op:
     subtype: str = ""
     keywords: tuple[str, ...] = ()
     what: str = ""
+    # SEARCH_LIBRARY: which cards qualify, and where the found card goes.
+    filter: str = ""
+    to: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -486,10 +562,11 @@ class Cost:
     mana: str = ""
     tap: bool = False
     sacrifice_self: bool = False
+    life: int = 0
 
     @property
     def empty(self) -> bool:
-        return not (self.mana or self.tap or self.sacrifice_self)
+        return not (self.mana or self.tap or self.sacrifice_self or self.life)
 
 
 @dataclass(frozen=True, slots=True)
@@ -526,7 +603,7 @@ _PROGRAM_KEYS = {"version", "abilities"}
 _ABILITY_KEYS = {"trigger", "ops", "targets", "cost", "mode_group", "text"}
 _TARGET_KEYS = {"selector", "restriction"}
 _RESTRICTION_KEYS = {"kind", "value"}
-_COST_KEYS = {"mana", "tap", "sacrifice_self"}
+_COST_KEYS = {"mana", "tap", "sacrifice_self", "life"}
 _OP_FIELDS = {
     "op",
     "target",
@@ -542,6 +619,8 @@ _OP_FIELDS = {
     "subtype",
     "keywords",
     "what",
+    "filter",
+    "to",
 }
 
 
@@ -611,7 +690,10 @@ def _validate_ability(data, path: str, facts, grounded: set[int], has_x: bool) -
             mana=raw_cost.get("mana") or "",
             tap=raw_cost.get("tap") is True,
             sacrifice_self=raw_cost.get("sacrifice_self") is True,
+            life=_int(raw_cost.get("life", 0), f"{path}.cost.life", 0, AMOUNT_MAX),
         )
+        if cost.life and cost.life not in grounded:
+            raise DslError(f"{path}.cost.life", f"{cost.life} does not appear in the card's text")
         if cost.mana:
             try:
                 parsed = parse_mana_cost(cost.mana)
@@ -798,6 +880,16 @@ def _validate_op(data, path: str, targets: dict, trigger: str, grounded: set[int
         fields.update(colors=tuple(colors), subtype=subtype, keywords=tuple(keywords))
         if fields.get("amount") == "X":
             raise DslError(f"{path}.amount", "token counts must be fixed")
+    if name == "SEARCH_LIBRARY":
+        if targets[fields["target"]].selector != "YOU":
+            raise DslError(f"{path}.target", "a player searches only their own library")
+        filt = data["filter"]
+        types = filt.removeprefix("TYPES:").split("|") if filt.startswith("TYPES:") else None
+        if filt not in SEARCH_FILTERS and not (types and all(t in BASIC_LAND_TYPES for t in types)):
+            raise DslError(f"{path}.filter", f"unknown filter {filt!r}")
+        if data["to"] not in SEARCH_DESTINATIONS.values():
+            raise DslError(f"{path}.to", f"unknown destination {data['to']!r}")
+        fields.update(filter=filt, to=data["to"])
     return Op(**fields)
 
 
@@ -823,6 +915,7 @@ def to_json(program: CardProgram) -> dict:
                 "mana": ability.cost.mana,
                 "tap": ability.cost.tap,
                 "sacrifice_self": ability.cost.sacrifice_self,
+                "life": ability.cost.life,
             }
         if ability.mode_group is not None:
             data["mode_group"] = ability.mode_group
@@ -897,6 +990,12 @@ def describe_op(op: Op, ability: Ability) -> str:
             return f"sacrifice {who}"
         case "COUNTER_SPELL":
             return f"counter {who}"
+        case "SEARCH_LIBRARY":
+            what = op.filter.removeprefix("TYPES:").replace("|", " or ").replace("_", " ").lower()
+            where = op.to.replace("_", " ").lower()
+            return f"search your library for {op.amount} {what} card(s), put onto {where}, shuffle"
+        case "SCRY" | "SURVEIL":
+            return f"{op.op.lower()} {op.amount}"
         case "RETURN_TO_HAND":
             return f"return {who} to its owner's hand"
         case _:
@@ -910,6 +1009,8 @@ def describe_ability(ability: Ability) -> str:
         parts = [ability.cost.mana] if ability.cost.mana else []
         if ability.cost.tap:
             parts.append("{T}")
+        if ability.cost.life:
+            parts.append(f"pay {ability.cost.life} life")
         if ability.cost.sacrifice_self:
             parts.append("sacrifice it")
         return f"{', '.join(parts)}: {body}"

@@ -109,9 +109,12 @@ def _candidates(text: str) -> tuple[tuple, tuple]:
 def _parse_cost(text: str, line: str) -> Cost:
     mana = ""
     tap = sacrifice = False
+    life = 0
     for part in (p.strip() for p in text.split(",")):
         if part == "{t}":
             tap = True
+        elif re.fullmatch(r"pay (\d+) life", part):
+            life = int(part.split()[1])
         elif re.fullmatch(r"sacrifice this (?:creature|artifact|enchantment|land|permanent)", part):
             sacrifice = True
         elif re.fullmatch(r"(?:\{[^}]+\})+", part) and not mana:
@@ -122,15 +125,24 @@ def _parse_cost(text: str, line: str) -> Cost:
             mana = part.upper()
         else:
             raise SplitError(line, f"unsupported cost “{part}”")
-    return Cost(mana=mana, tap=tap, sacrifice_self=sacrifice)
+    return Cost(mana=mana, tap=tap, sacrifice_self=sacrifice, life=life)
 
 
 def split_effect(effect: str, line: str) -> tuple[Clause, ...]:
     """Cuts one effect into atomic clauses, keeping their textual order."""
     effect = effect.strip().rstrip(".").strip()
     pieces: list[tuple[str, int | None]] = []
+    whole: set[int] = set()
     for sentence in re.split(r"\.\s+", effect):
         sentence = re.sub(r"^then\s+", "", sentence.strip())
+        if re.fullmatch(r"shuffle(?: your library)?", sentence) and whole:
+            continue  # the search before it already shuffles
+        if sentence.startswith("search your library"):
+            # One clause, read whole by the search grammar: its commas and
+            # "it" belong to it, and the shuffle is part of the operation.
+            whole.add(len(pieces))
+            pieces.append((re.sub(r",? then shuffle(?: your library)?$", "", sentence), None))
+            continue
         for part in re.split(r",? then ", sentence):
             part = part.strip().strip(",").strip()
             if not part:
@@ -159,10 +171,13 @@ def split_effect(effect: str, line: str) -> tuple[Clause, ...]:
         raise SplitError(line, f"more than {MAX_CLAUSES_PER_ABILITY} clauses")
 
     clauses = []
-    for text, share in pieces:
-        if "," in text or ";" in text or ":" in text:
+    for index, (text, share) in enumerate(pieces):
+        lenient = index in whole
+        if not lenient and ("," in text or ";" in text or ":" in text):
             raise SplitError(line, f"unreadable clause “{text}”")
         for pattern, reason in _UNREADABLE:
+            if lenient and reason in ("back-reference", "another zone"):
+                continue
             if re.search(pattern, text):
                 raise SplitError(line, reason)
         amounts, phrases = _candidates(text)
