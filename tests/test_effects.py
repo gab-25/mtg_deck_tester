@@ -1101,3 +1101,70 @@ def test_chord_finds_a_creature_with_mana_value_up_to_x():
     apply(state, 0, action)
     resolve_top(state, lambda st, seat, kind, prompt, options: asked.append([o.label for o in options]) or options[0].key)
     assert "Find Two" in asked[0] and "Find Five" not in asked[0]
+
+
+# -- optional effects ------------------------------------------------------------------
+
+
+SPELLBOMB = "When this artifact is put into a graveyard from the battlefield, you may pay {1}. If you do, draw a card."
+
+
+@pytest.mark.parametrize("answer, drawn", [("c00", 1), ("c01", 0)])
+def test_you_may_pay_and_if_you_do(answer, drawn):
+    game, state = _table()
+    _mana(state, amount=1)
+    bomb = _put(state, compiled_spec("Bomb", "Artifact", "{1}", SPELLBOMB))
+    from playtest.engine.zones import Zone, leave_battlefield
+
+    leave_battlefield(state, bomb, Zone.GRAVEYARD)
+    game._flush_triggers()
+    hand = len(state.player(0).hand)
+    asked = []
+    resolve_top(state, lambda st, seat, kind, prompt, options: asked.append((kind, [o.label for o in options])) or answer)
+    assert asked == [("may", ["Pay {1}", "Don't"])]
+    assert len(state.player(0).hand) == hand + drawn
+
+
+def test_if_you_do_is_skipped_when_the_payment_is_impossible():
+    game, state = _table()
+    bomb = _put(state, compiled_spec("Bomb", "Artifact", "{1}", SPELLBOMB))
+    from playtest.engine.zones import Zone, leave_battlefield
+
+    leave_battlefield(state, bomb, Zone.GRAVEYARD)
+    game._flush_triggers()
+    hand = len(state.player(0).hand)
+    resolve_top(state)
+    assert len(state.player(0).hand) == hand
+
+
+def test_you_may_search_on_enters():
+    game, state = _table()
+    _library(state, 0, card("Small", "Creature", "{1}", 1, 2))
+    text = "When this creature enters, you may search your library for a creature card with toughness 2 or less, reveal it, put it into your hand, then shuffle."
+    recruiter = compiled_spec("Recruiter", "Creature — Human", "{3}", text, "1", "1")
+    assert recruiter.program.abilities[0].ops[0].optional
+    _put(state, recruiter)
+    enter_battlefield(state, Card(state.new_id(), recruiter, 0), 0)
+    game._flush_triggers()
+    resolve_top(state, lambda st, seat, kind, prompt, options: "c00" if kind == "may" else next(o.key for o in options if o.label == "Find Small"))
+    assert state.player(0).hand[-1].name == "Small"
+
+
+def test_if_you_do_needs_an_earlier_optional_op():
+    from playtest.engine import dsl
+
+    facts = __import__("playtest.engine.cardrules", fromlist=["characteristics"]).characteristics(
+        __import__("tests.cards", fromlist=["raw_card"]).raw_card("X", "Sorcery", "{1}", "Draw a card. If you do, draw a card.")
+    )
+    payload = {
+        "version": dsl.DSL_VERSION,
+        "abilities": [
+            {
+                "trigger": "SPELL",
+                "targets": {"t1": {"selector": "YOU"}},
+                "ops": [{"op": "DRAW_CARDS", "target": "t1", "amount": 1}, {"op": "DRAW_CARDS", "target": "t1", "amount": 1, "if_done": True}],
+            }
+        ],
+    }
+    with pytest.raises(dsl.DslError, match="if_done"):
+        dsl.validate_program(payload, facts)

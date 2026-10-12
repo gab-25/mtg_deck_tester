@@ -215,6 +215,10 @@ def assemble(abilities: list[ClauseSet], answers: dict) -> dict:
                 clause_targets[c_index] = key
                 entry["target"] = key
             entry.update(fields)
+            if clause.optional:
+                entry["optional"] = True
+            if clause.if_done:
+                entry["if_done"] = True
             ops.append(entry)
         data = {"trigger": ability.trigger, "ops": ops, "text": ability.line}
         if targets:

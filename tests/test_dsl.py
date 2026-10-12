@@ -119,7 +119,7 @@ def test_x_needs_x_in_the_mana_cost():
 
 
 def test_every_op_and_selector_has_a_description_and_a_grammar():
-    assert len(dsl.OPS) == 28
+    assert len(dsl.OPS) == 29
     for name, spec in dsl.OPS.items():
         assert spec.description and spec.grammar, name
         assert set(spec.required) | set(spec.optional) <= dsl._OP_FIELDS, name

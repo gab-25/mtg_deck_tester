@@ -195,7 +195,7 @@ def test_split_turns_modes_into_abilities_sharing_a_group():
 @pytest.mark.parametrize(
     "oracle_text, reason",
     [
-        ("You may draw a card.", "may"),
+        ("You may choose a color.", "may"),
         ("Exile target creature. Return it to the battlefield.", "back-reference"),
         ("Whenever a creature dies, you gain 1 life.", "trigger"),
         ("Return target creature card from your graveyard to your hand.", "zone"),

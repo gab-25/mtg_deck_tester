@@ -26,7 +26,7 @@ from .manacost import ManaCostError, parse_mana_cost, parse_mana_symbols
 
 # Bump only when the accepted vocabulary or a program's meaning changes: it is
 # part of the compiled-rules cache key.
-DSL_VERSION = "6"
+DSL_VERSION = "7"
 
 
 class DslError(ValueError):
@@ -557,6 +557,13 @@ OPS: dict[str, OpSpec] = {
         frozenset({SelKind.SPELL}),
         (rf"^counter {_T} unless its controller pays (?P<mana>\{{\d+\}}){_COUNTERED_TO}$",),
     ),
+    "PAY_MANA": OpSpec(
+        "its controller may pay an amount of mana (only as an optional cost for what follows)",
+        ("target", "mana"),
+        (),
+        _PLAYERS,
+        (r"^pay (?P<mana>(?:\{[0-9wubrgc]\})+)$",),
+    ),
     "CREATE_ARTIFACT_TOKEN": OpSpec(
         "a player creates Treasure, Clue, Food or Blood artifact tokens (investigate creates a Clue)",
         ("target", "amount", "token"),
@@ -770,6 +777,10 @@ class Op:
     token: str = ""
     # A computed amount (POWER_OF_IT…): the key of the earlier target it reads.
     of: str = ""
+    # "you may …": its controller chooses; "if you do, …": only if the last
+    # optional op before it happened.
+    optional: bool = False
+    if_done: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -846,6 +857,8 @@ _OP_FIELDS = {
     "shuffle",
     "token",
     "of",
+    "optional",
+    "if_done",
 }
 
 
@@ -973,6 +986,9 @@ def _validate_ability(data, path: str, facts, grounded: set[int], has_x: bool) -
         _validate_op(op, f"{path}.ops[{i}]", by_key, trigger, grounded, has_x)
         for i, op in enumerate(raw_ops)
     ]
+    for i, op in enumerate(ops):
+        if op.if_done and not any(earlier.optional for earlier in ops[:i]):
+            raise DslError(f"{path}.ops[{i}].if_done", "“if you do” needs an optional operation before it")
 
     if any(t.selector == "THAT_PLAYER" for t in targets) and (
         trigger not in EVENT_PLAYER_TRIGGERS or when.startswith("YOU:")
@@ -1059,7 +1075,7 @@ def _validate_op(data, path: str, targets: dict, trigger: str, grounded: set[int
     spec = OPS.get(name)
     if spec is None:
         raise DslError(f"{path}.op", f"unknown operation {name!r}")
-    allowed = {"op", "of", *spec.required, *spec.optional}
+    allowed = {"op", "of", "optional", "if_done", *spec.required, *spec.optional}
     extra = sorted(k for k in data if k not in allowed)
     if extra:
         raise DslError(f"{path}.{extra[0]}", f"{name} has no field {extra[0]!r}")
@@ -1068,6 +1084,13 @@ def _validate_op(data, path: str, targets: dict, trigger: str, grounded: set[int
         raise DslError(f"{path}.{missing[0]}", f"{name} requires {missing[0]!r}")
 
     fields: dict = {"op": name}
+    for flag in ("optional", "if_done"):
+        if data.get(flag) is not None:
+            if not isinstance(data[flag], bool):
+                raise DslError(f"{path}.{flag}", "must be true or false")
+            fields[flag] = data[flag]
+    if name == "PAY_MANA" and not fields.get("optional"):
+        raise DslError(f"{path}.optional", "paying mana is only ever optional")
     if "target" in spec.required:
         key = data["target"]
         if key not in targets:
@@ -1193,6 +1216,14 @@ def _validate_op(data, path: str, targets: dict, trigger: str, grounded: set[int
         if not isinstance(data["shuffle"], bool):
             raise DslError(f"{path}.shuffle", "must be true or false")
         fields["shuffle"] = data["shuffle"]
+    if name == "PAY_MANA":
+        if targets[fields["target"]].selector != "YOU":
+            raise DslError(f"{path}.target", "only its controller pays")
+        try:
+            parse_mana_cost(data["mana"])
+        except (ManaCostError, TypeError) as exc:
+            raise DslError(f"{path}.mana", str(exc)) from exc
+        fields["mana"] = data["mana"].upper()
     if name == "COUNTER_UNLESS_PAYS":
         mana = data["mana"]
         match = re.fullmatch(r"\{(\d+)\}", mana) if isinstance(mana, str) else None
@@ -1340,6 +1371,8 @@ def describe_op(op: Op, ability: Ability) -> str:
             return f"look at the top {op.amount} and put them back in any order" + (" (or shuffle)" if op.shuffle else "")
         case "COUNTER_UNLESS_PAYS":
             return f"counter {who} unless its controller pays {op.mana}"
+        case "PAY_MANA":
+            return f"pay {op.mana}"
         case "CREATE_ARTIFACT_TOKEN":
             return f"{who}: create {op.amount} {op.token.title()} token(s)"
         case "RETURN_TO_HAND":
@@ -1348,9 +1381,18 @@ def describe_op(op: Op, ability: Ability) -> str:
             return f"{op.op.lower().replace('_', ' ')} {who}"
 
 
+def _describe_step(op: Op, ability: Ability) -> str:
+    text = describe_op(op, ability)
+    if op.optional:
+        text = "you may " + text
+    if op.if_done:
+        text = "if you do, " + text
+    return text
+
+
 def describe_ability(ability: Ability) -> str:
     """A short rendering of one ability for the player view and the log."""
-    body = ", then ".join(describe_op(op, ability) for op in ability.ops)
+    body = ", then ".join(_describe_step(op, ability) for op in ability.ops)
     if ability.trigger == Trigger.ACTIVATED and ability.cost is not None:
         parts = [ability.cost.mana] if ability.cost.mana else []
         if ability.cost.tap:

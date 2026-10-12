@@ -18,7 +18,7 @@ from typing import Callable
 
 from .cardrules import ManaAbility
 from .cards import CardSpec
-from .dsl import Ability, CardProgram, Cost, Op, SelKind, Target, Trigger
+from .dsl import Ability, CardProgram, Cost, Op, SelKind, Target, Trigger, describe_op
 from .events import Event, EventKind
 from .manacost import ManaCost
 from .state import ChoiceOption, GameState, Permanent, Player, StackItem
@@ -618,6 +618,11 @@ def apply_op(state: GameState, ability: Ability, op: Op, ctx: EffectContext, ind
         case "ARRANGE_TOP":
             for ref in refs:
                 events += _arrange_top(state, op, ctx, parse_ref(ref)[1], amount)
+        case "PAY_MANA":
+            from .mana import pay
+            from .manacost import parse_mana_cost
+
+            events += pay(state, ctx.controller, parse_mana_cost(op.mana))
         case "COUNTER_UNLESS_PAYS":
             for ref in refs:
                 item = state.stack_item(parse_ref(ref)[1])
@@ -931,11 +936,33 @@ def resolve_abilities(state: GameState, item: StackItem, abilities, ctx: EffectC
     ctx.lki = {slot: last_known(state, ref) for slot, ref in legal.items()}
     events: list[Event] = []
     for index, ability in enumerate(abilities):
+        # Whether the last optional op of this ability happened ("if you do").
+        done = True
         for op in ability.ops:
+            if op.if_done and not done:
+                continue
             target = ability.target(op.target)
             follows = [key for key in (target.key if target is not None and target.targeted else "", target.of if target is not None else "", op.of) if key]
             if any(f"{index}:{key}" not in legal for key in follows):
                 # That target (or the one "it" refers to) became illegal: this part does nothing.
+                done = done and not op.optional
                 continue
+            if op.optional:
+                done = _wants(state, ability, op, ctx)
+                if not done:
+                    continue
             events += apply_op(state, ability, op, ctx, index)
     return events, False
+
+
+def _wants(state: GameState, ability: Ability, op: Op, ctx: EffectContext) -> bool:
+    """Asks the controller whether an optional op happens; a payment it cannot make does not."""
+    if op.op == "PAY_MANA":
+        from .mana import can_pay, sources
+        from .manacost import parse_mana_cost
+
+        if not can_pay(sources(state, ctx.controller), parse_mana_cost(op.mana)):
+            return False
+    text = describe_op(op, ability)
+    options = [ChoiceOption("c00", text[:1].upper() + text[1:], 1), ChoiceOption("c01", "Don't", 0)]
+    return ctx.ask(state, ctx.controller, "may", f"{ctx.source_name}: you may {text}", options).key == "c00"

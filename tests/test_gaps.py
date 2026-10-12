@@ -16,7 +16,7 @@ def test_every_reason_is_listed_not_just_the_first():
         "Sorcery",
         "{2}",
         "Copy target spell.\n"
-        "You may draw a card.\n"
+        "You may choose a color.\n"
         "Proliferate.",
     )
     gaps = card_gaps(card)

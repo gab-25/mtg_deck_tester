@@ -118,6 +118,10 @@ class Clause:
     # Index (within the ability) of the clause whose subject this one repeats:
     # "target creature gets +2/+2 and gains flying" -> both affect one target.
     shares_target_with: int | None = None
+    # "you may …": its controller chooses whether it happens; "if you do, …":
+    # it happens only if the last optional clause before it did.
+    optional: bool = False
+    if_done: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,44 +211,17 @@ def split_effect(effect: str, line: str) -> tuple[Clause, ...]:
     effect = effect.strip().rstrip(".").strip()
     pieces: list[tuple[str, int | None]] = []
     whole: set[int] = set()
+    flags: dict[int, tuple[bool, bool]] = {}
     for sentence in _sentences(effect):
-        if re.fullmatch(r"shuffle(?: your library)?", sentence) and whole:
-            continue  # the search before it already shuffles
-        if sentence.startswith("search your library"):
-            # One clause, read whole by the search grammar: its commas and
-            # "it" belong to it, and the shuffle is part of the operation.
-            whole.add(len(pieces))
-            pieces.append((re.sub(r",? then shuffle(?: your library)?$", "", sentence), None))
-            continue
-        if reads_whole(sentence):
-            whole.add(len(pieces))
-            pieces.append((sentence, None))
-            continue
-        for part in re.split(r",? then ", sentence):
-            part = part.strip().strip(",").strip()
-            if not part:
-                continue
-            if reads_whole(part):
-                whole.add(len(pieces))
-                pieces.append((part, None))
-                continue
-            halves = _AND_VERB.split(part)
-            start = len(pieces)
-            pieces.append((halves[0], None))
-            subject_match = _SUBJECT.match(halves[0])
-            subject = subject_match.group(1).strip() if subject_match else ""
-            for half in halves[1:]:
-                if subject and _STARTS_WITH_VERB.match(half):
-                    pieces.append((f"{subject} {half}", start))
-                else:
-                    pieces.append((half, None))
-            # "gets +2/+2 and gains flying until end of turn": the duration
-            # at the end covers every half.
-            if len(halves) > 1 and halves[-1].endswith(" until end of turn"):
-                pieces[start:] = [
-                    (text if text.endswith(" until end of turn") else text + " until end of turn", share)
-                    for text, share in pieces[start:]
-                ]
+        start = len(pieces)
+        if_done = sentence.startswith("if you do, ")
+        sentence = sentence.removeprefix("if you do, ")
+        rest = re.sub(r",? then shuffle(?: your library)?$", "", sentence.removeprefix("you may "))
+        optional = sentence.startswith("you may ") and reads_whole(rest)
+        sentence = sentence.removeprefix("you may ") if optional else sentence
+        _split_sentence(sentence, pieces, whole)
+        for index in range(start, len(pieces)):
+            flags[index] = (optional and index == start, if_done)
 
     if not pieces:
         raise SplitError(line, "empty effect")
@@ -260,8 +237,50 @@ def split_effect(effect: str, line: str) -> tuple[Clause, ...]:
             if re.search(pattern, text):
                 raise SplitError(line, reason)
         amounts, phrases = _candidates(text)
-        clauses.append(Clause(text, amounts, phrases, share))
+        optional, if_done = flags[index]
+        clauses.append(Clause(text, amounts, phrases, share, optional, if_done))
     return tuple(clauses)
+
+
+def _split_sentence(sentence: str, pieces: list, whole: set) -> None:
+    """Cuts one sentence into clauses, appending ``(text, shares_target_with)`` to ``pieces``."""
+    if re.fullmatch(r"shuffle(?: your library)?", sentence) and whole:
+        return  # the search before it already shuffles
+    if sentence.startswith("search your library"):
+        # One clause, read whole by the search grammar: its commas and
+        # "it" belong to it, and the shuffle is part of the operation.
+        whole.add(len(pieces))
+        pieces.append((re.sub(r",? then shuffle(?: your library)?$", "", sentence), None))
+        return
+    if reads_whole(sentence):
+        whole.add(len(pieces))
+        pieces.append((sentence, None))
+        return
+    for part in re.split(r",? then ", sentence):
+        part = part.strip().strip(",").strip()
+        if not part:
+            continue
+        if reads_whole(part):
+            whole.add(len(pieces))
+            pieces.append((part, None))
+            continue
+        halves = _AND_VERB.split(part)
+        start = len(pieces)
+        pieces.append((halves[0], None))
+        subject_match = _SUBJECT.match(halves[0])
+        subject = subject_match.group(1).strip() if subject_match else ""
+        for half in halves[1:]:
+            if subject and _STARTS_WITH_VERB.match(half):
+                pieces.append((f"{subject} {half}", start))
+            else:
+                pieces.append((half, None))
+        # "gets +2/+2 and gains flying until end of turn": the duration
+        # at the end covers every half.
+        if len(halves) > 1 and halves[-1].endswith(" until end of turn"):
+            pieces[start:] = [
+                (text if text.endswith(" until end of turn") else text + " until end of turn", share)
+                for text, share in pieces[start:]
+            ]
 
 
 def _abilities(line: str, facts: CardFacts) -> list[ClauseSet]:

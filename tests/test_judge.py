@@ -78,6 +78,7 @@ SAMPLES = {
     "ARRANGE_TOP": ("Sorcery", "Look at the top three cards of your library, then put them back in any order."),
     "COUNTER_UNLESS_PAYS": ("Instant", "Counter target spell unless its controller pays {3}."),
     "CREATE_ARTIFACT_TOKEN": ("Sorcery", "Create two Treasure tokens."),
+    "PAY_MANA": ("Sorcery", "You may pay {2}. If you do, draw a card."),
 }
 
 
