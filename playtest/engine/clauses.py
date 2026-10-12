@@ -16,7 +16,7 @@ import re
 from dataclasses import dataclass
 
 from .cardrules import CardFacts, number_value
-from .dsl import Cost, Trigger, selector_phrase_regex
+from .dsl import OPS, Cost, Trigger, parse_clause, selector_phrase_regex
 from .manacost import ManaCostError, parse_mana_cost
 
 MAX_CLAUSES_PER_ABILITY = 4
@@ -38,7 +38,8 @@ _BULLET = re.compile(r"^•\s*(.+)$")
 # Verbs that start a new clause after "and".
 _VERBS = (
     "deal|deals|gain|gains|lose|loses|draw|draws|discard|discards|destroy|exile|return|"
-    "tap|untap|add|create|get|gets|put|sacrifice|sacrifices|mill|mills|counter|have|has"
+    "tap|untap|add|create|get|gets|put|sacrifice|sacrifices|mill|mills|counter|have|has|"
+    "scry|surveil|investigate|look"
 )
 _AND_VERB = re.compile(rf" and (?=(?:you )?(?:{_VERBS})\b)")
 _STARTS_WITH_VERB = re.compile(rf"^(?:{_VERBS})\b")
@@ -109,10 +110,12 @@ def _candidates(text: str) -> tuple[tuple, tuple]:
 def _parse_cost(text: str, line: str) -> Cost:
     mana = ""
     tap = sacrifice = False
-    life = 0
+    life = discard = 0
     for part in (p.strip() for p in text.split(",")):
         if part == "{t}":
             tap = True
+        elif re.fullmatch(r"discard (?:a|one|two|three) cards?", part):
+            discard = number_value(part.split()[1]) or 1
         elif re.fullmatch(r"pay (\d+) life", part):
             life = int(part.split()[1])
         elif re.fullmatch(r"sacrifice this (?:creature|artifact|enchantment|land|permanent)", part):
@@ -125,16 +128,48 @@ def _parse_cost(text: str, line: str) -> Cost:
             mana = part.upper()
         else:
             raise SplitError(line, f"unsupported cost “{part}”")
-    return Cost(mana=mana, tap=tap, sacrifice_self=sacrifice, life=life)
+    return Cost(mana=mana, tap=tap, sacrifice_self=sacrifice, life=life, discard=discard)
+
+
+def reads_whole(text: str) -> bool:
+    """Whether some operation's grammar reads ``text`` as one clause."""
+    return any(parse_clause(op, text) is not None for op in OPS)
+
+
+# How many sentences one grammar may span ("target player reveals their hand.
+# you choose … that player discards that card").
+_MAX_SPAN = 3
+
+
+def _sentences(effect: str) -> list[str]:
+    """The effect's sentences, with runs that one grammar reads whole joined into one."""
+    sentences = [re.sub(r"^then\s+", "", s.strip()) for s in re.split(r"\.\s+", effect)]
+    joined = []
+    index = 0
+    while index < len(sentences):
+        for end in range(min(len(sentences), index + _MAX_SPAN), index + 1, -1):
+            text = ". ".join(sentences[index:end])
+            if reads_whole(text):
+                joined.append(text)
+                index = end
+                break
+        else:
+            joined.append(sentences[index])
+            index += 1
+    return joined
 
 
 def split_effect(effect: str, line: str) -> tuple[Clause, ...]:
-    """Cuts one effect into atomic clauses, keeping their textual order."""
+    """Cuts one effect into atomic clauses, keeping their textual order.
+
+    A sentence (or run of sentences) that an operation's grammar reads whole
+    stays one clause: the grammar states exactly what its references, zones
+    and options mean, so the word filters below do not apply to it.
+    """
     effect = effect.strip().rstrip(".").strip()
     pieces: list[tuple[str, int | None]] = []
     whole: set[int] = set()
-    for sentence in re.split(r"\.\s+", effect):
-        sentence = re.sub(r"^then\s+", "", sentence.strip())
+    for sentence in _sentences(effect):
         if re.fullmatch(r"shuffle(?: your library)?", sentence) and whole:
             continue  # the search before it already shuffles
         if sentence.startswith("search your library"):
@@ -143,9 +178,17 @@ def split_effect(effect: str, line: str) -> tuple[Clause, ...]:
             whole.add(len(pieces))
             pieces.append((re.sub(r",? then shuffle(?: your library)?$", "", sentence), None))
             continue
+        if reads_whole(sentence):
+            whole.add(len(pieces))
+            pieces.append((sentence, None))
+            continue
         for part in re.split(r",? then ", sentence):
             part = part.strip().strip(",").strip()
             if not part:
+                continue
+            if reads_whole(part):
+                whole.add(len(pieces))
+                pieces.append((part, None))
                 continue
             halves = _AND_VERB.split(part)
             start = len(pieces)
@@ -172,12 +215,10 @@ def split_effect(effect: str, line: str) -> tuple[Clause, ...]:
 
     clauses = []
     for index, (text, share) in enumerate(pieces):
-        lenient = index in whole
+        lenient = index in whole or reads_whole(text)
         if not lenient and ("," in text or ";" in text or ":" in text):
             raise SplitError(line, f"unreadable clause “{text}”")
-        for pattern, reason in _UNREADABLE:
-            if lenient and reason in ("back-reference", "another zone"):
-                continue
+        for pattern, reason in () if lenient else _UNREADABLE:
             if re.search(pattern, text):
                 raise SplitError(line, reason)
         amounts, phrases = _candidates(text)

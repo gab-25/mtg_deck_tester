@@ -191,7 +191,7 @@ def test_split_turns_modes_into_abilities_sharing_a_group():
     "oracle_text, reason",
     [
         ("You may draw a card.", "may"),
-        ("Destroy target creature. Its controller gains 3 life.", "back-reference"),
+        ("Destroy target creature. That player gains 3 life.", "back-reference"),
         ("Whenever a creature dies, you gain 1 life.", "trigger"),
         ("Return target creature card from your graveyard to your hand.", "zone"),
         ("Choose two —\n• Draw a card.\n• Gain 3 life.", "choose one"),

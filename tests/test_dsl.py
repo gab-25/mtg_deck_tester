@@ -119,7 +119,7 @@ def test_x_needs_x_in_the_mana_cost():
 
 
 def test_every_op_and_selector_has_a_description_and_a_grammar():
-    assert len(dsl.OPS) == 21
+    assert len(dsl.OPS) == 28
     for name, spec in dsl.OPS.items():
         assert spec.description and spec.grammar, name
         assert set(spec.required) | set(spec.optional) <= dsl._OP_FIELDS, name
@@ -177,3 +177,57 @@ def test_x_is_refused_outside_spell_abilities():
     )
     with pytest.raises(dsl.DslError, match="X amounts only in spell"):
         dsl.validate_program(payload, facts)
+
+
+SWORDS = characteristics(
+    raw_card("Swords", "Instant", "{W}", "Exile target creature. Its controller gains life equal to its power. Look at the top four cards of your library. Put one of them into your hand and the rest on the bottom of your library.")
+)
+
+
+def _swords(**changes):
+    ability = {
+        "trigger": "SPELL",
+        "targets": {"t1": {"selector": "TARGET_CREATURE"}, "t2": {"selector": "CONTROLLER_OF_IT", "of": "t1"}},
+        "ops": [
+            {"op": "EXILE", "target": "t1"},
+            {"op": "GAIN_LIFE", "target": "t2", "amount": "POWER_OF_IT", "of": "t1"},
+        ],
+    }
+    ability.update(changes)
+    return _program(ability)
+
+
+def test_a_derived_selector_and_a_computed_amount_round_trip():
+    program = dsl.validate_program(_swords(), SWORDS)
+    assert dsl.validate_program(dsl.to_json(program), SWORDS) == program
+
+
+@pytest.mark.parametrize(
+    "mutate, path",
+    [
+        (lambda a: a["targets"]["t2"].pop("of"), "t2"),
+        (lambda a: a["targets"]["t2"].update(of="t9"), "of"),
+        (lambda a: a["targets"].update(t1={"selector": "TARGET_PLAYER"}), "of"),
+        (lambda a: a["ops"][1].pop("of"), "of"),
+        (lambda a: a["ops"][0].update(of="t1"), "of"),
+        (lambda a: a["ops"][0].update(op="DEAL_DAMAGE", amount="POWER_OF_IT", of="t1"), "amount"),
+        (lambda a: a["targets"]["t1"].update(restriction={"kind": "OPPONENT"}), "restriction"),
+        (lambda a: a["targets"]["t1"].update(restriction={"kind": "MV_EQ", "value": 1}), "restriction"),
+        (
+            lambda a: a["ops"].append({"op": "DIG", "target": "t3", "amount": 4, "count": 4, "to": "BOTTOM"})
+            or a["targets"].update(t3={"selector": "YOU"}),
+            "count",
+        ),
+        (
+            lambda a: a["ops"].append({"op": "DIG", "target": "t3", "amount": 4, "count": 1, "to": "BOTTOM"})
+            or a["targets"].update(t3={"selector": "TARGET_PLAYER"}),
+            "target",
+        ),
+    ],
+)
+def test_derived_references_and_new_fields_are_validated(mutate, path):
+    payload = _swords()
+    mutate(payload["abilities"][0])
+    with pytest.raises(dsl.DslError) as exc:
+        dsl.validate_program(payload, SWORDS)
+    assert path in exc.value.path

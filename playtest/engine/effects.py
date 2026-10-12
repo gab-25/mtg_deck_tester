@@ -13,11 +13,12 @@
 Pure: no Django, no I/O.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
+from .cardrules import ManaAbility
 from .cards import CardSpec
-from .dsl import Ability, CardProgram, Op, SelKind, Target, Trigger
+from .dsl import Ability, CardProgram, Cost, Op, SelKind, Target, Trigger
 from .events import Event, EventKind
 from .manacost import ManaCost
 from .state import ChoiceOption, GameState, Permanent, Player, StackItem
@@ -150,7 +151,7 @@ def _object_matches(state: GameState, selector: str, perm: Permanent, controller
     return False
 
 
-def _restriction_ok(state: GameState, target: Target, perm: Permanent) -> bool:
+def _restriction_ok(state: GameState, target: Target, perm: Permanent, controller: int) -> bool:
     match target.restriction:
         case "":
             return True
@@ -162,6 +163,10 @@ def _restriction_ok(state: GameState, target: Target, perm: Permanent) -> bool:
             return perm.spec.mana_value <= target.restriction_value
         case "TAPPED":
             return perm.tapped
+        case "LEGENDARY":
+            return "legendary" in perm.spec.supertypes
+        case "OPPONENT":
+            return perm.controller != controller
     return False
 
 
@@ -184,7 +189,7 @@ def legal_target(state: GameState, target: Target, ref: str, controller: int, it
         return (
             perm is not None
             and _object_matches(state, selector, perm, controller)
-            and _restriction_ok(state, target, perm)
+            and _restriction_ok(state, target, perm, controller)
             and _targetable(state, perm, controller)
         )
     item = state.stack_item(value)
@@ -194,6 +199,10 @@ def legal_target(state: GameState, target: Target, ref: str, controller: int, it
         return item.card.spec.is_creature
     if selector == "TARGET_NONCREATURE_SPELL":
         return not item.card.spec.is_creature
+    if selector == "TARGET_INSTANT_OR_SORCERY_SPELL":
+        return item.card.spec.is_spell_only
+    if target.restriction == "MV_EQ":
+        return item.card.spec.mana_value == target.restriction_value
     return True
 
 
@@ -282,6 +291,10 @@ class EffectContext:
     commander: bool = False
     # Asks the agent of ``seat`` to pick one of ``options``; returns its key.
     choose: Callable = first_option
+    # Last known information of each chosen target, by slot, taken as the
+    # spell or ability starts resolving: what "its controller" and "its power"
+    # read after the object has left.
+    lki: dict = field(default_factory=dict)
 
     def ask(self, state: GameState, seat: int, kind: str, prompt: str, options: list[ChoiceOption]) -> ChoiceOption:
         if len(options) == 1 or not state.player(seat).alive:
@@ -290,9 +303,14 @@ class EffectContext:
         return next((o for o in options if o.key == key), options[0])
 
 
-def _amount(op: Op, ctx: EffectContext) -> int:
+_STATS = {"POWER_OF_IT": "power", "TOUGHNESS_OF_IT": "toughness", "MV_OF_IT": "mv"}
+
+
+def _amount(op: Op, ctx: EffectContext, index: int = 0) -> int:
     if op.amount == "X":
         return ctx.x
+    if op.amount in _STATS:
+        return max(0, ctx.lki.get(f"{index}:{op.of}", {}).get(_STATS[op.amount], 0))
     return int(op.amount or 0)
 
 
@@ -303,6 +321,9 @@ def _refs(state: GameState, ability: Ability, op: Op, ctx: EffectContext, index:
     if target.targeted:
         ref = ctx.targets.get(f"{index}:{target.key}")
         return [ref] if ref is not None else []
+    if target.selector == "CONTROLLER_OF_IT":
+        info = ctx.lki.get(f"{index}:{target.of}")
+        return [player_ref(info["controller"])] if info and state.player(info["controller"]).alive else []
     return members(state, target, ctx.controller, ctx.source_id)
 
 
@@ -445,7 +466,7 @@ def apply_op(state: GameState, ability: Ability, op: Op, ctx: EffectContext, ind
     """Carries out one operation of the ``index``-th ability; returns what happened."""
     events: list[Event] = []
     refs = _refs(state, ability, op, ctx, index)
-    amount = _amount(op, ctx)
+    amount = _amount(op, ctx, index)
     name = ctx.source_name
 
     match op.op:
@@ -570,6 +591,39 @@ def apply_op(state: GameState, ability: Ability, op: Op, ctx: EffectContext, ind
                         events += leave_battlefield(state, perm, Zone.GRAVEYARD)
         case "SEARCH_LIBRARY":
             events += _search(state, op, ctx, amount)
+        case "DISCARD_CHOSEN":
+            for ref in refs:
+                events += _discard_chosen(state, op, ctx, parse_ref(ref)[1])
+        case "LOOK_AT_HAND":
+            for ref in refs:
+                seen = state.player(parse_ref(ref)[1])
+                names = ", ".join(c.name for c in seen.hand) or "nothing"
+                events.append(
+                    Event(EventKind.EFFECT, ctx.controller, f"{state.player(ctx.controller).name} looks at {seen.name}'s hand: {names}.", {"effect": "look_at_hand", "cards": [c.name for c in seen.hand]})
+                )
+        case "DIG":
+            for ref in refs:
+                events += _dig(state, op, ctx, parse_ref(ref)[1], amount)
+        case "PUT_BACK":
+            for ref in refs:
+                events += _put_back(state, ctx, parse_ref(ref)[1], amount)
+        case "ARRANGE_TOP":
+            for ref in refs:
+                events += _arrange_top(state, op, ctx, parse_ref(ref)[1], amount)
+        case "COUNTER_UNLESS_PAYS":
+            for ref in refs:
+                item = state.stack_item(parse_ref(ref)[1])
+                if item is not None:
+                    events += _counter_unless_pays(state, item, op, ctx)
+        case "CREATE_ARTIFACT_TOKEN":
+            spec = ARTIFACT_TOKENS[op.token]
+            for ref in refs:
+                seat = parse_ref(ref)[1]
+                for _ in range(amount):
+                    enter_battlefield(state, None, seat, spec)
+                events.append(
+                    Event(EventKind.EFFECT, seat, f"{state.player(seat).name} creates {amount} {spec.name} token{'s' if amount > 1 else ''}.", {"effect": "create_token", "amount": amount, "token": spec.name})
+                )
         case "SCRY" | "SURVEIL":
             for ref in refs:
                 events += _look_at_top(state, op, ctx, parse_ref(ref)[1], amount)
@@ -595,6 +649,12 @@ def matches_filter(spec: CardSpec, filt: str) -> bool:
         return spec.is_land and bool(set(filt.removeprefix("TYPES:").split("|")) & set(spec.subtypes))
     if filt == "INSTANT_OR_SORCERY":
         return spec.is_spell_only
+    if filt == "NONLAND":
+        return not spec.is_land
+    if filt == "NONCREATURE_NONLAND":
+        return not spec.is_land and not spec.is_creature
+    if filt == "ARTIFACT_OR_ENCHANTMENT":
+        return "artifact" in spec.types or "enchantment" in spec.types
     return filt.lower() in spec.types
 
 
@@ -683,6 +743,127 @@ def _look_at_top(state: GameState, op: Op, ctx: EffectContext, seat: int, amount
     ]
 
 
+def _discard_chosen(state: GameState, op: Op, ctx: EffectContext, seat: int) -> list[Event]:
+    player = state.player(seat)
+    revealed = ", ".join(c.name for c in player.hand) or "nothing"
+    events = [Event(EventKind.EFFECT, seat, f"{player.name} reveals their hand: {revealed}.", {"effect": "reveal_hand", "cards": [c.name for c in player.hand]})]
+    seen, options = set(), []
+    for card in player.hand:
+        fits = matches_filter(card.spec, op.filter) and (op.max_mv is None or card.spec.mana_value <= op.max_mv)
+        if fits and card.name not in seen:
+            seen.add(card.name)
+            options.append(ChoiceOption(f"c{len(options):02d}", f"Discard {card.name}", card_value(state, seat, card.spec), card.id))
+    if not options:
+        return events
+    picked = ctx.ask(state, ctx.controller, "discard", f"{ctx.source_name}: choose a card {player.name} discards", options)
+    card = next(c for c in player.hand if c.id == picked.card_id)
+    player.hand.remove(card)
+    put_card(state, card, Zone.GRAVEYARD)
+    events.append(Event(EventKind.DISCARD, seat, f"{player.name} discards {card.name}.", {"card": card.name, "effect": "discard_chosen"}))
+    return events
+
+
+def _pick_cards(state: GameState, ctx: EffectContext, seat: int, cards: list, count: int, label: str, kind: str, sign: int = 1) -> list:
+    """Asks ``seat`` to pick ``count`` of ``cards``, one at a time; returns them in picking order."""
+    picked, left = [], list(cards)
+    for _ in range(min(count, len(left))):
+        seen, options = set(), []
+        for card in left:
+            if card.name not in seen:
+                seen.add(card.name)
+                options.append(ChoiceOption(f"c{len(options):02d}", label.format(card.name), sign * card_value(state, seat, card.spec), card.id))
+        choice = ctx.ask(state, seat, kind, f"{ctx.source_name}: {label.format('a card').lower()}", options)
+        card = next(c for c in left if c.id == choice.card_id)
+        left.remove(card)
+        picked.append(card)
+    return picked
+
+
+def _dig(state: GameState, op: Op, ctx: EffectContext, seat: int, amount: int) -> list[Event]:
+    player = state.player(seat)
+    top = player.library[:amount]
+    del player.library[:amount]
+    taken = _pick_cards(state, ctx, seat, top, op.count, "Take {}", "dig")
+    rest = [c for c in top if c not in taken]
+    player.hand += taken
+    for card in rest:
+        if op.to == "GRAVEYARD":
+            put_card(state, card, Zone.GRAVEYARD)
+        else:
+            player.library.append(card)
+    where = "into the graveyard" if op.to == "GRAVEYARD" else "on the bottom"
+    return [Event(EventKind.EFFECT, seat, f"{player.name} looks at the top {len(top)}, takes {len(taken)} and puts {len(rest)} {where}.", {"effect": "dig", "taken": len(taken), "rest": len(rest)})]
+
+
+def _put_back(state: GameState, ctx: EffectContext, seat: int, amount: int) -> list[Event]:
+    player = state.player(seat)
+    # The least valuable cards go back first; the last one picked ends on top.
+    back = _pick_cards(state, ctx, seat, player.hand, amount, "Put back {}", "put_back", sign=-1)
+    for card in back:
+        player.hand.remove(card)
+        player.library.insert(0, card)
+    return [Event(EventKind.EFFECT, seat, f"{player.name} puts {len(back)} card{'s' if len(back) != 1 else ''} from their hand on top of their library.", {"effect": "put_back", "amount": len(back)})]
+
+
+def _arrange_top(state: GameState, op: Op, ctx: EffectContext, seat: int, amount: int) -> list[Event]:
+    player = state.player(seat)
+    top = player.library[:amount]
+    if op.shuffle and top:
+        worth = sum(card_value(state, seat, c.spec) for c in top) / len(top)
+        options = [ChoiceOption("c00", "Keep them", 1 if worth >= 5 else 0), ChoiceOption("c01", "Shuffle", 0 if worth >= 5 else 1)]
+        if ctx.ask(state, seat, "shuffle", f"{ctx.source_name}: keep the top cards or shuffle", options).key == "c01":
+            state.rng.shuffle(player.library)
+            return [Event(EventKind.EFFECT, seat, f"{player.name} shuffles their library.", {"effect": "shuffle"})]
+    del player.library[: len(top)]
+    ordered = _pick_cards(state, ctx, seat, top, len(top) - 1, "{} on top", "arrange")
+    ordered += [c for c in top if c not in ordered]
+    player.library[0:0] = ordered
+    return [Event(EventKind.EFFECT, seat, f"{player.name} puts the top {len(top)} back in an order of their choice.", {"effect": "arrange_top", "amount": len(top)})]
+
+
+def _counter_unless_pays(state: GameState, item: StackItem, op: Op, ctx: EffectContext) -> list[Event]:
+    from .mana import can_pay, pay, sources
+
+    from .manacost import parse_mana_cost
+
+    cost = parse_mana_cost(op.mana)
+    payer = item.controller
+    if state.player(payer).alive and can_pay(sources(state, payer), cost):
+        options = [ChoiceOption("c00", f"Pay {op.mana}", 1), ChoiceOption("c01", "Don't pay", 0)]
+        if ctx.ask(state, payer, "pay", f"{ctx.source_name}: pay {op.mana} or {item.name} is countered", options).key == "c00":
+            paid = pay(state, payer, cost)
+            return paid + [Event(EventKind.EFFECT, payer, f"{state.player(payer).name} pays {op.mana} for {item.name}.", {"effect": "pay_unless", "mana": op.mana})]
+    return counter_item(state, item, f"countered by {ctx.source_name}")
+
+
+def _token_ability(cost: Cost, op: Op, text: str) -> Ability:
+    return Ability(Trigger.ACTIVATED, (op,), (Target("t1", "YOU"),), cost, text=text)
+
+
+def _artifact_token(name: str, **extra) -> CardSpec:
+    return CardSpec(name=name, types=("artifact",), subtypes=(name.lower(),), cost=ManaCost(), **extra)
+
+
+# The predefined artifact tokens (CR 111.10).
+ARTIFACT_TOKENS = {
+    "TREASURE": _artifact_token(
+        "Treasure", produced_mana=tuple("WUBRG"), mana_amount=1, mana_abilities=(ManaAbility("WUBRG", sacrifice=True),)
+    ),
+    "CLUE": _artifact_token(
+        "Clue",
+        program=CardProgram((_token_ability(Cost(mana="{2}", sacrifice_self=True), Op("DRAW_CARDS", target="t1", amount=1), "{2}, sacrifice this artifact: draw a card."),)),
+    ),
+    "FOOD": _artifact_token(
+        "Food",
+        program=CardProgram((_token_ability(Cost(mana="{2}", tap=True, sacrifice_self=True), Op("GAIN_LIFE", target="t1", amount=3), "{2}, {t}, sacrifice this artifact: you gain 3 life."),)),
+    ),
+    "BLOOD": _artifact_token(
+        "Blood",
+        program=CardProgram((_token_ability(Cost(mana="{1}", tap=True, sacrifice_self=True, discard=1), Op("DRAW_CARDS", target="t1", amount=1), "{1}, {t}, discard a card, sacrifice this artifact: draw a card."),)),
+    ),
+}
+
+
 def counter_item(state: GameState, item: StackItem, why: str) -> list[Event]:
     """Removes ``item`` from the stack without effect; a spell goes to its owner's graveyard."""
     if item in state.stack:
@@ -690,6 +871,19 @@ def counter_item(state: GameState, item: StackItem, why: str) -> list[Event]:
     if item.card is not None:
         put_card(state, item.card, Zone.GRAVEYARD)
     return [Event(EventKind.COUNTERED, item.controller, f"{item.name} is {why}.", {"card": item.name, "reason": why})]
+
+
+def last_known(state: GameState, ref: str) -> dict:
+    """What "its controller" and "its power" read for ``ref``, captured now."""
+    kind, value = parse_ref(ref)
+    if kind == "o":
+        perm = state.permanent(value)
+        return {"controller": perm.controller, "power": power(state, perm), "toughness": toughness(state, perm), "mv": perm.spec.mana_value}
+    if kind == "s":
+        item = state.stack_item(value)
+        spec = item.card.spec if item.card is not None else None
+        return {"controller": item.controller, "power": (spec.power or 0) if spec else 0, "toughness": (spec.toughness or 0) if spec else 0, "mv": spec.mana_value if spec else 0}
+    return {"controller": value, "power": 0, "toughness": 0, "mv": 0}
 
 
 def resolve_abilities(state: GameState, item: StackItem, abilities, ctx: EffectContext) -> tuple[list[Event], bool]:
@@ -706,12 +900,14 @@ def resolve_abilities(state: GameState, item: StackItem, abilities, ctx: EffectC
     if slots and not legal:
         return [Event(EventKind.FIZZLE, item.controller, f"{item.name} has no legal target left and does nothing.", {"card": item.name})], True
     ctx.targets = legal
+    ctx.lki = {slot: last_known(state, ref) for slot, ref in legal.items()}
     events: list[Event] = []
     for index, ability in enumerate(abilities):
         for op in ability.ops:
             target = ability.target(op.target)
-            if target is not None and target.targeted and f"{index}:{target.key}" not in legal:
-                # That target became illegal: this part does nothing.
+            follows = [key for key in (target.key if target is not None and target.targeted else "", target.of if target is not None else "", op.of) if key]
+            if any(f"{index}:{key}" not in legal for key in follows):
+                # That target (or the one "it" refers to) became illegal: this part does nothing.
                 continue
             events += apply_op(state, ability, op, ctx, index)
     return events, False

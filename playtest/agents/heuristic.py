@@ -53,6 +53,12 @@ def life_of(view: dict, seat: int) -> int:
     return next(o["life"] for o in view["opponents"] if o["seat"] == seat)
 
 
+def _hand_count(view: dict, seat: int) -> int:
+    if seat == view["you"]["seat"]:
+        return len(view["you"]["hand"])
+    return next(o["hand_count"] for o in view["opponents"] if o["seat"] == seat)
+
+
 def creatures_of(view: dict, seat: int) -> list[dict]:
     if seat == view["you"]["seat"]:
         perms = view["you"]["battlefield"]
@@ -229,7 +235,8 @@ def _op_value(view: dict, op: dict, ref: str | None, x: int) -> float:
     """The value of one op for the acting seat (positive is good for it)."""
     me = view["you"]["seat"]
     amount = op.get("amount")
-    amount = x if amount == "X" else (amount or 0)
+    # A computed amount ("equal to its power") is unknown until it resolves.
+    amount = x if amount == "X" else 2 if isinstance(amount, str) else (amount or 0)
     refs = [ref] if ref is not None else _selector_refs(view, op.get("selector"))
     total = 0.0
     for r in refs:
@@ -283,6 +290,20 @@ def _op_value(view: dict, op: dict, ref: str | None, x: int) -> float:
                 total -= sign * 0.2 * (op.get("power", 0) + op.get("toughness", 0))
         elif name == "GRANT_KEYWORD" and perm is not None:
             total -= sign * 0.2
+        elif name == "DISCARD_CHOSEN":
+            total += sign * 3 if _hand_count(view, owner) else 0
+        elif name == "LOOK_AT_HAND":
+            total += sign * 0.2
+        elif name == "DIG":
+            total -= sign * 2.5 * (op.get("count") or 1)
+        elif name == "PUT_BACK":
+            total += sign * 2.5 * amount
+        elif name == "ARRANGE_TOP":
+            total -= sign * 1
+        elif name == "COUNTER_UNLESS_PAYS":
+            total += sign * 3
+        elif name == "CREATE_ARTIFACT_TOKEN":
+            total -= sign * 1.5 * amount
         elif name == "SACRIFICE":
             total += sign * 3 if r[0] == "p" else -removal_value(perm or {"types": ()})
     if op["op"] == "CREATE_TOKEN":

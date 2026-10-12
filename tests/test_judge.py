@@ -68,6 +68,16 @@ SAMPLES = {
     "SEARCH_LIBRARY": ("Sorcery", "Search your library for a basic land card, put it onto the battlefield tapped, then shuffle."),
     "SCRY": ("Sorcery", "Scry 2."),
     "SURVEIL": ("Sorcery", "Surveil 2."),
+    "DISCARD_CHOSEN": (
+        "Sorcery",
+        "Target opponent reveals their hand. You choose a noncreature, nonland card from it. That player discards that card.",
+    ),
+    "LOOK_AT_HAND": ("Sorcery", "Look at target player's hand."),
+    "DIG": ("Sorcery", "Look at the top four cards of your library. Put one of them into your hand and the rest into your graveyard."),
+    "PUT_BACK": ("Instant", "Put a card from your hand on top of your library."),
+    "ARRANGE_TOP": ("Sorcery", "Look at the top three cards of your library, then put them back in any order."),
+    "COUNTER_UNLESS_PAYS": ("Instant", "Counter target spell unless its controller pays {3}."),
+    "CREATE_ARTIFACT_TOKEN": ("Sorcery", "Create two Treasure tokens."),
 }
 
 
@@ -213,3 +223,26 @@ def test_card_coverage_command_names_unsupported_cards(tmp_path, monkeypatch):
     assert "99% of 100 cards" in text
     assert "1 dead spell" in text
     assert "1x Tutor [spell] — copies" in text
+
+
+@pytest.mark.parametrize(
+    "type_line, text, reason",
+    [
+        # "it" after a target is that target, not this creature.
+        ("Creature — Bear", "When this creature enters, tap target creature. It deals 1 damage to you.", "ambiguous"),
+        # "its controller" with nothing targeted before.
+        ("Sorcery", "Its controller gains 2 life.", "refers to nothing"),
+    ],
+)
+def test_back_references_need_an_earlier_target(cache, type_line, text, reason):
+    compiled = judge.compile_card(raw_card("Ref", type_line, "{1}", text), cache, ask=FakeJev())
+    assert compiled.status == Status.UNSUPPORTED
+    assert reason in compiled.reason
+
+
+def test_a_back_reference_names_the_target_it_follows(cache):
+    text = "Exile target creature. Its controller gains life equal to its power."
+    compiled = judge.compile_card(raw_card("Swords", "Instant", "{W}", text), cache, ask=FakeJev())
+    [ability] = compiled.card_program().abilities
+    assert ability.target("t2") == dsl.Target("t2", "CONTROLLER_OF_IT", of="t1")
+    assert ability.ops[1] == dsl.Op("GAIN_LIFE", target="t2", amount="POWER_OF_IT", of="t1")

@@ -292,6 +292,8 @@ def _activations(state: GameState, seat: int, limits: Limits) -> list[Action]:
             cost = ability.cost
             if cost.tap and (perm.tapped or (perm.spec.is_creature and perm.sick and not has(state, perm, "haste"))):
                 continue
+            if cost.discard and len(state.player(seat).hand) < cost.discard:
+                continue
             if cost.life and state.player(seat).life < cost.life:
                 # CR 119.4: a player can pay life only if their life total is at least that much.
                 continue

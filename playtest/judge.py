@@ -187,6 +187,17 @@ def assemble(abilities: list[ClauseSet], answers: dict) -> dict:
             entry = {"op": op}
             selector = fields.pop("selector", None)
             restriction = fields.pop("restriction", None)
+            referent = _referent(targets, clause_targets)
+            if op == "DEAL_DAMAGE" and clause.text.startswith("it ") and (
+                referent is not None or ability.trigger == dsl.Trigger.SPELL
+            ):
+                # "it deals" is this permanent only when nothing was targeted before.
+                raise _Refused(ReasonKind.INVALID, f"clause {clause_no}: “it” is ambiguous")
+            if fields.get("amount") in dsl.EXPRESSIONS.values() or selector in dsl.DERIVED_SELECTORS:
+                if referent is None:
+                    raise _Refused(ReasonKind.INVALID, f"clause {clause_no}: “it” refers to nothing targeted before")
+                if fields.get("amount") in dsl.EXPRESSIONS.values():
+                    fields["of"] = referent
             if selector is not None:
                 if clause.shares_target_with is not None:
                     key = clause_targets.get(clause.shares_target_with)
@@ -200,7 +211,7 @@ def assemble(abilities: list[ClauseSet], answers: dict) -> dict:
                                 ReasonKind.INVALID,
                                 f"clause {clause_no}: Jev read the target as {named}, the text says {selector}",
                             )
-                    key = _target_key(targets, selector, restriction)
+                    key = _target_key(targets, selector, restriction, referent if selector in dsl.DERIVED_SELECTORS else None)
                 clause_targets[c_index] = key
                 entry["target"] = key
             entry.update(fields)
@@ -214,6 +225,7 @@ def assemble(abilities: list[ClauseSet], answers: dict) -> dict:
                 "tap": ability.cost.tap,
                 "sacrifice_self": ability.cost.sacrifice_self,
                 "life": ability.cost.life,
+                "discard": ability.cost.discard,
             }
         if ability.mode_group is not None:
             data["mode_group"] = ability.mode_group
@@ -221,8 +233,20 @@ def assemble(abilities: list[ClauseSet], answers: dict) -> dict:
     return {"version": dsl.DSL_VERSION, "abilities": program_abilities}
 
 
-def _target_key(targets: dict, selector: str, restriction: dict | None) -> str:
+def _referent(targets: dict, clause_targets: dict[int, str]) -> str | None:
+    """The target "it" / "its" points back to: the latest targeted object of the ability."""
+    for c_index in sorted(clause_targets, reverse=True):
+        entry = targets[clause_targets[c_index]]
+        spec = dsl.SELECTORS[entry["selector"]]
+        if spec.targeted and spec.kind != dsl.SelKind.PLAYER:
+            return clause_targets[c_index]
+    return None
+
+
+def _target_key(targets: dict, selector: str, restriction: dict | None, of: str | None = None) -> str:
     entry = {"selector": selector}
+    if of is not None:
+        entry["of"] = of
     if restriction is not None:
         entry["restriction"] = restriction
     # Untargeted selectors ("you", "each opponent") are the same set every time.

@@ -25,7 +25,7 @@ def effects(spec) -> list[dict]:
             entry = {"op": op.op}
             if target is not None:
                 entry["selector"] = target.selector
-            for field in ("amount", "power", "toughness", "keyword", "counter", "duration"):
+            for field in ("amount", "power", "toughness", "keyword", "counter", "duration", "count", "token"):
                 value = getattr(op, field)
                 if value not in (None, ""):
                     entry[field] = value

@@ -26,7 +26,7 @@ from .manacost import ManaCostError, parse_mana_cost, parse_mana_symbols
 
 # Bump only when the accepted vocabulary or a program's meaning changes: it is
 # part of the compiled-rules cache key.
-DSL_VERSION = "2"
+DSL_VERSION = "3"
 
 
 class DslError(ValueError):
@@ -87,6 +87,9 @@ class SelectorSpec:
     phrase: str
 
 
+# "an opponent controls" after a permanent selector: a restriction, not another selector.
+_OPPONENTS = r"(?: an opponent controls| you don't control)?"
+
 SELECTORS: dict[str, SelectorSpec] = {
     "ANY_TARGET": SelectorSpec(
         "any target: one creature or one player of the caster's choice", SelKind.ANY, True, r"any target"
@@ -107,19 +110,21 @@ SELECTORS: dict[str, SelectorSpec] = {
         "one target creature, whoever controls it",
         SelKind.CREATURE,
         True,
-        r"target (?:tapped )?creature(?: with (?:power|mana value) \w+ or (?:less|greater))?",
+        r"target (?:tapped |legendary )?creature(?: with (?:power|mana value) \w+ or (?:less|greater))?",
     ),
     "TARGET_ARTIFACT_OR_ENCHANTMENT": SelectorSpec(
-        "one target artifact or enchantment", SelKind.PERMANENT, True, r"target artifact or enchantment"
+        "one target artifact or enchantment", SelKind.PERMANENT, True, rf"target artifact or enchantment{_OPPONENTS}"
     ),
-    "TARGET_ARTIFACT": SelectorSpec("one target artifact", SelKind.PERMANENT, True, r"target artifact"),
-    "TARGET_ENCHANTMENT": SelectorSpec("one target enchantment", SelKind.PERMANENT, True, r"target enchantment"),
+    "TARGET_ARTIFACT": SelectorSpec("one target artifact", SelKind.PERMANENT, True, rf"target artifact{_OPPONENTS}"),
+    "TARGET_ENCHANTMENT": SelectorSpec("one target enchantment", SelKind.PERMANENT, True, rf"target enchantment{_OPPONENTS}"),
     "TARGET_NONLAND_PERMANENT": SelectorSpec(
-        "one target permanent that is not a land", SelKind.PERMANENT, True, r"target nonland permanent"
+        "one target permanent that is not a land", SelKind.PERMANENT, True, rf"target nonland permanent{_OPPONENTS}"
     ),
-    "TARGET_NONBASIC_LAND": SelectorSpec("one target land that is not a basic land", SelKind.PERMANENT, True, r"target nonbasic land"),
-    "TARGET_LAND": SelectorSpec("one target land", SelKind.PERMANENT, True, r"target land"),
-    "TARGET_PERMANENT": SelectorSpec("one target permanent of any type", SelKind.PERMANENT, True, r"target permanent"),
+    "TARGET_NONBASIC_LAND": SelectorSpec(
+        "one target land that is not a basic land", SelKind.PERMANENT, True, rf"target nonbasic land{_OPPONENTS}"
+    ),
+    "TARGET_LAND": SelectorSpec("one target land", SelKind.PERMANENT, True, rf"target land{_OPPONENTS}"),
+    "TARGET_PERMANENT": SelectorSpec("one target permanent of any type", SelKind.PERMANENT, True, rf"target permanent{_OPPONENTS}"),
     "TARGET_NONCREATURE_SPELL": SelectorSpec(
         "one target spell on the stack that is not a creature spell",
         SelKind.SPELL,
@@ -129,11 +134,22 @@ SELECTORS: dict[str, SelectorSpec] = {
     "TARGET_CREATURE_SPELL": SelectorSpec(
         "one target creature spell on the stack", SelKind.SPELL, True, r"target creature spell"
     ),
-    "TARGET_SPELL": SelectorSpec("one target spell on the stack", SelKind.SPELL, True, r"target spell"),
+    "TARGET_INSTANT_OR_SORCERY_SPELL": SelectorSpec(
+        "one target instant or sorcery spell on the stack", SelKind.SPELL, True, r"target instant or sorcery spell"
+    ),
+    "TARGET_SPELL": SelectorSpec(
+        "one target spell on the stack", SelKind.SPELL, True, r"target spell(?: with mana value \w+)?"
+    ),
     "TARGET_OPPONENT": SelectorSpec("one target opponent", SelKind.PLAYER, True, r"target opponent"),
     "TARGET_PLAYER": SelectorSpec("one target player, possibly yourself", SelKind.PLAYER, True, r"target player"),
     "EACH_OPPONENT": SelectorSpec("every opponent still in the game", SelKind.PLAYER, False, r"each opponent"),
     "EACH_PLAYER": SelectorSpec("every player still in the game", SelKind.PLAYER, False, r"each player"),
+    "CONTROLLER_OF_IT": SelectorSpec(
+        "the controller of the creature, permanent or spell an earlier part of this ability affected",
+        SelKind.PLAYER,
+        False,
+        r"its controller",
+    ),
     "YOU": SelectorSpec("the player who controls this card", SelKind.PLAYER, False, r"you"),
     "SELF": SelectorSpec(
         "this permanent itself",
@@ -174,9 +190,27 @@ RESTRICTIONS = {
     "POWER_LE": "power less than or equal to the value",
     "POWER_GE": "power greater than or equal to the value",
     "MV_LE": "mana value less than or equal to the value",
+    "MV_EQ": "mana value equal to the value",
     "TAPPED": "the object is tapped",
+    "LEGENDARY": "the object is legendary",
+    "OPPONENT": "an opponent of its controller controls the object",
 }
-_RESTRICTABLE = {"TARGET_CREATURE"}
+# Restrictions that take no value.
+FLAG_RESTRICTIONS = ("TAPPED", "LEGENDARY", "OPPONENT")
+_OPPONENT_ONLY = frozenset({"OPPONENT"})
+_RESTRICTABLE = {
+    "TARGET_CREATURE": frozenset({"POWER_LE", "POWER_GE", "MV_LE", "TAPPED", "LEGENDARY"}),
+    "TARGET_SPELL": frozenset({"MV_EQ"}),
+    "TARGET_ARTIFACT_OR_ENCHANTMENT": _OPPONENT_ONLY,
+    "TARGET_ARTIFACT": _OPPONENT_ONLY,
+    "TARGET_ENCHANTMENT": _OPPONENT_ONLY,
+    "TARGET_NONLAND_PERMANENT": _OPPONENT_ONLY,
+    "TARGET_NONBASIC_LAND": _OPPONENT_ONLY,
+    "TARGET_LAND": _OPPONENT_ONLY,
+    "TARGET_PERMANENT": _OPPONENT_ONLY,
+}
+# Selectors naming an object through an earlier target of the same ability.
+DERIVED_SELECTORS = ("CONTROLLER_OF_IT",)
 
 
 def selector_phrase_regex() -> str:
@@ -198,6 +232,13 @@ def _restriction(selector: str, phrase: str) -> dict | None:
         return None
     if phrase.startswith("target tapped "):
         return {"kind": "TAPPED"}
+    if phrase.startswith("target legendary "):
+        return {"kind": "LEGENDARY"}
+    if phrase.endswith((" an opponent controls", " you don't control")):
+        return {"kind": "OPPONENT"}
+    exact = re.search(r"with mana value (\w+)$", phrase)
+    if exact:
+        return {"kind": "MV_EQ", "value": number_value(exact.group(1))}
     match = re.search(r"with (power|mana value) (\w+) or (less|greater)", phrase)
     if not match:
         return None
@@ -233,10 +274,17 @@ COUNTERS = ("+1/+1", "-1/-1")
 SACRIFICE_WHAT = ("creature", "permanent", "artifact", "enchantment", "land", "nonland permanent")
 TOKEN_COLORS = {"white": "W", "blue": "U", "black": "B", "red": "R", "green": "G"}
 
-_N = r"(?P<n>\d+|x|a|an|one|two|three|four|five|six|seven|eight|nine|ten)"
+_NUMBER_WORD = r"\d+|x|a|an|one|two|three|four|five|six|seven|eight|nine|ten"
+_N = rf"(?P<n>{_NUMBER_WORD})"
+# A second number in one clause ("look at the top five … put two of them").
+_K = rf"(?P<k>{_NUMBER_WORD})"
 _T = "(?P<t>" + selector_phrase_regex() + ")"
 _KW = "(?:" + "|".join(KEYWORD_WORDS) + ")"
-_SELF_SUBJECT = r"(?:this (?:creature|spell|artifact|enchantment|land|permanent) )?"
+# "it deals" is read as this permanent only when nothing earlier in the ability
+# was targeted (the judge checks): otherwise "it" is that target.
+_SELF_SUBJECT = r"(?:(?:this (?:creature|spell|artifact|enchantment|land|permanent)|it) )?"
+# "equal to its power": the last known value of the object an earlier part affected.
+_ITS_STAT = r"equal to its (?P<stat>power|toughness|mana value)"
 _COLOR_WORDS = r"(?:white|blue|black|red|green|colorless)(?: and (?:white|blue|black|red|green))?"
 
 
@@ -269,14 +317,14 @@ OPS: dict[str, OpSpec] = {
         ("target", "amount"),
         (),
         _PLAYERS,
-        (rf"^{_T} gains? {_N} life$", rf"^gain {_N} life$"),
+        (rf"^{_T} gains? {_N} life$", rf"^gain {_N} life$", rf"^{_T} gains? life {_ITS_STAT}$", rf"^gain life {_ITS_STAT}$"),
     ),
     "LOSE_LIFE": OpSpec(
         "a player loses a number of life",
         ("target", "amount"),
         (),
         _PLAYERS,
-        (rf"^{_T} loses? {_N} life$",),
+        (rf"^{_T} loses? {_N} life$", rf"^{_T} loses? life {_ITS_STAT}$"),
     ),
     "DRAW_CARDS": OpSpec(
         "a player draws a number of cards",
@@ -363,6 +411,23 @@ OPS: dict[str, OpSpec] = {
             rf"^{_T} sacrifices? {_N} (?P<what>nonland permanent|creature|permanent|artifact|enchantment|land)s?$",
         ),
     ),
+    "DISCARD_CHOSEN": OpSpec(
+        "a player reveals their hand and discards a card of a kind that this card's controller picks from it",
+        ("target", "filter"),
+        ("max_mv",),
+        _PLAYERS,
+        (
+            rf"^{_T} reveals (?:their|his or her) hand\. you choose an? (?P<filter>[a-z, ]+?) card from it"
+            r"(?: with mana value (?P<mv>\d+) or less)?\. that player discards that card$",
+        ),
+    ),
+    "LOOK_AT_HAND": OpSpec(
+        "this card's controller looks at a player's hand",
+        ("target",),
+        (),
+        _PLAYERS,
+        (rf"^look at {_T}'s hand$",),
+    ),
     "MILL": OpSpec(
         "a player puts the top cards of their library into their graveyard",
         ("target", "amount"),
@@ -378,6 +443,35 @@ OPS: dict[str, OpSpec] = {
         (
             rf"^search your library for {_N} (?:(?P<filter>[a-z ,]+?) )?cards?, put (?:it|that card|them|those cards) "
             r"(?P<to>onto the battlefield(?: tapped)?|into your hand|on top of your library|into your graveyard)$",
+        ),
+    ),
+    "DIG": OpSpec(
+        "its controller looks at the top cards of their library, puts some of them into their hand "
+        "and the rest on the bottom or into their graveyard",
+        ("target", "amount", "count", "to"),
+        (),
+        _PLAYERS,
+        (
+            rf"^look at the top {_N} cards of your library\. put {_K} of them into your hand and the (?:rest|other) "
+            r"(?P<rest>on the bottom of your library(?: in any order)?|into your graveyard)$",
+        ),
+    ),
+    "PUT_BACK": OpSpec(
+        "its controller puts cards from their hand on top of their library",
+        ("target", "amount"),
+        (),
+        _PLAYERS,
+        (rf"^put {_N} cards? from your hand on top of your library(?: in any order)?$",),
+    ),
+    "ARRANGE_TOP": OpSpec(
+        "its controller looks at the top cards of their library and puts them back in any order, "
+        "possibly allowed to shuffle instead",
+        ("target", "amount"),
+        ("shuffle",),
+        _PLAYERS,
+        (
+            rf"^look at the top {_N} cards of your library, then put them back in any order"
+            r"(?P<shuffle>\. you may shuffle)?$",
         ),
     ),
     "SCRY": OpSpec(
@@ -401,6 +495,20 @@ OPS: dict[str, OpSpec] = {
         frozenset({SelKind.SPELL}),
         (rf"^counter {_T}$",),
     ),
+    "COUNTER_UNLESS_PAYS": OpSpec(
+        "counters a spell on the stack unless its controller pays an amount of generic mana",
+        ("target", "mana"),
+        (),
+        frozenset({SelKind.SPELL}),
+        (rf"^counter {_T} unless its controller pays (?P<mana>\{{\d+\}})$",),
+    ),
+    "CREATE_ARTIFACT_TOKEN": OpSpec(
+        "a player creates Treasure, Clue, Food or Blood artifact tokens (investigate creates a Clue)",
+        ("target", "amount", "token"),
+        (),
+        _PLAYERS,
+        (rf"^(?:{_T} creates?|create) {_N} (?P<token>treasure|clue|food|blood) tokens?$", r"^investigate$"),
+    ),
 }
 
 NONE_OP_DESCRIPTION = (
@@ -411,12 +519,17 @@ NONE_SELECTOR_DESCRIPTION = "the clause affects something not in this list, or s
 
 # Ops a static ability may carry, and ops that only make sense once.
 STATIC_OPS = {"MODIFY_PT", "GRANT_KEYWORD"}
+# Amounts computed from the last known information of an earlier target.
+EXPRESSIONS = {"power": "POWER_OF_IT", "toughness": "TOUGHNESS_OF_IT", "mana value": "MV_OF_IT"}
+ARTIFACT_TOKENS = ("TREASURE", "CLUE", "FOOD", "BLOOD")
+DIG_DESTINATIONS = {"on the bottom of your library": "BOTTOM", "into your graveyard": "GRAVEYARD"}
 DURATIONS = ("EOT", "STATIC")
 
 AMOUNT_MAX = 20
 PT_MAX = 20
 MAX_ABILITIES = 12
 MAX_OPS = 6
+MAX_DISCARD_COST = 3
 
 
 BASIC_LAND_TYPES = ("plains", "island", "swamp", "mountain", "forest")
@@ -430,6 +543,9 @@ SEARCH_FILTERS = (
     "INSTANT",
     "SORCERY",
     "INSTANT_OR_SORCERY",
+    "NONLAND",
+    "NONCREATURE_NONLAND",
+    "ARTIFACT_OR_ENCHANTMENT",
 )
 SEARCH_DESTINATIONS = {
     "onto the battlefield": "BATTLEFIELD",
@@ -453,6 +569,9 @@ def search_filter(phrase: str) -> str | None:
         "instant": "INSTANT",
         "sorcery": "SORCERY",
         "instant or sorcery": "INSTANT_OR_SORCERY",
+        "nonland": "NONLAND",
+        "noncreature, nonland": "NONCREATURE_NONLAND",
+        "artifact or enchantment": "ARTIFACT_OR_ENCHANTMENT",
     }
     if phrase in simple:
         return simple[phrase]
@@ -460,6 +579,10 @@ def search_filter(phrase: str) -> str | None:
     if words and all(w in BASIC_LAND_TYPES for w in words):
         return "TYPES:" + "|".join(words)
     return None
+
+
+def _amount_word(word: str) -> int | str:
+    return "X" if word == "x" else 1 if word in ("a", "an") else number_value(word)
 
 
 def parse_clause(op: str, clause: str) -> dict | None:
@@ -486,8 +609,11 @@ def parse_clause(op: str, clause: str) -> dict | None:
             # Imperative clauses ("draw two cards") are about their controller.
             fields["selector"], fields["restriction"] = "YOU", None
         if "n" in groups:
-            word = groups["n"]
-            fields["amount"] = "X" if word == "x" else 1 if word in ("a", "an") else number_value(word)
+            fields["amount"] = _amount_word(groups["n"])
+        if "k" in groups:
+            fields["count"] = _amount_word(groups["k"])
+        if "stat" in groups:
+            fields["amount"] = EXPRESSIONS[groups["stat"]]
         if "p" in groups:
             fields["power"], fields["toughness"] = int(groups["p"]), int(groups["q"])
         if "kw" in groups:
@@ -499,11 +625,21 @@ def parse_clause(op: str, clause: str) -> dict | None:
             fields["duration"] = "EOT" if "eot" in groups else "STATIC"
         if "c" in groups:
             fields["counter"] = groups["c"]
-        if op == "SEARCH_LIBRARY":
+        if op in ("SEARCH_LIBRARY", "DISCARD_CHOSEN"):
             fields["filter"] = search_filter(groups.get("filter", ""))
-            fields["to"] = SEARCH_DESTINATIONS[groups["to"]]
             if fields["filter"] is None:
                 return None
+        if op == "SEARCH_LIBRARY":
+            fields["to"] = SEARCH_DESTINATIONS[groups["to"]]
+        if "mv" in groups:
+            fields["max_mv"] = int(groups["mv"])
+        if op == "DIG":
+            fields["to"] = DIG_DESTINATIONS[groups["rest"].removesuffix(" in any order")]
+        if "shuffle" in groups:
+            fields["shuffle"] = True
+        if op == "CREATE_ARTIFACT_TOKEN":
+            fields["token"] = groups["token"].upper() if "token" in groups else "CLUE"
+            fields.setdefault("amount", 1)
         if "what" in groups:
             fields["what"] = groups["what"]
         if "mana" in groups:
@@ -526,6 +662,8 @@ class Target:
     selector: str
     restriction: str = ""
     restriction_value: int | None = None
+    # A derived selector (CONTROLLER_OF_IT): the key of the earlier target it follows.
+    of: str = ""
 
     @property
     def spec(self) -> SelectorSpec:
@@ -552,9 +690,19 @@ class Op:
     subtype: str = ""
     keywords: tuple[str, ...] = ()
     what: str = ""
-    # SEARCH_LIBRARY: which cards qualify, and where the found card goes.
+    # SEARCH_LIBRARY / DISCARD_CHOSEN: which cards qualify; SEARCH_LIBRARY / DIG:
+    # where the found card (or the rest) goes.
     filter: str = ""
     to: str = ""
+    max_mv: int | None = None
+    # DIG: how many of the cards looked at go to the hand.
+    count: int | None = None
+    # ARRANGE_TOP: its controller may shuffle instead.
+    shuffle: bool = False
+    # CREATE_ARTIFACT_TOKEN: which predefined token.
+    token: str = ""
+    # A computed amount (POWER_OF_IT…): the key of the earlier target it reads.
+    of: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -563,10 +711,12 @@ class Cost:
     tap: bool = False
     sacrifice_self: bool = False
     life: int = 0
+    # Cards discarded from hand (the least valuable, like mana, paid automatically).
+    discard: int = 0
 
     @property
     def empty(self) -> bool:
-        return not (self.mana or self.tap or self.sacrifice_self or self.life)
+        return not (self.mana or self.tap or self.sacrifice_self or self.life or self.discard)
 
 
 @dataclass(frozen=True, slots=True)
@@ -601,9 +751,9 @@ class CardProgram:
 
 _PROGRAM_KEYS = {"version", "abilities"}
 _ABILITY_KEYS = {"trigger", "ops", "targets", "cost", "mode_group", "text"}
-_TARGET_KEYS = {"selector", "restriction"}
+_TARGET_KEYS = {"selector", "restriction", "of"}
 _RESTRICTION_KEYS = {"kind", "value"}
-_COST_KEYS = {"mana", "tap", "sacrifice_self", "life"}
+_COST_KEYS = {"mana", "tap", "sacrifice_self", "life", "discard"}
 _OP_FIELDS = {
     "op",
     "target",
@@ -621,13 +771,18 @@ _OP_FIELDS = {
     "what",
     "filter",
     "to",
+    "max_mv",
+    "count",
+    "shuffle",
+    "token",
+    "of",
 }
 
 
 def _grounded_numbers(text: str) -> set[int]:
     numbers = {int(n) for n in re.findall(r"\d+", text)}
     numbers |= {value for word, value in NUMBER_WORDS.items() if re.search(rf"\b{word}\b", text)}
-    if re.search(r"\b(?:a|an)\b", text):
+    if re.search(r"\b(?:a|an|investigate)\b", text):
         numbers.add(1)
     return numbers
 
@@ -691,7 +846,10 @@ def _validate_ability(data, path: str, facts, grounded: set[int], has_x: bool) -
             tap=raw_cost.get("tap") is True,
             sacrifice_self=raw_cost.get("sacrifice_self") is True,
             life=_int(raw_cost.get("life", 0), f"{path}.cost.life", 0, AMOUNT_MAX),
+            discard=_int(raw_cost.get("discard", 0), f"{path}.cost.discard", 0, MAX_DISCARD_COST),
         )
+        if cost.discard and cost.discard not in grounded:
+            raise DslError(f"{path}.cost.discard", f"{cost.discard} does not appear in the card's text")
         if cost.life and cost.life not in grounded:
             raise DslError(f"{path}.cost.life", f"{cost.life} does not appear in the card's text")
         if cost.mana:
@@ -717,6 +875,12 @@ def _validate_ability(data, path: str, facts, grounded: set[int], has_x: bool) -
     targets = []
     for key in sorted(raw_targets):
         targets.append(_validate_target(raw_targets[key], key, f"{path}.targets.{key}", grounded, trigger))
+    declared = {t.key: t for t in targets}
+    for target in targets:
+        if (target.selector in DERIVED_SELECTORS) != bool(target.of):
+            raise DslError(f"{path}.targets.{target.key}", "a derived selector, and only one, names the target it follows")
+        if target.of:
+            _check_referent(declared, target.of, f"{path}.targets.{target.key}.of")
 
     raw_ops = data.get("ops")
     if not isinstance(raw_ops, list) or not raw_ops:
@@ -760,6 +924,13 @@ def _validate_ability(data, path: str, facts, grounded: set[int], has_x: bool) -
     )
 
 
+def _check_referent(targets: dict, key, path: str) -> None:
+    """``key`` must name a targeted creature, permanent or spell of the same ability."""
+    referent = targets.get(key)
+    if referent is None or not referent.targeted or referent.spec.kind == SelKind.PLAYER:
+        raise DslError(path, f"{key!r} is not a targeted object of this ability")
+
+
 def _validate_target(data, key: str, path: str, grounded: set[int], trigger: str) -> Target:
     if not re.fullmatch(r"t\d{1,2}", key):
         raise DslError(path, "target keys are t1, t2, …")
@@ -769,20 +940,26 @@ def _validate_target(data, key: str, path: str, grounded: set[int], trigger: str
         raise DslError(f"{path}.selector", f"unknown selector {selector!r}")
     if SELECTORS[selector].kind == SelKind.SPELL and trigger != Trigger.SPELL:
         raise DslError(f"{path}.selector", "only spells can target spells")
+    of = data.get("of") or ""
+    if not isinstance(of, str):
+        raise DslError(f"{path}.of", "must be a target key")
     restriction = data.get("restriction")
     if restriction is None:
-        return Target(key, selector)
+        return Target(key, selector, of=of)
     if selector not in _RESTRICTABLE:
         raise DslError(f"{path}.restriction", f"{selector} takes no restriction")
     _check_keys(restriction, _RESTRICTION_KEYS, f"{path}.restriction")
     kind = restriction.get("kind")
     if kind not in RESTRICTIONS:
         raise DslError(f"{path}.restriction.kind", f"unknown restriction {kind!r}")
+    if kind not in _RESTRICTABLE[selector]:
+        raise DslError(f"{path}.restriction", f"{selector} takes no {kind} restriction")
     value = restriction.get("value")
-    if kind == "TAPPED":
+    if kind in FLAG_RESTRICTIONS:
         if value is not None:
-            raise DslError(f"{path}.restriction.value", "TAPPED takes no value")
+            raise DslError(f"{path}.restriction.value", f"{kind} takes no value")
         return Target(key, selector, kind)
+
     value = _int(value, f"{path}.restriction.value", 0, PT_MAX)
     if value not in grounded:
         raise DslError(f"{path}.restriction.value", f"{value} does not appear in the card's text")
@@ -795,7 +972,7 @@ def _validate_op(data, path: str, targets: dict, trigger: str, grounded: set[int
     spec = OPS.get(name)
     if spec is None:
         raise DslError(f"{path}.op", f"unknown operation {name!r}")
-    allowed = {"op", *spec.required, *spec.optional}
+    allowed = {"op", "of", *spec.required, *spec.optional}
     extra = sorted(k for k in data if k not in allowed)
     if extra:
         raise DslError(f"{path}.{extra[0]}", f"{name} has no field {extra[0]!r}")
@@ -829,8 +1006,15 @@ def _validate_op(data, path: str, targets: dict, trigger: str, grounded: set[int
             if not has_x:
                 raise DslError(f"{path}.amount", "X amounts need {X} in the mana cost")
             fields["amount"] = "X"
+        elif data["amount"] in EXPRESSIONS.values():
+            if name not in ("GAIN_LIFE", "LOSE_LIFE"):
+                raise DslError(f"{path}.amount", f"{name} takes no computed amount")
+            _check_referent(targets, data.get("of"), f"{path}.of")
+            fields.update(amount=data["amount"], of=data["of"])
         else:
             fields["amount"] = grounded_int("amount", 1, AMOUNT_MAX)
+    if data.get("of") is not None and "of" not in fields:
+        raise DslError(f"{path}.of", "only a computed amount reads another target")
     if name == "SACRIFICE":
         is_self = targets[fields["target"]].selector == "SELF"
         if is_self and (data.get("amount") is not None or data.get("what") is not None):
@@ -890,6 +1074,39 @@ def _validate_op(data, path: str, targets: dict, trigger: str, grounded: set[int
         if data["to"] not in SEARCH_DESTINATIONS.values():
             raise DslError(f"{path}.to", f"unknown destination {data['to']!r}")
         fields.update(filter=filt, to=data["to"])
+    if name in ("SEARCH_LIBRARY", "DIG", "PUT_BACK", "ARRANGE_TOP") and targets[fields["target"]].selector != "YOU":
+        raise DslError(f"{path}.target", f"{name} only works on its controller's own cards")
+    if name == "DISCARD_CHOSEN":
+        if data["filter"] not in SEARCH_FILTERS:
+            raise DslError(f"{path}.filter", f"unknown filter {data['filter']!r}")
+        fields["filter"] = data["filter"]
+        if data.get("max_mv") is not None:
+            fields["max_mv"] = grounded_int("max_mv", 0, PT_MAX)
+    if name == "DIG":
+        fields["count"] = grounded_int("count", 1, AMOUNT_MAX)
+        if fields.get("amount") == "X" or fields["count"] >= fields["amount"]:
+            raise DslError(f"{path}.count", "DIG keeps fewer cards than it looks at")
+        if data["to"] not in DIG_DESTINATIONS.values():
+            raise DslError(f"{path}.to", f"unknown destination {data['to']!r}")
+        fields["to"] = data["to"]
+    if name == "ARRANGE_TOP" and data.get("shuffle") is not None:
+        if not isinstance(data["shuffle"], bool):
+            raise DslError(f"{path}.shuffle", "must be true or false")
+        fields["shuffle"] = data["shuffle"]
+    if name == "COUNTER_UNLESS_PAYS":
+        mana = data["mana"]
+        match = re.fullmatch(r"\{(\d+)\}", mana) if isinstance(mana, str) else None
+        if match is None:
+            raise DslError(f"{path}.mana", "must be one generic amount, like {2}")
+        if int(match.group(1)) not in grounded:
+            raise DslError(f"{path}.mana", f"{match.group(1)} does not appear in the card's text")
+        fields["mana"] = mana
+    if name == "CREATE_ARTIFACT_TOKEN":
+        if data["token"] not in ARTIFACT_TOKENS:
+            raise DslError(f"{path}.token", f"unknown token {data['token']!r}")
+        if fields.get("amount") == "X":
+            raise DslError(f"{path}.amount", "token counts must be fixed")
+        fields["token"] = data["token"]
     return Op(**fields)
 
 
@@ -905,6 +1122,8 @@ def to_json(program: CardProgram) -> dict:
             data["targets"] = {}
             for target in ability.targets:
                 entry: dict = {"selector": target.selector}
+                if target.of:
+                    entry["of"] = target.of
                 if target.restriction:
                     entry["restriction"] = {"kind": target.restriction}
                     if target.restriction_value is not None:
@@ -916,6 +1135,7 @@ def to_json(program: CardProgram) -> dict:
                 "tap": ability.cost.tap,
                 "sacrifice_self": ability.cost.sacrifice_self,
                 "life": ability.cost.life,
+                "discard": ability.cost.discard,
             }
         if ability.mode_group is not None:
             data["mode_group"] = ability.mode_group
@@ -923,7 +1143,7 @@ def to_json(program: CardProgram) -> dict:
             entry = {"op": op.op}
             for name in _OP_FIELDS - {"op"}:
                 value = getattr(op, name)
-                if value in ("", None, ()):
+                if value in ("", None, ()) or value is False:
                     continue
                 entry[name] = list(value) if isinstance(value, tuple) else value
             data["ops"].append(entry)
@@ -953,8 +1173,8 @@ def _selector_text(target: Target | None) -> str:
     if target is None:
         return ""
     text = target.selector.lower().replace("_", " ")
-    if target.restriction == "TAPPED":
-        text += " (tapped)"
+    if target.restriction in FLAG_RESTRICTIONS:
+        text += f" ({target.restriction.lower()})"
     elif target.restriction:
         text += f" ({target.restriction.lower().replace('_', ' ')} {target.restriction_value})"
     return text
@@ -967,7 +1187,8 @@ def describe_op(op: Op, ability: Ability) -> str:
         case "DEAL_DAMAGE":
             return f"deal {op.amount} damage to {who}"
         case "GAIN_LIFE" | "LOSE_LIFE":
-            return f"{who}: {op.op.split('_')[0].lower()} {op.amount} life"
+            amount = op.amount if isinstance(op.amount, int) else op.amount.removesuffix("_OF_IT").lower() + " of it"
+            return f"{who}: {op.op.split('_')[0].lower()} {amount} life"
         case "DRAW_CARDS" | "DISCARD_CARDS" | "MILL":
             verb = {"DRAW_CARDS": "draw", "DISCARD_CARDS": "discard", "MILL": "mill"}[op.op]
             return f"{who}: {verb} {op.amount}"
@@ -996,6 +1217,22 @@ def describe_op(op: Op, ability: Ability) -> str:
             return f"search your library for {op.amount} {what} card(s), put onto {where}, shuffle"
         case "SCRY" | "SURVEIL":
             return f"{op.op.lower()} {op.amount}"
+        case "DISCARD_CHOSEN":
+            what = op.filter.replace("_", " ").lower() + (f" (mana value {op.max_mv} or less)" if op.max_mv is not None else "")
+            return f"{who}: reveal hand, discard a {what} card you choose"
+        case "LOOK_AT_HAND":
+            return f"look at {who}'s hand"
+        case "DIG":
+            rest = "on the bottom" if op.to == "BOTTOM" else "into the graveyard"
+            return f"look at the top {op.amount}, put {op.count} into your hand, the rest {rest}"
+        case "PUT_BACK":
+            return f"put {op.amount} card(s) from your hand on top of your library"
+        case "ARRANGE_TOP":
+            return f"look at the top {op.amount} and put them back in any order" + (" (or shuffle)" if op.shuffle else "")
+        case "COUNTER_UNLESS_PAYS":
+            return f"counter {who} unless its controller pays {op.mana}"
+        case "CREATE_ARTIFACT_TOKEN":
+            return f"{who}: create {op.amount} {op.token.title()} token(s)"
         case "RETURN_TO_HAND":
             return f"return {who} to its owner's hand"
         case _:
@@ -1011,6 +1248,8 @@ def describe_ability(ability: Ability) -> str:
             parts.append("{T}")
         if ability.cost.life:
             parts.append(f"pay {ability.cost.life} life")
+        if ability.cost.discard:
+            parts.append(f"discard {ability.cost.discard}")
         if ability.cost.sacrifice_self:
             parts.append("sacrifice it")
         return f"{', '.join(parts)}: {body}"

@@ -499,3 +499,258 @@ def test_a_game_with_fetch_lands_and_scry_keeps_its_invariants():
     assert any(e.event.payload.get("effect") == "search" for e in result.events)
     assert any(e.event.payload.get("effect") == "scry" for e in result.events)
     assert "agent_fallback" not in kinds
+
+
+# -- hand disruption, digging, counter-unless, back-references, artifact tokens -------
+
+
+def _cast_with(state, spec, choose, *, seat=0, targets=None):
+    """Like :func:`_cast`, with ``choose`` answering the choices the effect asks for."""
+    item = _hand(state, spec, seat=seat)
+    options = [a for a in legal_actions(state, seat) if a.card == item.id]
+    if targets is not None:
+        options = [a for a in options if [ref for _, ref in a.targets] == targets]
+    assert options, f"{spec.name} cannot be cast with {targets}"
+    events = apply(state, seat, options[0])
+    events += resolve_top(state, choose)
+    events += check_state(state)
+    return events
+
+
+def _by_label(*labels):
+    answers = iter(labels)
+
+    def choose(state, seat, kind, prompt, options):
+        wanted = next(answers)
+        return next(o.key for o in options if o.label == wanted)
+
+    return choose
+
+
+def _library(state, seat, *specs):
+    state.player(seat).library[0:0] = [Card(state.new_id(), spec, seat) for spec in specs]
+
+
+THOUGHTSEIZE = (
+    "Target player reveals their hand. You choose a nonland card from it. That player discards that card. You lose 2 life."
+)
+
+
+def test_thoughtseize_discards_the_nonland_card_its_caster_picks():
+    game, state = _table()
+    _mana(state, amount=1)
+    _hand(state, bear(), seat=1)
+    _hand(state, card("Shock", "Instant", "{1}"), seat=1)
+    _hand(state, WASTES, seat=1)
+    seen = []
+
+    def choose(state_, seat, kind, prompt, options):
+        seen.append((seat, kind, [o.label for o in options]))
+        return next(o.key for o in options if o.label == "Discard Shock")
+
+    _cast_with(state, compiled_spec("TS", "Sorcery", "{1}", THOUGHTSEIZE), choose, targets=["p1"])
+    assert seen == [(0, "discard", ["Discard Bear 0", "Discard Shock"])]
+    assert [c.name for c in state.player(1).hand] == ["Bear 0", "Wastes"]
+    assert state.player(0).life == 18
+
+
+def test_inquisition_offers_only_cheap_cards():
+    game, state = _table()
+    _mana(state, amount=1)
+    _hand(state, card("Big", "Creature", "{4}{G}", 5, 5), seat=1)
+    _hand(state, card("Shock", "Instant", "{1}"), seat=1)
+    text = "Target player reveals their hand. You choose a nonland card from it with mana value 3 or less. That player discards that card."
+    _cast(state, compiled_spec("IoK", "Sorcery", "{1}", text), targets=["p1"])
+    assert [c.name for c in state.player(1).hand] == ["Big"]
+
+
+def test_counter_unless_its_controller_pays():
+    game, state = _table()
+    spike = compiled_spec("Spike", "Instant", "{1}", "Counter target spell unless its controller pays {1}.")
+    for can_pay, countered in ((True, False), (False, True)):
+        game, state = _table()
+        _mana(state, amount=1, seat=1)
+        _mana(state, amount=2 if can_pay else 1)
+        bolt = _hand(state, card("Bear", "Creature", "{1}", 2, 2))
+        apply(state, 0, next(a for a in legal_actions(state, 0) if a.card == bolt.id))
+        spike_card = _hand(state, spike, seat=1)
+        apply(state, 1, next(a for a in legal_actions(state, 1) if a.card == spike_card.id))
+        asked = []
+
+        def choose(state_, seat, kind, prompt, options):
+            asked.append((seat, [o.label for o in options]))
+            return options[0].key
+
+        resolve_top(state, choose)
+        assert any(c.name == "Bear" for c in state.player(0).graveyard) == countered
+        assert asked == ([(0, ["Pay {1}", "Don't pay"])] if can_pay else [])
+
+
+def test_stock_up_puts_two_in_hand_and_the_rest_on_the_bottom():
+    game, state = _table()
+    _mana(state, amount=3)
+    names = [f"Card {i}" for i in range(5)]
+    _library(state, 0, *(card(n, "Sorcery", "{1}") for n in names))
+    size = len(state.player(0).library)
+    text = "Look at the top five cards of your library. Put two of them into your hand and the rest on the bottom of your library in any order."
+    _cast_with(state, compiled_spec("Dig", "Sorcery", "{3}", text), _by_label("Take Card 3", "Take Card 1"))
+    assert sorted(c.name for c in state.player(0).hand) == ["Card 1", "Card 3"]
+    assert len(state.player(0).library) == size - 2
+    assert sorted(c.name for c in state.player(0).library[-3:]) == ["Card 0", "Card 2", "Card 4"]
+
+
+def test_brainstorm_draws_then_puts_back_the_cards_its_player_picks():
+    game, state = _table()
+    _mana(state, amount=1)
+    _hand(state, card("Keep", "Sorcery", "{1}"))
+    _library(state, 0, *(card(f"Top {i}", "Sorcery", "{1}") for i in range(3)))
+    text = "Draw three cards, then put two cards from your hand on top of your library in any order."
+    _cast_with(state, compiled_spec("Storm", "Instant", "{1}", text), _by_label("Put back Top 2", "Put back Top 0"))
+    assert sorted(c.name for c in state.player(0).hand) == ["Keep", "Top 1"]
+    assert [c.name for c in state.player(0).library[:2]] == ["Top 0", "Top 2"]
+
+
+def test_ponder_reorders_or_shuffles_then_draws():
+    game, state = _table()
+    _mana(state, amount=1)
+    _library(state, 0, *(card(f"Top {i}", "Sorcery", "{1}") for i in range(3)))
+    text = "Look at the top three cards of your library, then put them back in any order. You may shuffle.\nDraw a card."
+    spec = compiled_spec("Ponder", "Sorcery", "{1}", text)
+    _cast_with(state, spec, _by_label("Keep them", "Top 2 on top", "Top 0 on top"))
+    assert [c.name for c in state.player(0).hand] == ["Top 2"]
+    assert [c.name for c in state.player(0).library[:2]] == ["Top 0", "Top 1"]
+
+
+def test_swords_gives_life_to_the_controller_equal_to_last_known_power():
+    game, state = _table()
+    _mana(state, amount=1)
+    target = _put(state, bear(), seat=1)
+    target.plus_counters = 3
+    spec = compiled_spec("Swords", "Instant", "{1}", "Exile target creature. Its controller gains life equal to its power.")
+    _cast(state, spec, targets=[_ref(target)])
+    assert target not in state.battlefield
+    assert state.player(1).life == 25 and state.player(0).life == 20
+
+
+def test_a_back_reference_follows_its_target_when_it_becomes_illegal():
+    game, state = _table()
+    _mana(state, amount=1)
+    target = _put(state, bear(), seat=1)
+    spec = compiled_spec("Swords", "Instant", "{1}", "Exile target creature. Its controller gains life equal to its power.")
+    item = _hand(state, spec)
+    apply(state, 0, next(a for a in legal_actions(state, 0) if a.card == item.id))
+    state.battlefield.remove(target)
+    events = resolve_top(state)
+    assert state.player(1).life == 20
+    assert any(e.kind == EventKind.FIZZLE for e in events)
+
+
+def test_spell_restrictions_and_opponent_controlled_permanents():
+    game, state = _table()
+    _mana(state, amount=4, seat=1)
+    one = _hand(state, card("One", "Instant", "{1}"), seat=1)
+    two = _hand(state, card("Two", "Instant", "{2}"), seat=1)
+    state.active_seat = 1
+    for spell in (one, two):
+        apply(state, 1, next(a for a in legal_actions(state, 1) if a.card == spell.id))
+    state.active_seat = 0
+    misstep = _hand(state, compiled_spec("Misstep", "Instant", "{1}", "Counter target spell with mana value 1."))
+    _mana(state, amount=1)
+    refs = {dict(a.targets)["0:t1"] for a in legal_actions(state, 0) if a.card == misstep.id}
+    assert refs == {f"s{i.id}" for i in state.stack if i.card.id == one.id}
+
+    game, state = _table()
+    _mana(state, amount=2)
+    mine = _put(state, card("My Rock", "Artifact", "{1}"))
+    theirs = _put(state, card("Their Rock", "Artifact", "{1}"), seat=1)
+    spec = compiled_spec("Enchanter", "Creature", "{2}", "When this creature enters, destroy target artifact or enchantment an opponent controls.", 2, 2)
+    _cast(state, spec)
+    from playtest.engine.effects import target_choices
+
+    ability = spec.program.abilities[0]
+    assert target_choices(state, ability.targets[0], 0) == [_ref(theirs)]
+    assert mine in state.battlefield
+
+
+def test_treasure_clue_and_blood_tokens():
+    game, state = _table()
+    _mana(state, amount=1)
+    _cast(state, compiled_spec("Strike", "Sorcery", "{1}", "Create a Treasure token."))
+    treasure = next(p for p in state.battlefield if p.name == "Treasure")
+    _hand(state, card("Shock", "Instant", "{1}"))
+    shock = state.player(0).hand[-1]
+    apply(state, 0, next(a for a in legal_actions(state, 0) if a.card == shock.id))
+    assert treasure not in state.battlefield
+
+    game, state = _table()
+    _mana(state, amount=3)
+    _cast(state, compiled_spec("Inspector", "Sorcery", "{1}", "Investigate."))
+    clue = next(p for p in state.battlefield if p.name == "Clue")
+    hand = len(state.player(0).hand)
+    apply(state, 0, next(a for a in legal_actions(state, 0) if a.kind == ActionKind.ACTIVATE and a.permanent == clue.id))
+    resolve_top(state)
+    assert len(state.player(0).hand) == hand + 1 and clue not in state.battlefield
+
+    game, state = _table()
+    _mana(state, amount=2)
+    epicure = compiled_spec(
+        "Epicure", "Creature", "{1}", "When this creature enters, it deals 1 damage to each opponent. Create a Blood token.", 1, 1
+    )
+    perm = _put(state, epicure)
+    from playtest.engine.rules import trigger_item
+
+    assert perm.spec.program.abilities[0].trigger == "ETB"
+    blood_hand = _hand(state, card("Junk", "Sorcery", "{5}"))
+    item = trigger_item(state, type("T", (), {"controller": 0, "source_name": "Epicure", "source_id": perm.id, "ability": perm.spec.program.abilities[0]})())
+    state.stack.append(item)
+    resolve_top(state)
+    assert state.player(1).life == 19
+    blood = next(p for p in state.battlefield if p.name == "Blood")
+    apply(state, 0, next(a for a in legal_actions(state, 0) if a.kind == ActionKind.ACTIVATE and a.permanent == blood.id))
+    resolve_top(state)
+    assert blood_hand in state.player(0).graveyard and blood not in state.battlefield
+
+
+def test_an_opponent_creates_treasures_for_a_countered_spell():
+    game, state = _table()
+    _mana(state, amount=1, seat=1)
+    spell = _hand(state, card("Rock", "Artifact", "{1}"), seat=1)
+    state.active_seat = 1
+    apply(state, 1, next(a for a in legal_actions(state, 1) if a.card == spell.id))
+    state.active_seat = 0
+    _mana(state, amount=1)
+    text = "Counter target noncreature spell. Its controller creates two Treasure tokens."
+    _cast(state, compiled_spec("Offer", "Instant", "{1}", text))
+    assert sum(1 for p in state.battlefield if p.name == "Treasure" and p.controller == 1) == 2
+
+
+def test_looking_at_a_hand_reveals_it_in_the_log():
+    game, state = _table()
+    _hand(state, bear(), seat=1)
+    events = _cast(state, compiled_spec("Probe", "Sorcery", "{0}", "Look at target player's hand.\nDraw a card."), targets=["p1"])
+    assert any("Bear" in e.text for e in events if e.payload.get("effect") == "look_at_hand")
+
+
+def test_a_game_with_the_new_mechanics_keeps_its_invariants():
+    from playtest.agents.heuristic import HeuristicAgent
+    from playtest.engine.cards import DeckSpec
+    from playtest.engine.game import Game
+
+    island = card("Island", "Basic Land", produces="U")
+    specs = [
+        compiled_spec("TS", "Sorcery", "{1}", THOUGHTSEIZE),
+        compiled_spec("Spike", "Instant", "{1}", "Counter target spell unless its controller pays {1}."),
+        compiled_spec("Storm", "Instant", "{1}", "Draw three cards, then put two cards from your hand on top of your library in any order."),
+        compiled_spec("Ponder", "Sorcery", "{1}", "Look at the top three cards of your library, then put them back in any order. You may shuffle.\nDraw a card."),
+        compiled_spec("Swords", "Instant", "{1}", "Exile target creature. Its controller gains life equal to its power."),
+        compiled_spec("Inspector", "Creature", "{1}", "When this creature enters, investigate.", 1, 2),
+        compiled_spec("Strike", "Sorcery", "{1}", "Create a Treasure token."),
+    ]
+    library = [island] * 24 + specs * 3 + [card(f"Bear {i}", "Creature", "{1}", 2, 2) for i in range(15)]
+    decks = [DeckSpec(name, None, tuple(library)) for name in "AB"]
+    effects = set()
+    for seed in range(4):
+        result = Game(decks, [HeuristicAgent(0), HeuristicAgent(1)], DUEL, seed=seed, max_rounds=30, check_invariants=True).run()
+        assert "agent_fallback" not in [e.event.kind for e in result.events]
+        effects |= {e.event.payload.get("effect") for e in result.events}
+    assert {"discard_chosen", "create_token", "put_back", "pay_unless", "gain_life"} <= effects
