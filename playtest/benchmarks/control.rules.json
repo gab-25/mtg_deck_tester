@@ -1,0 +1,1875 @@
+{
+ "key": "control",
+ "name": "Benchmark: Control",
+ "dsl_version": "1",
+ "cards": [
+  {
+   "quantity": 1,
+   "is_commander": true,
+   "card": {
+    "name": "Zetalpa, Primal Dawn",
+    "oracle_id": "7da0e5de-3e4c-420a-8685-991206100b9d",
+    "layout": "normal",
+    "type_line": "Legendary Creature — Elder Dinosaur",
+    "mana_cost": "{6}{W}{W}",
+    "cmc": 8.0,
+    "oracle_text": "Flying, double strike, vigilance, trample, indestructible",
+    "power": "4",
+    "toughness": "8",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "Indestructible",
+     "Vigilance",
+     "Trample",
+     "Double strike"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Sol Ring",
+    "oracle_id": "6ad8011d-3471-4369-9d68-b264cc027487",
+    "layout": "normal",
+    "type_line": "Artifact",
+    "mana_cost": "{1}",
+    "cmc": 1.0,
+    "oracle_text": "{T}: Add {C}{C}.",
+    "colors": [],
+    "keywords": [],
+    "produced_mana": [
+     "C"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Arcane Signet",
+    "oracle_id": "0bc7f093-bef0-4f1a-852c-4b75ebf54838",
+    "layout": "normal",
+    "type_line": "Artifact",
+    "mana_cost": "{2}",
+    "cmc": 2.0,
+    "oracle_text": "{T}: Add one mana of any color in your commander's color identity.",
+    "colors": [],
+    "keywords": [],
+    "produced_mana": [
+     "B",
+     "G",
+     "R",
+     "U",
+     "W"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Fellwar Stone",
+    "oracle_id": "95560508-7ac9-4be9-8a3f-3c7d5b52807b",
+    "layout": "normal",
+    "type_line": "Artifact",
+    "mana_cost": "{2}",
+    "cmc": 2.0,
+    "oracle_text": "{T}: Add one mana of any color that a land an opponent controls could produce.",
+    "colors": [],
+    "keywords": [],
+    "produced_mana": [
+     "B",
+     "G",
+     "R",
+     "U",
+     "W"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Battlefield Raptor",
+    "oracle_id": "68a99e50-0e98-480b-ad25-aa2c226d24ca",
+    "layout": "normal",
+    "type_line": "Creature — Bird",
+    "mana_cost": "{W}",
+    "cmc": 1.0,
+    "oracle_text": "Flying, first strike",
+    "power": "1",
+    "toughness": "2",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "First strike"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Dragon's Eye Sentry",
+    "oracle_id": "661b23fc-78cd-44f7-ba53-0cb89ccca41f",
+    "layout": "normal",
+    "type_line": "Creature — Human Monk",
+    "mana_cost": "{W}",
+    "cmc": 1.0,
+    "oracle_text": "Defender, first strike",
+    "power": "1",
+    "toughness": "3",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "First strike",
+     "Defender"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Healer's Hawk",
+    "oracle_id": "28a52ba1-95da-44e1-8ac5-0dc23c902394",
+    "layout": "normal",
+    "type_line": "Creature — Bird",
+    "mana_cost": "{W}",
+    "cmc": 1.0,
+    "oracle_text": "Flying\nLifelink (Damage dealt by this creature also causes you to gain that much life.)",
+    "power": "1",
+    "toughness": "1",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "Lifelink"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Rustwing Falcon",
+    "oracle_id": "438ee544-78a2-4e32-9343-70838b60ac16",
+    "layout": "normal",
+    "type_line": "Creature — Bird",
+    "mana_cost": "{W}",
+    "cmc": 1.0,
+    "oracle_text": "Flying",
+    "power": "1",
+    "toughness": "2",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Segovian Angel",
+    "oracle_id": "50372c54-359c-4ee6-9e21-1e40ba53652d",
+    "layout": "normal",
+    "type_line": "Creature — Angel",
+    "mana_cost": "{W}",
+    "cmc": 1.0,
+    "oracle_text": "Flying, vigilance",
+    "power": "1",
+    "toughness": "1",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "Vigilance"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Swooping Lookout",
+    "oracle_id": "0594f19c-c4c2-4812-8f4d-5630fc24c47a",
+    "layout": "normal",
+    "type_line": "Artifact Creature — Phyrexian Construct",
+    "mana_cost": "{W}",
+    "cmc": 1.0,
+    "oracle_text": "Flying, vigilance",
+    "power": "1",
+    "toughness": "2",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "Vigilance"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Ajani's Sunstriker",
+    "oracle_id": "31009c45-afba-45f4-a6ca-9dfdb9990e72",
+    "layout": "normal",
+    "type_line": "Creature — Cat Cleric",
+    "mana_cost": "{W}{W}",
+    "cmc": 2.0,
+    "oracle_text": "Lifelink (Damage dealt by this creature also causes you to gain that much life.)",
+    "power": "2",
+    "toughness": "2",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Lifelink"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Alabaster Host Sanctifier",
+    "oracle_id": "ad172d4e-febf-4844-9544-861d03e27ab5",
+    "layout": "normal",
+    "type_line": "Creature — Phyrexian Cleric",
+    "mana_cost": "{1}{W}",
+    "cmc": 2.0,
+    "oracle_text": "Lifelink",
+    "power": "2",
+    "toughness": "2",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Lifelink"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Alaborn Grenadier",
+    "oracle_id": "69c4429e-a8a4-49c3-bb43-9dce4cc6b90a",
+    "layout": "normal",
+    "type_line": "Creature — Human Soldier",
+    "mana_cost": "{W}{W}",
+    "cmc": 2.0,
+    "oracle_text": "Vigilance",
+    "power": "2",
+    "toughness": "2",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Vigilance"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Alpine Watchdog",
+    "oracle_id": "6a0419c3-4bfa-46c1-932b-fe10f2fa2ad7",
+    "layout": "normal",
+    "type_line": "Creature — Dog",
+    "mana_cost": "{1}{W}",
+    "cmc": 2.0,
+    "oracle_text": "Vigilance (Attacking doesn't cause this creature to tap.)",
+    "power": "2",
+    "toughness": "2",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Vigilance"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Angelic Wall",
+    "oracle_id": "4502b24f-604b-4e36-9168-31c1a1ab4dab",
+    "layout": "normal",
+    "type_line": "Creature — Wall",
+    "mana_cost": "{1}{W}",
+    "cmc": 2.0,
+    "oracle_text": "Defender (This creature can't attack.)\nFlying",
+    "power": "0",
+    "toughness": "4",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "Defender"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Bishop's Soldier",
+    "oracle_id": "84487586-4f71-457a-b983-4f1f7a71deef",
+    "layout": "normal",
+    "type_line": "Creature — Vampire Soldier",
+    "mana_cost": "{1}{W}",
+    "cmc": 2.0,
+    "oracle_text": "Lifelink (Damage dealt by this creature also causes you to gain that much life.)",
+    "power": "2",
+    "toughness": "2",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Lifelink"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Brightblade Stoat",
+    "oracle_id": "f1d2f437-d474-4617-aea6-102daa5e5a15",
+    "layout": "normal",
+    "type_line": "Creature — Weasel Soldier",
+    "mana_cost": "{1}{W}",
+    "cmc": 2.0,
+    "oracle_text": "First strike, lifelink",
+    "power": "2",
+    "toughness": "2",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Lifelink",
+     "First strike"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Colorful Feiyi Sparrow",
+    "oracle_id": "82657b8b-de2d-46ab-ab56-e2790e326d95",
+    "layout": "normal",
+    "type_line": "Creature — Bird",
+    "mana_cost": "{1}{W}",
+    "cmc": 2.0,
+    "oracle_text": "Flying (This creature can't be blocked except by creatures with flying or reach.)",
+    "power": "1",
+    "toughness": "3",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Concordia Pegasus",
+    "oracle_id": "93c35f9e-3346-4269-b1af-df9f216bfd7a",
+    "layout": "normal",
+    "type_line": "Creature — Pegasus",
+    "mana_cost": "{1}{W}",
+    "cmc": 2.0,
+    "oracle_text": "Flying",
+    "power": "1",
+    "toughness": "3",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Courier Hawk",
+    "oracle_id": "7fc904aa-377b-4671-8308-275205f56d81",
+    "layout": "normal",
+    "type_line": "Creature — Bird",
+    "mana_cost": "{1}{W}",
+    "cmc": 2.0,
+    "oracle_text": "Flying, vigilance",
+    "power": "1",
+    "toughness": "2",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "Vigilance"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Daybreak Chaplain",
+    "oracle_id": "ebd33f4c-2cc8-46e3-b367-ce5b37c2719b",
+    "layout": "normal",
+    "type_line": "Creature — Human Cleric",
+    "mana_cost": "{1}{W}",
+    "cmc": 2.0,
+    "oracle_text": "Lifelink (Damage dealt by this creature also causes you to gain that much life.)",
+    "power": "1",
+    "toughness": "3",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Lifelink"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Fortified Rampart",
+    "oracle_id": "a55202a9-bddb-40df-b93f-06678ae1e0ea",
+    "layout": "normal",
+    "type_line": "Creature — Wall",
+    "mana_cost": "{1}{W}",
+    "cmc": 2.0,
+    "oracle_text": "Defender",
+    "power": "0",
+    "toughness": "6",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Defender"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Huatli's Snubhorn",
+    "oracle_id": "8516d8ba-b3f9-4c45-8d70-5dab476e478f",
+    "layout": "normal",
+    "type_line": "Creature — Dinosaur",
+    "mana_cost": "{1}{W}",
+    "cmc": 2.0,
+    "oracle_text": "Vigilance (Attacking doesn't cause this creature to tap.)",
+    "power": "2",
+    "toughness": "2",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Vigilance"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Knight of Meadowgrain",
+    "oracle_id": "4e6c71e8-aeaf-404e-84c2-c79f2a1cbe4b",
+    "layout": "normal",
+    "type_line": "Creature — Kithkin Knight",
+    "mana_cost": "{W}{W}",
+    "cmc": 2.0,
+    "oracle_text": "First strike\nLifelink (Damage dealt by this creature also causes you to gain that much life.)",
+    "power": "2",
+    "toughness": "2",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Lifelink",
+     "First strike"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Leonin Skyhunter",
+    "oracle_id": "517c7295-8ba2-47a6-a1c6-aee722f8ca88",
+    "layout": "normal",
+    "type_line": "Creature — Cat Knight",
+    "mana_cost": "{W}{W}",
+    "cmc": 2.0,
+    "oracle_text": "Flying",
+    "power": "2",
+    "toughness": "2",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Longbow Archer",
+    "oracle_id": "51531db1-ba59-4ccc-9a91-54de2887fc8b",
+    "layout": "normal",
+    "type_line": "Creature — Human Soldier Archer",
+    "mana_cost": "{W}{W}",
+    "cmc": 2.0,
+    "oracle_text": "Reach (This creature can block creatures with flying.)\nFirst strike",
+    "power": "2",
+    "toughness": "2",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Reach",
+     "First strike"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Makindi Aeronaut",
+    "oracle_id": "9f980829-90c1-43e2-a103-915f38317ed0",
+    "layout": "normal",
+    "type_line": "Creature — Kor Scout Ally",
+    "mana_cost": "{1}{W}",
+    "cmc": 2.0,
+    "oracle_text": "Flying",
+    "power": "1",
+    "toughness": "3",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Maned Serval",
+    "oracle_id": "ac230f29-6d3b-4fe1-bcb0-6ffab95a1bd7",
+    "layout": "normal",
+    "type_line": "Creature — Cat",
+    "mana_cost": "{1}{W}",
+    "cmc": 2.0,
+    "oracle_text": "Vigilance",
+    "power": "1",
+    "toughness": "4",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Vigilance"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Mesa Unicorn",
+    "oracle_id": "5101ff9e-4680-4d38-80a5-b4c21bc67356",
+    "layout": "normal",
+    "type_line": "Creature — Unicorn",
+    "mana_cost": "{1}{W}",
+    "cmc": 2.0,
+    "oracle_text": "Lifelink (Damage dealt by this creature also causes you to gain that much life.)",
+    "power": "2",
+    "toughness": "2",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Lifelink"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Silverbeak Griffin",
+    "oracle_id": "e9f410c1-d93d-4291-95fc-513832fb36e0",
+    "layout": "normal",
+    "type_line": "Creature — Griffin",
+    "mana_cost": "{W}{W}",
+    "cmc": 2.0,
+    "oracle_text": "Flying (This creature can't be blocked except by creatures with flying or reach.)",
+    "power": "2",
+    "toughness": "2",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Skyblade of the Legion",
+    "oracle_id": "678c76bf-fc31-47e4-8c19-712e15bba9e3",
+    "layout": "normal",
+    "type_line": "Creature — Vampire Soldier",
+    "mana_cost": "{1}{W}",
+    "cmc": 2.0,
+    "oracle_text": "Flying",
+    "power": "1",
+    "toughness": "3",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Skyshroud Falcon",
+    "oracle_id": "877ab494-da90-4c26-a184-c6ba64ec30b5",
+    "layout": "normal",
+    "type_line": "Creature — Bird",
+    "mana_cost": "{1}{W}",
+    "cmc": 2.0,
+    "oracle_text": "Flying, vigilance",
+    "power": "1",
+    "toughness": "1",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "Vigilance"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Sungrace Pegasus",
+    "oracle_id": "67f59250-d46a-4637-9493-165d23278817",
+    "layout": "normal",
+    "type_line": "Creature — Pegasus",
+    "mana_cost": "{1}{W}",
+    "cmc": 2.0,
+    "oracle_text": "Flying\nLifelink (Damage dealt by this creature also causes you to gain that much life.)",
+    "power": "1",
+    "toughness": "2",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "Lifelink"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Aerial Responder",
+    "oracle_id": "69b1b0ec-9db0-48d1-a7b5-71281aca16fe",
+    "layout": "normal",
+    "type_line": "Creature — Dwarf Soldier",
+    "mana_cost": "{1}{W}{W}",
+    "cmc": 3.0,
+    "oracle_text": "Flying, vigilance, lifelink",
+    "power": "2",
+    "toughness": "3",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "Lifelink",
+     "Vigilance"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Benalish Knight",
+    "oracle_id": "32b401e9-163f-4917-a728-fc63b25ef602",
+    "layout": "normal",
+    "type_line": "Creature — Human Knight",
+    "mana_cost": "{2}{W}",
+    "cmc": 3.0,
+    "oracle_text": "Flash (You may cast this spell any time you could cast an instant.)\nFirst strike (This creature deals combat damage before creatures without first strike.)",
+    "power": "2",
+    "toughness": "2",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "First strike",
+     "Flash"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Diving Griffin",
+    "oracle_id": "8785f9b4-eea2-4b45-9ae4-194b9a715702",
+    "layout": "normal",
+    "type_line": "Creature — Griffin",
+    "mana_cost": "{1}{W}{W}",
+    "cmc": 3.0,
+    "oracle_text": "Flying, vigilance",
+    "power": "2",
+    "toughness": "2",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "Vigilance"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Griffin Sentinel",
+    "oracle_id": "72df0b70-5c9f-44f3-96d5-81c95abc0065",
+    "layout": "normal",
+    "type_line": "Creature — Griffin",
+    "mana_cost": "{2}{W}",
+    "cmc": 3.0,
+    "oracle_text": "Flying\nVigilance (Attacking doesn't cause this creature to tap.)",
+    "power": "1",
+    "toughness": "3",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "Vigilance"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Healer's Flock",
+    "oracle_id": "0b3b2fb1-d5fe-4d14-985a-85f13cd60d9c",
+    "layout": "normal",
+    "type_line": "Creature — Bird",
+    "mana_cost": "{W}{W}{W}",
+    "cmc": 3.0,
+    "oracle_text": "Flying, lifelink",
+    "power": "3",
+    "toughness": "3",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "Lifelink"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Shrike Force",
+    "oracle_id": "d014b02f-a8b8-4b97-96e0-f588792069f0",
+    "layout": "normal",
+    "type_line": "Creature — Bird Knight",
+    "mana_cost": "{2}{W}",
+    "cmc": 3.0,
+    "oracle_text": "Flying, double strike, vigilance",
+    "power": "1",
+    "toughness": "3",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "Vigilance",
+     "Double strike"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Skyhunter Prowler",
+    "oracle_id": "5e0d13b0-d5d0-4c5f-945e-5cda7d980670",
+    "layout": "normal",
+    "type_line": "Creature — Cat Knight",
+    "mana_cost": "{2}{W}",
+    "cmc": 3.0,
+    "oracle_text": "Flying, vigilance (This creature can't be blocked except by creatures with flying or reach, and attacking doesn't cause this creature to tap.)",
+    "power": "1",
+    "toughness": "3",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "Vigilance"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Thunder Spirit",
+    "oracle_id": "6efad3d6-4886-4b62-a4ff-bc0622f9672a",
+    "layout": "normal",
+    "type_line": "Creature — Elemental Spirit",
+    "mana_cost": "{1}{W}{W}",
+    "cmc": 3.0,
+    "oracle_text": "Flying, first strike",
+    "power": "2",
+    "toughness": "2",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "First strike"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Alabaster Kirin",
+    "oracle_id": "640fa591-ba79-4148-86a6-9de994a9e67c",
+    "layout": "normal",
+    "type_line": "Creature — Kirin",
+    "mana_cost": "{3}{W}",
+    "cmc": 4.0,
+    "oracle_text": "Flying, vigilance",
+    "power": "2",
+    "toughness": "3",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "Vigilance"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Armored Griffin",
+    "oracle_id": "ad3d6003-66d3-486d-aa54-ddce1adb5ff1",
+    "layout": "normal",
+    "type_line": "Creature — Griffin",
+    "mana_cost": "{3}{W}",
+    "cmc": 4.0,
+    "oracle_text": "Flying, vigilance",
+    "power": "2",
+    "toughness": "3",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "Vigilance"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Cloud Crusader",
+    "oracle_id": "2ef481fa-ff20-426a-af16-fbf761ea5eaf",
+    "layout": "normal",
+    "type_line": "Creature — Human Knight",
+    "mana_cost": "{2}{W}{W}",
+    "cmc": 4.0,
+    "oracle_text": "Flying\nFirst strike (This creature deals combat damage before creatures without first strike.)",
+    "power": "2",
+    "toughness": "3",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "First strike"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Indomitable Ancients",
+    "oracle_id": "2764741c-1f3e-459a-a487-54cbac2c84a6",
+    "layout": "normal",
+    "type_line": "Creature — Treefolk Warrior",
+    "mana_cost": "{2}{W}{W}",
+    "cmc": 4.0,
+    "oracle_text": "",
+    "power": "2",
+    "toughness": "10",
+    "colors": [
+     "W"
+    ],
+    "keywords": []
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Seraph of Dawn",
+    "oracle_id": "38c588ae-7254-4fae-aa9a-03e2a5524492",
+    "layout": "normal",
+    "type_line": "Creature — Angel",
+    "mana_cost": "{2}{W}{W}",
+    "cmc": 4.0,
+    "oracle_text": "Flying, lifelink",
+    "power": "2",
+    "toughness": "4",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "Lifelink"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Skyhunter Patrol",
+    "oracle_id": "aadcff6f-9207-4d90-a12d-4913c96867e2",
+    "layout": "normal",
+    "type_line": "Creature — Cat Knight",
+    "mana_cost": "{2}{W}{W}",
+    "cmc": 4.0,
+    "oracle_text": "Flying, first strike (This creature can't be blocked except by creatures with flying or reach, and it deals combat damage before creatures without first strike.)",
+    "power": "2",
+    "toughness": "3",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "First strike"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Wall of Swords",
+    "oracle_id": "eb098958-50d3-4476-ba74-382033703ff9",
+    "layout": "normal",
+    "type_line": "Creature — Wall",
+    "mana_cost": "{3}{W}",
+    "cmc": 4.0,
+    "oracle_text": "Defender (This creature can't attack.)\nFlying",
+    "power": "3",
+    "toughness": "5",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "Defender"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Angel of Light",
+    "oracle_id": "d12cf640-ff60-4935-a2c7-28ab788de42c",
+    "layout": "normal",
+    "type_line": "Creature — Angel",
+    "mana_cost": "{4}{W}",
+    "cmc": 5.0,
+    "oracle_text": "Flying, vigilance",
+    "power": "3",
+    "toughness": "3",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "Vigilance"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Dawnstrike Paladin",
+    "oracle_id": "c2bfb230-6949-4d5e-8cac-9d7dafdc5e9a",
+    "layout": "normal",
+    "type_line": "Creature — Human Knight",
+    "mana_cost": "{3}{W}{W}",
+    "cmc": 5.0,
+    "oracle_text": "Vigilance (Attacking doesn't cause this creature to tap.)\nLifelink (Damage dealt by this creature also causes you to gain that much life.)",
+    "power": "2",
+    "toughness": "4",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Lifelink",
+     "Vigilance"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Ghostly Sentinel",
+    "oracle_id": "a16f4b53-c8cf-45b0-89e7-507acd094a64",
+    "layout": "normal",
+    "type_line": "Creature — Kor Spirit",
+    "mana_cost": "{4}{W}",
+    "cmc": 5.0,
+    "oracle_text": "Flying, vigilance",
+    "power": "3",
+    "toughness": "3",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "Vigilance"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Peregrine Griffin",
+    "oracle_id": "f8848065-7075-41d8-82f6-67ace390625a",
+    "layout": "normal",
+    "type_line": "Creature — Griffin",
+    "mana_cost": "{4}{W}",
+    "cmc": 5.0,
+    "oracle_text": "Flying\nFirst strike (This creature deals combat damage before creatures without first strike.)",
+    "power": "2",
+    "toughness": "4",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "First strike"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Plover Knights",
+    "oracle_id": "c4a99095-38cc-4fd3-b3da-c72a6ccceb25",
+    "layout": "normal",
+    "type_line": "Creature — Kithkin Knight",
+    "mana_cost": "{3}{W}{W}",
+    "cmc": 5.0,
+    "oracle_text": "Flying, first strike",
+    "power": "3",
+    "toughness": "3",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "First strike"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Serra Angel",
+    "oracle_id": "4b7ac066-e5c7-43e6-9e7e-2739b24a905d",
+    "layout": "normal",
+    "type_line": "Creature — Angel",
+    "mana_cost": "{3}{W}{W}",
+    "cmc": 5.0,
+    "oracle_text": "Flying\nVigilance (Attacking doesn't cause this creature to tap.)",
+    "power": "4",
+    "toughness": "4",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "Vigilance"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Shepherd of the Lost",
+    "oracle_id": "d8c70f2f-985c-4982-97eb-99da3810e048",
+    "layout": "normal",
+    "type_line": "Creature — Angel",
+    "mana_cost": "{4}{W}",
+    "cmc": 5.0,
+    "oracle_text": "Flying, first strike, vigilance",
+    "power": "3",
+    "toughness": "3",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "Vigilance",
+     "First strike"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Soulbound Guardians",
+    "oracle_id": "11f7f6e4-2c39-4478-8c10-4473dbf921a2",
+    "layout": "normal",
+    "type_line": "Creature — Kor Spirit",
+    "mana_cost": "{4}{W}",
+    "cmc": 5.0,
+    "oracle_text": "Defender, flying",
+    "power": "4",
+    "toughness": "5",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "Defender"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Jhovall Queen",
+    "oracle_id": "e1a48505-acbe-4eb4-8e83-3c76cf7a8829",
+    "layout": "normal",
+    "type_line": "Creature — Cat Rebel",
+    "mana_cost": "{4}{W}{W}",
+    "cmc": 6.0,
+    "oracle_text": "Vigilance",
+    "power": "4",
+    "toughness": "7",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Vigilance"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Knight of the Tusk",
+    "oracle_id": "524d81fb-33f5-4e77-ae41-477b91e67be4",
+    "layout": "normal",
+    "type_line": "Creature — Human Knight",
+    "mana_cost": "{4}{W}{W}",
+    "cmc": 6.0,
+    "oracle_text": "Vigilance (Attacking doesn't cause this creature to tap.)",
+    "power": "3",
+    "toughness": "7",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Vigilance"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Sunblade Angel",
+    "oracle_id": "be37ef9d-955a-417e-bde8-bb9e0bdf3612",
+    "layout": "normal",
+    "type_line": "Creature — Angel",
+    "mana_cost": "{5}{W}",
+    "cmc": 6.0,
+    "oracle_text": "Flying, first strike, vigilance, lifelink",
+    "power": "3",
+    "toughness": "3",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "Lifelink",
+     "Vigilance",
+     "First strike"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Angel of Retribution",
+    "oracle_id": "248dcf69-b99e-4a71-b9b3-7fd865f873ab",
+    "layout": "normal",
+    "type_line": "Creature — Angel",
+    "mana_cost": "{6}{W}",
+    "cmc": 7.0,
+    "oracle_text": "Flying, first strike",
+    "power": "5",
+    "toughness": "5",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "First strike"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Archangel",
+    "oracle_id": "9971697b-2acc-4bc2-a44e-074d03a51df7",
+    "layout": "normal",
+    "type_line": "Creature — Angel",
+    "mana_cost": "{5}{W}{W}",
+    "cmc": 7.0,
+    "oracle_text": "Flying, vigilance",
+    "power": "5",
+    "toughness": "5",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "Vigilance"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 1,
+   "is_commander": false,
+   "card": {
+    "name": "Seraph of the Suns",
+    "oracle_id": "8354b70e-43fc-4581-bb53-b913335bf460",
+    "layout": "normal",
+    "type_line": "Creature — Angel",
+    "mana_cost": "{5}{W}{W}",
+    "cmc": 7.0,
+    "oracle_text": "Flying\nIndestructible (Damage and effects that say \"destroy\" don't destroy this creature. If its toughness is 0 or less, it still dies.)",
+    "power": "4",
+    "toughness": "4",
+    "colors": [
+     "W"
+    ],
+    "keywords": [
+     "Flying",
+     "Indestructible"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 38,
+   "is_commander": false,
+   "card": {
+    "name": "Plains",
+    "oracle_id": "bc71ebf6-2056-41f7-be35-b2e5c34afa99",
+    "layout": "normal",
+    "type_line": "Basic Land — Plains",
+    "mana_cost": "",
+    "cmc": 0.0,
+    "oracle_text": "({T}: Add {W}.)",
+    "colors": [],
+    "keywords": [],
+    "produced_mana": [
+     "W"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  }
+ ]
+}

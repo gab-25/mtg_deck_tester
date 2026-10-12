@@ -49,9 +49,18 @@
                             <div class="field-label">Seat {{ row.index|add:1 }}</div>
                             <select name="seat-{{ row.index }}-deck" class="field">
                                 <option value="">— empty —</option>
-                                {% for deck in decks %}
-                                <option value="{{ deck.id }}" {% if row.deck == deck.id|stringformat:'s' %}selected{% endif %}>{{ deck.name }} ({{ deck.get_format_display }})</option>
-                                {% endfor %}
+                                {% if decks %}
+                                <optgroup label="Your decks">
+                                    {% for deck in decks %}
+                                    <option value="{{ deck.id }}" {% if row.deck == deck.id|stringformat:'s' %}selected{% endif %}>{{ deck.name }} ({{ deck.get_format_display }})</option>
+                                    {% endfor %}
+                                </optgroup>
+                                {% endif %}
+                                <optgroup label="Benchmark decks (any format)">
+                                    {% for value, label in benchmarks %}
+                                    <option value="{{ value }}" {% if row.deck == value %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </optgroup>
                             </select>
                             <select name="seat-{{ row.index }}-agent" class="field">
                                 {% for value, label in agent_choices %}
@@ -59,7 +68,7 @@
                                 {% endfor %}
                             </select>
                             <input type="text" name="seat-{{ row.index }}-model" value="{{ row.model }}" class="field"
-                                placeholder="{{ default_model }}" spellcheck="false" />
+                                placeholder="default model" spellcheck="false" />
                         </div>
                         {% endfor %}
                     </div>
@@ -83,22 +92,25 @@
                         <span translate="no" class="ms text-[18px]">smart_toy</span>AGENTS
                     </div>
                     <div class="text-[12.5px] text-txt3 font-light leading-[1.55]">
-                        <span class="text-txt2">Random</span> picks any legal action: a baseline that costs nothing.
-                        <span class="text-txt2">LLM</span> asks a model on OpenRouter for every decision
-                        (leave the model empty for <span class="font-mono2">{{ default_model }}</span>).
-                        {% if not llm_available %}<span class="text-gold">No OPENROUTER_API_KEY is set, so LLM seats are unavailable.</span>{% endif %}
+                        <span class="text-txt2">Heuristic</span> plays by fixed rules: lands, threats, removal, safe attacks and good blocks. No network.
+                        <span class="text-txt2">Jev</span> asks TypeSafe's Jev model (through OpenRouter) to pick each action, and logs how sure it was
+                        (leave the model empty for <span class="font-mono2">{{ jev_model }}</span>); when it is unsure or unreachable the heuristic plays.
+                        <span class="text-txt2">LLM</span> asks a language model on OpenRouter
+                        (<span class="font-mono2">{{ default_model }}</span> by default).
+                        <span class="text-txt2">Random</span> picks any legal action: a free baseline.
+                        {% if not llm_available %}<span class="text-gold">No OPENROUTER_API_KEY is set, so Jev and LLM seats are unavailable.</span>{% endif %}
                     </div>
                 </div>
 
                 <div class="panel-card p-[18px]">
                     <div class="flex items-center gap-[7px] font-semibold text-[12.5px] tracking-[.06em] text-txt2 mb-3">
-                        <span translate="no" class="ms text-[18px]">gavel</span>SIMPLIFIED RULES
+                        <span translate="no" class="ms text-[18px]">gavel</span>RULES
                     </div>
                     <ul class="text-[12.5px] text-txt3 font-light leading-[1.6]" style="margin:0;padding-left:18px;list-style:disc">
-                        <li>One land per turn; every land taps for one generic mana.</li>
-                        <li>Spells have no effect yet: permanents stay, the rest is discarded.</li>
-                        <li>Creatures attack unblocked, for their power.</li>
-                        <li>Commander tax and commander damage apply.</li>
+                        <li>The stack, priority, colored mana, blockers, first strike, trample and the usual keywords.</li>
+                        <li>Cards do what their compiled rules say; a card the compiler cannot read plays as a blank.</li>
+                        <li>Mana is paid automatically, and opening hands use a fixed mulligan rule.</li>
+                        <li>Benchmark decks are opponents built to be fully simulated.</li>
                     </ul>
                 </div>
 

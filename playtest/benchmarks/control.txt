@@ -1,0 +1,68 @@
+// Mono-white control: walls and high-toughness blockers, lifelink, flyers,
+// and a big finisher. Every card compiles without the judge (keywords only).
+Commander
+1 Zetalpa, Primal Dawn
+
+Deck
+1 Sol Ring
+1 Arcane Signet
+1 Fellwar Stone
+1 Battlefield Raptor
+1 Dragon's Eye Sentry
+1 Healer's Hawk
+1 Rustwing Falcon
+1 Segovian Angel
+1 Swooping Lookout
+1 Ajani's Sunstriker
+1 Alabaster Host Sanctifier
+1 Alaborn Grenadier
+1 Alpine Watchdog
+1 Angelic Wall
+1 Bishop's Soldier
+1 Brightblade Stoat
+1 Colorful Feiyi Sparrow
+1 Concordia Pegasus
+1 Courier Hawk
+1 Daybreak Chaplain
+1 Fortified Rampart
+1 Huatli's Snubhorn
+1 Knight of Meadowgrain
+1 Leonin Skyhunter
+1 Longbow Archer
+1 Makindi Aeronaut
+1 Maned Serval
+1 Mesa Unicorn
+1 Silverbeak Griffin
+1 Skyblade of the Legion
+1 Skyshroud Falcon
+1 Sungrace Pegasus
+1 Aerial Responder
+1 Benalish Knight
+1 Diving Griffin
+1 Griffin Sentinel
+1 Healer's Flock
+1 Shrike Force
+1 Skyhunter Prowler
+1 Thunder Spirit
+1 Alabaster Kirin
+1 Armored Griffin
+1 Cloud Crusader
+1 Indomitable Ancients
+1 Seraph of Dawn
+1 Skyhunter Patrol
+1 Wall of Swords
+1 Angel of Light
+1 Dawnstrike Paladin
+1 Ghostly Sentinel
+1 Peregrine Griffin
+1 Plover Knights
+1 Serra Angel
+1 Shepherd of the Lost
+1 Soulbound Guardians
+1 Jhovall Queen
+1 Knight of the Tusk
+1 Sunblade Angel
+1 Angel of Retribution
+1 Archangel
+1 Seraph of the Suns
+38 Plains

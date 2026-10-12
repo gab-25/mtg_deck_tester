@@ -8,6 +8,7 @@ from django.views.decorators.http import require_http_methods
 from mtg_deck_tester.access import get_owned_or_404
 from mtg_deck_tester.jobs import start_job
 
+from .cache import DbCardCache
 from .formats import DEFAULT_FORMAT, FORMATS, format_choices
 from .importer import decklist_errors, run_import
 from .models import Deck
@@ -77,6 +78,8 @@ def deck_detail(request, deck_id):
     deck = get_owned_or_404(Deck, request.user, deck_id)
     if deck.is_busy:
         return redirect("deck_list")
+    from playtest.judge import cached_coverage
+
     return render(
         request,
         "decks/deck_detail.html",
@@ -85,6 +88,8 @@ def deck_detail(request, deck_id):
             "pips": deck_pips(deck),
             "card_groups": card_groups(deck.cards),
             "commander_cards": commander_cards(deck.cards),
+            # Only from the caches: a page view never compiles a card.
+            "coverage": cached_coverage(deck.cards, DbCardCache()),
         },
     )
 

@@ -10,8 +10,9 @@ from decks.models import Deck
 from mtg_deck_tester.access import get_owned_or_404
 from mtg_deck_tester.jobs import start_job
 
-from .agents import openrouter
-from .forms import SEAT_ROWS, parse_match_form
+from . import benchmarks
+from .agents import openrouter, typesafe
+from .forms import BENCHMARK_PREFIX, SEAT_ROWS, parse_match_form
 from .models import Match, Seat
 from .runner import run_match
 
@@ -39,7 +40,7 @@ def _form_context(user, post=None, **extra) -> dict:
         {
             "index": i,
             "deck": post.get(f"seat-{i}-deck", ""),
-            "agent": post.get(f"seat-{i}-agent", Seat.Agent.RANDOM),
+            "agent": post.get(f"seat-{i}-agent", Seat.Agent.HEURISTIC),
             "model": post.get(f"seat-{i}-model", ""),
         }
         for i in range(SEAT_ROWS)
@@ -53,7 +54,9 @@ def _form_context(user, post=None, **extra) -> dict:
         "form_seed": post.get("seed", ""),
         "form_max_rounds": post.get("max_rounds", 20),
         "agent_choices": Seat.Agent.choices,
+        "benchmarks": [(BENCHMARK_PREFIX + key, label) for key, label in benchmarks.choices()],
         "default_model": openrouter.default_model(),
+        "jev_model": typesafe.default_model(),
         "llm_available": openrouter.api_key() is not None,
         **extra,
     }
@@ -89,7 +92,8 @@ def create_match(request):
                 match=match,
                 position=position,
                 deck=choice.deck,
-                deck_name=choice.deck.name,
+                benchmark=choice.benchmark,
+                deck_name=choice.name,
                 agent=choice.agent,
                 model=choice.model,
             )
@@ -100,11 +104,17 @@ def create_match(request):
 
 
 def _live_context(match) -> dict:
+    seats = list(match.seats.all())
+    summary = match.summary or {}
+    by_seat = {s["seat"]: s for s in summary.get("seats", [])}
     return {
         "match": match,
-        "seats": list(match.seats.all()),
+        "seats": seats,
         "events": list(match.events.all()),
+        "summary": summary,
+        "summary_seats": [(seat, by_seat[seat.position]) for seat in seats if seat.position in by_seat],
         "default_model": openrouter.default_model(),
+        "jev_model": typesafe.default_model(),
     }
 
 

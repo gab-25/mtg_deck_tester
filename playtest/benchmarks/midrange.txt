@@ -1,0 +1,70 @@
+// Mono-green midrange: efficient bodies with trample, reach and vigilance.
+// Every card compiles without the judge (keywords only), so coverage is 100%.
+Commander
+1 Spider-Rex, Daring Dino
+
+Deck
+1 Sol Ring
+1 Arcane Signet
+1 Fellwar Stone
+1 Dragon Sniper
+1 Ambush Viper
+1 Bassara Tower Archer
+1 Deadly Recluse
+1 Garruk's Companion
+1 Thornweald Archer
+1 Bounding Wolf
+1 Dawn's Light Archer
+1 Force of Savagery
+1 Gnottvold Recluse
+1 Leatherback Baloth
+1 Mosscoat Goriak
+1 Sporecap Spider
+1 Wildwood Patrol
+1 Cloudcrown Oak
+1 Colossadactyl
+1 Grazing Whiptail
+1 Kessig Recluse
+1 Magnigoth Sentry
+1 Ordinary Bear
+1 Swift Spinner
+1 Tangle Mantis
+1 Warriors of Wakanda
+1 Bitterbow Sharpshooters
+1 Colossapede
+1 Elfhame Wurm
+1 Fangren Hunter
+1 Garruk's Gorehorn
+1 Gigantosaurus
+1 Greater Basilisk
+1 Grizzled Outrider
+1 Hippo-Cows
+1 Hollowhenge Beast
+1 Mammoth Spider
+1 Pheres-Band Centaurs
+1 Plated Spider
+1 Sentinel Spider
+1 Silverback Ape
+1 Stampeding Rhino
+1 Stomper Cub
+1 Tajuru Pathwarden
+1 Vigilant Baloth
+1 Wardscale Crocodile
+1 Alpha Tyrranax
+1 Brambleweft Behemoth
+1 Colossal Dreadmaw
+1 Cowl Prowler
+1 Earthshaking Si
+1 Galewind Moose
+1 Giant Warthog
+1 Kindercatch
+1 Moss Kami
+1 Nyxborn Colossus
+1 Primordial Wurm
+1 Quakestrider Ceratops
+1 Scaled Behemoth
+1 Skysnare Spider
+1 Vorstclaw
+1 Vulpine Goliath
+1 Yavimaya Wurm
+36 Forest

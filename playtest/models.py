@@ -38,6 +38,9 @@ class Match(models.Model):
     )
     end_reason = models.CharField(max_length=16, choices=EndReason.choices, blank=True, default="")
     error = models.TextField(blank=True, default="")
+    # The deterministic match summary (playtest.summary.summarize_match),
+    # written when the game ends; empty until then.
+    summary = models.JSONField(default=dict, blank=True)
 
     created_at = models.DateTimeField(default=timezone.now)
     finished_at = models.DateTimeField(null=True, blank=True)
@@ -55,6 +58,8 @@ class Match(models.Model):
 class Seat(models.Model):
     class Agent(models.TextChoices):
         RANDOM = "random", "Random"
+        HEURISTIC = "heuristic", "Heuristic"
+        JEV = "jev", "Jev"
         LLM = "llm", "LLM"
 
     match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name="seats")
@@ -65,9 +70,15 @@ class Seat(models.Model):
         "decks.Deck", null=True, blank=True, on_delete=models.SET_NULL, related_name="seats"
     )
     deck_name = models.CharField(max_length=255)
-    agent = models.CharField(max_length=16, choices=Agent.choices, default=Agent.RANDOM)
-    # OpenRouter model id for an LLM seat; empty means the default model.
+    # The bundled benchmark deck this seat plays (playtest/benchmarks/), or
+    # empty for a user's deck.
+    benchmark = models.CharField(max_length=32, blank=True, default="")
+    agent = models.CharField(max_length=16, choices=Agent.choices, default=Agent.HEURISTIC)
+    # OpenRouter model id for an LLM or Jev seat; empty means the default model.
     model = models.CharField(max_length=128, blank=True, default="")
+    # The deck's coverage report (playtest.engine.coverage), computed when the
+    # match starts: how much of the deck the simulation could play.
+    coverage = models.JSONField(default=dict, blank=True)
 
     # Filled in when the match ends.
     life = models.IntegerField(null=True, blank=True)
@@ -83,6 +94,20 @@ class Seat(models.Model):
     def __str__(self) -> str:
         return f"Seat {self.position + 1}: {self.deck_name}"
 
+    @property
+    def agent_icon(self) -> str:
+        """The icon-font ligature for this seat's agent."""
+        return {
+            self.Agent.RANDOM: "casino",
+            self.Agent.HEURISTIC: "rule",
+            self.Agent.JEV: "bolt",
+            self.Agent.LLM: "psychology",
+        }.get(self.agent, "casino")
+
+    @property
+    def uses_model(self) -> bool:
+        return self.agent in (self.Agent.LLM, self.Agent.JEV)
+
 
 class MatchEvent(models.Model):
     """One entry of a match log, as the engine reported it."""
@@ -94,6 +119,8 @@ class MatchEvent(models.Model):
     # The seat the event is about, or None for table-wide events.
     seat_position = models.PositiveSmallIntegerField(null=True, blank=True)
     kind = models.CharField(max_length=32)
+    # The step of the turn it happened in (untap, main1, declare_attackers…).
+    step = models.CharField(max_length=32, blank=True, default="")
     text = models.TextField()
     payload = models.JSONField(default=dict)
     reasoning = models.TextField(blank=True, default="")

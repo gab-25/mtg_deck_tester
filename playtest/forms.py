@@ -6,8 +6,14 @@ from dataclasses import dataclass
 from decks.formats import DEFAULT_FORMAT, FORMATS
 from decks.models import Deck
 
+from . import benchmarks
 from .agents import openrouter
 from .models import Seat
+
+# A seat's deck picker value for a bundled benchmark deck.
+BENCHMARK_PREFIX = "benchmark:"
+# Seats that ask a model through OpenRouter.
+MODEL_AGENTS = {Seat.Agent.LLM, Seat.Agent.JEV}
 
 # Rows the form shows; the format decides how many of them may be filled.
 SEAT_ROWS = max(fmt.max_seats for fmt in FORMATS.values())
@@ -16,9 +22,15 @@ MAX_ROUNDS_LIMIT = 100
 
 @dataclass
 class SeatChoice:
-    deck: Deck
+    # A user's deck, or None for a bundled benchmark deck.
+    deck: Deck | None
+    benchmark: str
     agent: str
     model: str
+
+    @property
+    def name(self) -> str:
+        return self.deck.name if self.deck is not None else benchmarks.label(self.benchmark)
 
 
 @dataclass
@@ -58,18 +70,24 @@ def parse_match_form(post, user) -> tuple[MatchForm | None, list[str]]:
         deck_id = post.get(f"seat-{row}-deck") or ""
         if not deck_id:
             continue
+        agent = post.get(f"seat-{row}-agent") or Seat.Agent.HEURISTIC
+        if agent not in agents:
+            errors.append(f"Seat {row + 1}: unknown agent {agent!r}.")
+        model = (post.get(f"seat-{row}-model") or "").strip()
+        if deck_id.startswith(BENCHMARK_PREFIX):
+            key = deck_id.removeprefix(BENCHMARK_PREFIX)
+            if key not in benchmarks.BENCHMARKS:
+                errors.append(f"Seat {row + 1}: unknown benchmark deck {key!r}.")
+                continue
+            seats.append(SeatChoice(deck=None, benchmark=key, agent=agent, model=model))
+            continue
         deck = decks.get(deck_id)
         if deck is None:
             errors.append(f"Seat {row + 1}: pick one of your imported decks.")
             continue
         if deck.format != fmt:
             errors.append(f"Seat {row + 1}: {deck.name} is not a {rules.label} deck.")
-        agent = post.get(f"seat-{row}-agent") or Seat.Agent.RANDOM
-        if agent not in agents:
-            errors.append(f"Seat {row + 1}: unknown agent {agent!r}.")
-        seats.append(
-            SeatChoice(deck=deck, agent=agent, model=(post.get(f"seat-{row}-model") or "").strip())
-        )
+        seats.append(SeatChoice(deck=deck, benchmark="", agent=agent, model=model))
 
     if not rules.min_seats <= len(seats) <= rules.max_seats:
         if rules.min_seats == rules.max_seats:
@@ -78,8 +96,8 @@ def parse_match_form(post, user) -> tuple[MatchForm | None, list[str]]:
             wanted = f"{rules.min_seats} to {rules.max_seats}"
         errors.append(f"{rules.label} is played by {wanted} players; {len(seats)} chosen.")
 
-    if any(s.agent == Seat.Agent.LLM for s in seats) and not openrouter.api_key():
-        errors.append("LLM seats need an OpenRouter API key: set OPENROUTER_API_KEY.")
+    if any(s.agent in MODEL_AGENTS for s in seats) and not openrouter.api_key():
+        errors.append("Jev and LLM seats need an OpenRouter API key: set OPENROUTER_API_KEY.")
 
     if errors:
         return None, errors

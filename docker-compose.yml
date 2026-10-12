@@ -22,10 +22,14 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://mtg:mtg@db:5432/mtg_tester
-      # Provide your OpenRouter key to enable the LLM players:
+      # Provide your OpenRouter key to enable Jev (card judge and Jev seats) and LLM seats:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       # Optional: the default model id for LLM seats (https://openrouter.ai/models).
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
+      # Optional: the Jev model (default ~typesafe/jev-latest) and the confidence
+      # under which a Jev seat lets the heuristic agent decide (default 0.2).
+      JEV_MODEL: ${JEV_MODEL:-}
+      JEV_MIN_CONFIDENCE: ${JEV_MIN_CONFIDENCE:-}
     ports:
       - "8000:8000"
 

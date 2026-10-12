@@ -2,14 +2,17 @@
 
 A **Django** web app where **AI agents playtest Magic: The Gathering Commander decks**.
 Import your decks from a plain-text list (cards resolved through the **Scryfall** API),
-seat two to four of them at a table, and let the agents play the game out — a
-random baseline, or a language model of your choice through **OpenRouter**, with its
-reasoning written into the game log. Pages are **HTMX** over a precompiled stylesheet,
+seat two to four of them at a table — or pit them against bundled benchmark decks — and
+let the agents play the game out under real rules: the stack and priority, colored mana,
+blockers, and each card's own effects. Pages are **HTMX** over a precompiled stylesheet,
 data lives in **Postgres**.
 
-This is the project's skeleton: the game engine plays a deliberately **simplified**
-version of Magic (see [Rules](#rules)). Its structure — engine, agents, runner — is
-built so real rules can be added inside the engine without touching the rest.
+Card effects are **compiled once** from oracle text into a small, closed effect language,
+and the seats are played by a deterministic heuristic agent or by
+[Jev](https://docs.typesafe.ai/introduction), TypeSafe AI's System One model, which picks
+among the legal actions and says how sure it is. No model is ever the rules engine: the
+rules live in deterministic Python that decides which actions are legal; a model only
+picks one of them.
 
 ## Features
 
@@ -21,14 +24,29 @@ built so real rules can be added inside the engine without touching the rest.
 - **Commander and Duel Commander**: a deck declares its format. A Commander match
   seats 2–4 players at 40 life and tracks commander damage; a Duel Commander match
   seats exactly 2 at 20 life.
-- **Agents**: each seat gets its own agent — `random` (free, reproducible) or `llm`,
-  with an optional per-seat OpenRouter model id, so different models can play each
-  other. An LLM that fails to answer, or answers with no valid choice, falls back to a
-  random move and the fallback is logged: a match never stalls on a model.
-- **Live game log**: a match runs in the background; its page shows the table and the
-  log as they happen (HTMX polling), including the reason each LLM gave for each move.
-- **Reproducible**: a match has a seed. The same seed with random agents replays the
-  same game, event for event.
+- **Agents**: each seat gets its own agent — `heuristic` (fixed rules, no network),
+  `jev` (Jev picks each action through OpenRouter; its confidence and runner-up actions
+  are logged), `llm` (a language model of your choice through OpenRouter, with its
+  written reason), or `random` (a free baseline). A Jev seat that is unsure (below
+  `JEV_MIN_CONFIDENCE`) or unreachable hands the decision to the heuristic agent, and a
+  match never stalls on a model.
+- **Compiled card effects**: before a match, every card is compiled into a program of
+  operations (damage, life, cards, removal, counterspells, tokens, pump, counters,
+  mana…) and cached forever in `card_rules`. A card the compiler cannot express is
+  *unsupported* and plays as a blank — see [How cards are compiled](#how-cards-are-compiled).
+- **Coverage**: every seat shows how much of its deck the simulation could play, with
+  warnings for an unsupported commander and for dead spells, and the list of
+  unsupported cards with their reasons. The deck page shows it too once every card is
+  in the cache.
+- **Benchmark decks**: three bundled opponents (aggro, midrange, control) built to
+  compile at 100% coverage, selectable for any seat in either format.
+- **Live game log and summary**: a match runs in the background; its page shows the
+  table and the log as they happen (HTMX polling), each Jev decision with its
+  confidence, and at the end a deterministic summary per seat (damage by source,
+  spells cast, commander tax, lands, dead spells, decision confidence).
+- **Reproducible**: a match has a seed. The same seed with heuristic or random agents
+  replays the same game, event for event: there are no model calls during a game
+  except the seats' own decisions.
 - **Scryfall cache in the database**: card JSON is cached in Postgres
   (`scryfall_cards`) and shared by every deck. Card images are not stored: the
   browser loads them straight from Scryfall's CDN (`cards.scryfall.io`). The card table can be
@@ -38,25 +56,63 @@ built so real rules can be added inside the engine without touching the rest.
 
 ## Rules
 
-The engine (`playtest/engine/`) supports:
+The kernel (`playtest/engine/`) plays 2–4 player Commander and 2-player Duel Commander:
 
-- An opening hand of seven, no mulligans; the commander starts in the command zone.
-- Untap, draw (the first player of a two-player game skips the first draw), one land
-  per turn, then one attack.
-- Every land taps for one generic mana — colors are ignored.
-- A spell can be cast when untapped lands cover its mana value. Creatures and other
-  permanents enter the battlefield; instants and sorceries go to the graveyard with
-  no effect.
-- The commander is cast from the command zone for its mana value plus the commander
-  tax (2 per previous cast).
-- An attack sends every creature that can attack at one opponent. There are no
-  blockers: each attacker deals damage equal to its power.
-- A player is eliminated at 0 life, at 21 damage from a single commander (Commander
-  only), or when drawing from an empty library. The last player standing wins; a
+- **Turns and priority**: untap, upkeep, draw, main, combat (beginning, attackers,
+  blockers, first-strike damage, damage, end), second main, end step, cleanup. The
+  first player of a two-player game skips their first draw. Priority passes around
+  the table in turn order; the top of the stack resolves only when every player still
+  in the game passes in succession.
+- **Mana**: lands and rocks make the colors Scryfall lists for them (Sol Ring makes
+  two). Costs are checked with an exact max-flow, and paid **automatically**, keeping
+  the most colors open — no agent decides how to pay, so "holding up an Island" is not
+  a decision anyone makes.
+- **Spells and abilities**: one land per turn; sorcery-speed cards in your main phase
+  with an empty stack; instants and flash any time you have priority. Targets are
+  chosen on cast and checked again on resolution. Triggered abilities (enters, dies,
+  attacks, upkeep, end step) go on the stack in APNAP order. Static abilities
+  (anthems, granted keywords) are applied as a derived view.
+- **Combat**: attackers and blockers are declared one at a time, each attacker at one
+  opponent, each defender blocking what attacks them. Flying, reach, menace, first
+  and double strike, trample, deathtouch, lifelink, vigilance, haste, defender,
+  hexproof, indestructible and ward (with a mana cost) are supported.
+- **Commander**: the commander starts in the command zone, costs 2 more per previous
+  cast, returns to the command zone instead of dying or being exiled, and deals
+  commander damage (21 eliminates, Commander only).
+- **Losing**: 0 life, drawing from an empty library, or the commander-damage limit. A
+  player who loses leaves with everything they own. The last player standing wins; a
   match that reaches its round limit is a draw.
+- **Opening hands**: a deterministic London mulligan for everyone (keep 2–5 lands, at
+  most two mulligans, the first free with three or more players).
+- **Guards**: caps on rounds, decisions per turn, stack depth, activations,
+  state-based-action iterations, declaration steps, options per decision (255),
+  model calls per seat and match wall clock. Each one ends cleanly with an event.
 
-Not supported yet: the stack and priority, instant-speed play, blocking, abilities
-and card effects, colored mana, mulligans.
+Not supported: layers, replacement and copy effects, planeswalkers, auras and
+equipment, alternative costs, and choosing how to pay mana.
+
+## How cards are compiled
+
+1. **Deterministic pre-pass** (`engine/cardrules.py`): cost, types, power/toughness,
+   colors, keywords, "enters tapped" and the mana a card makes come straight from the
+   cached Scryfall JSON. What is left of the rules text is the *residual*: empty means
+   supported with no model call; a match on a blocklist (library search, copies,
+   "instead", "for each"…) means unsupported with no model call.
+2. **Clause splitter** (`engine/clauses.py`): code reads the trigger, the cost, the
+   modes and the atomic clauses, and refuses what it cannot read (options, conditions,
+   back-references, other zones).
+3. **Judge** (`judge.py`): one Jev request per card. For each clause Jev picks the
+   operation and the selector, each asked twice with the options in opposite orders.
+   The op's fields are then read off the clause by its grammar, and the program goes
+   through the validator (`engine/dsl.py`), which rejects and never coerces. A `NONE`
+   answer, a disagreement, low confidence or a rejected program make the card
+   unsupported, with a reason naming the clause.
+4. **Cache**: results are stored in `card_rules` by oracle id and DSL version, so a card
+   is compiled once; a card the judge could not be asked about is retried next time.
+
+`manage.py card_coverage --deck <id>` (or `card_coverage <decklist file>`) prints a
+deck's coverage report, and `manage.py build_benchmarks` regenerates the benchmark
+decks' `.rules.json` from their decklists in `playtest/benchmarks/`.
 
 ## Documentation
 
@@ -86,17 +142,28 @@ decks/                  # App: decks and the Scryfall cache
 ├── cache.py            #   Database and filesystem cache backends
 └── importer.py         #   parse → fetch → validate, and the import job
 playtest/               # App: matches between agents
-├── engine/             #   The game engine (pure Python, no Django)
-│   ├── cards.py        #     Card specs and in-game card instances
-│   ├── state.py        #     Game and player state, per-format game rules
-│   ├── actions.py      #     The actions offered to an agent
-│   ├── rules.py        #     What the actions do; eliminations
+├── engine/             #   The rules kernel (pure Python, no Django)
+│   ├── cardrules.py    #     Deterministic pre-pass over Scryfall JSON
+│   ├── clauses.py      #     Rules text -> abilities and atomic clauses
+│   ├── dsl.py          #     The closed effect language and its validator
+│   ├── coverage.py     #     Per-deck coverage report
+│   ├── manacost.py     #     Mana cost parsing
+│   ├── mana.py         #     Max-flow payment feasibility and auto-tapping
+│   ├── state.py        #     Steps, cards, permanents, stack, players
+│   ├── actions.py      #     The legal actions offered to an agent
+│   ├── effects.py      #     DSL operations, targets, static abilities
+│   ├── zones.py        #     Zone changes, the command zone, leaving the game
+│   ├── rules.py        #     Applying actions, the stack, state-based actions, combat
+│   ├── limits.py       #     The kernel's guards
 │   ├── events.py       #     What the engine reports (the match log)
 │   ├── view.py         #     What a seat may see (no hidden information)
-│   └── game.py         #     Setup, turns, phases, asking agents, the result
-├── agents/             #   Random agent, LLM agent, OpenRouter client
+│   └── game.py         #     Setup, turns, priority, triggers, asking agents
+├── agents/             #   Heuristic, Jev, LLM and random agents; Jev and OpenRouter clients
+├── benchmarks/         #   Bundled benchmark decks and their compiled rules
+├── judge.py            #   Compiles cards with Jev, through the card_rules cache
+├── summary.py          #   The deterministic match summary
 ├── forms.py            #   The new-match form
-└── runner.py           #   Stored decks → engine → stored events and result
+└── runner.py           #   Stored decks -> compile -> engine -> stored events and result
 theme/static/           # Precompiled stylesheet, vendored fonts and icons
 tests/
 docs/                   # Project documentation (see Documentation above)
@@ -110,8 +177,9 @@ The project uses [`uv`](https://docs.astral.sh/uv/).
 ### Docker Compose
 
 ```bash
-export OPENROUTER_API_KEY="..."       # optional: enables LLM seats
-export OPENROUTER_MODEL="..."         # optional: default model (google/gemini-2.5-flash)
+export OPENROUTER_API_KEY="..."       # optional: enables the card judge, Jev and LLM seats
+export OPENROUTER_MODEL="..."         # optional: default LLM (google/gemini-2.5-flash)
+export JEV_MODEL="..."                # optional: Jev model (~typesafe/jev-latest)
 docker compose up --build
 docker compose exec web python manage.py createsuperuser
 ```
@@ -160,16 +228,21 @@ local development; real environment variables win):
 | Variable | Meaning | Default |
 |---|---|---|
 | `DATABASE_URL` | Postgres or SQLite URL | `postgresql://mtg:mtg@localhost:5432/mtg_tester` |
-| `OPENROUTER_API_KEY` | Enables LLM seats | — |
+| `OPENROUTER_API_KEY` | Enables Jev (the card judge and Jev seats) and LLM seats; without it, cards that need the judge are unsupported | — |
 | `OPENROUTER_MODEL` | Default model for LLM seats | `google/gemini-2.5-flash` |
+| `JEV_MODEL` | Jev model, for the judge and Jev seats | `~typesafe/jev-latest` |
+| `JEV_MIN_CONFIDENCE` | Below this confidence a Jev seat hands the decision to the heuristic agent | `0.2` |
 | `SECRET_KEY` / `DEBUG` | Django basics | dev key / on |
 | `CSRF_TRUSTED_ORIGINS` | Comma-separated origins behind a proxy | — |
 | `RUN_JOBS_IN_BACKGROUND` | Run imports and matches off the request thread | `1` |
 | `HOST` / `PORT` / `RELOAD` | Local server (`python -m mtg_deck_tester`) | `0.0.0.0` / `8000` / off |
 | `LOG_LEVEL` | Console log level | `INFO` |
 
-An LLM seat asks the model once per decision, and a match can take a few hundred
-decisions: keep an eye on the round limit and on your OpenRouter spend.
+Jev is reached through OpenRouter (`/api/v1/systemone`), so one key covers everything;
+no TypeSafe account is needed. A Jev or LLM seat asks its model once per real decision
+(the engine passes on its own when passing is the only option), and a match can take a
+few hundred decisions: a seat is handed to the heuristic agent past 400 calls or five
+minutes per match. Keep an eye on the round limit and on your OpenRouter spend.
 
 ## Tests
 
@@ -177,7 +250,8 @@ decisions: keep an eye on the round limit and on your OpenRouter spend.
 uv run pytest
 ```
 
-The suite is hermetic: in-memory SQLite, no Scryfall and no OpenRouter calls. It also
+The suite is hermetic: in-memory SQLite, no Scryfall and no OpenRouter calls (a guard
+fails any test that reaches the network), and no API key. It also
 checks that templates only use classes the precompiled stylesheet contains and icons
 the vendored font subset can render.
 

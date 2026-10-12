@@ -1,6 +1,6 @@
 {% comment %}
-Scoreboard and log. While the match runs the region polls itself (outerHTML
-swap); the finished render drops the trigger and polling stops.
+Scoreboard, coverage, summary and log. While the match runs the region polls
+itself (outerHTML swap); the finished render drops the trigger and polling stops.
 {% endcomment %}
 <div id="match-live-region" class="flex flex-col gap-5"
     {% if match.is_busy %}hx-get="{% url 'match_live' match.id %}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
@@ -16,17 +16,26 @@ swap); the finished render drops the trigger and polling stops.
     <div class="alert alert-error" style="align-items:flex-start;white-space:pre-line">{{ match.error }}</div>
     {% endif %}
 
+    {% for seat in seats %}{% if seat.coverage.commander_unsupported %}
+    <div class="alert alert-error" style="align-items:flex-start">
+        <span translate="no" class="ms text-[16px]">warning</span>
+        <span><span translate="no" class="font-semibold">{{ seat.deck_name }}</span>: the commander’s abilities could not be compiled, so it plays as a vanilla creature. Read this seat’s result with care.</span>
+    </div>
+    {% endif %}{% endfor %}
+
     <div class="seat-grid">
         {% for seat in seats %}
         <div class="seat-card{% if match.winner_id == seat.id %} seat-winner{% elif seat.eliminated_round %} seat-out{% endif %}">
             <div class="flex items-center justify-between gap-2 mb-2">
                 <span class="field-label">Seat {{ seat.position|add:1 }}</span>
                 <span class="chip">
-                    <span translate="no" class="ms text-[14px]">{% if seat.agent == 'llm' %}psychology{% else %}casino{% endif %}</span>{{ seat.get_agent_display }}
+                    <span translate="no" class="ms text-[14px]">{{ seat.agent_icon }}</span>{{ seat.get_agent_display }}
                 </span>
             </div>
             <div translate="no" class="font-cinzel font-semibold text-[16px] leading-[1.2] mb-1.5">{{ seat.deck_name }}</div>
+            {% if seat.benchmark %}<div class="text-[11px] text-txt3 mb-2">Bundled benchmark deck</div>{% endif %}
             {% if seat.agent == 'llm' %}<div class="font-mono2 text-[11px] text-txt3 mb-2">{{ seat.model|default:default_model }}</div>{% endif %}
+            {% if seat.agent == 'jev' %}<div class="font-mono2 text-[11px] text-txt3 mb-2">{{ seat.model|default:jev_model }}</div>{% endif %}
             <div class="flex items-center gap-2 mt-2 text-[13px]">
                 {% if match.winner_id == seat.id %}
                 <span translate="no" class="ms text-[18px] text-gold">military_tech</span><span class="text-gold font-semibold">Winner</span>
@@ -35,9 +44,73 @@ swap); the finished render drops the trigger and polling stops.
                 {% endif %}
                 {% if seat.life is not None %}<span class="font-mono2 font-bold">{{ seat.life }} life</span>{% endif %}
             </div>
+
+            {% if seat.coverage %}
+            <div class="mt-3 pt-[13px] border-t border-line2 text-[12px]">
+                <div class="flex items-center justify-between gap-2">
+                    <span class="field-label">Coverage</span>
+                    <span class="font-mono2 font-bold text-[14px] {% if seat.coverage.percent < 70 %}text-danger{% elif seat.coverage.percent < 90 %}text-gold{% else %}text-teal{% endif %}">{{ seat.coverage.percent }}%</span>
+                </div>
+                <div class="text-txt3 font-light mt-1 leading-[1.45]">
+                    of {{ seat.coverage.total }} cards simulated. A partial simulation: engines the compiler cannot express play as blanks, so results favour big, simple creatures; mana is paid automatically.
+                </div>
+                {% if seat.coverage.commander_unsupported %}
+                <div class="text-danger mt-1.5 font-semibold">Commander unsupported: it plays as a vanilla creature.</div>
+                {% endif %}
+                {% if seat.coverage.dead_spells %}
+                <div class="text-gold mt-1.5">{{ seat.coverage.dead_spells }} dead spell{{ seat.coverage.dead_spells|pluralize }}: unsupported instants and sorceries stay in hand.</div>
+                {% endif %}
+                {% if seat.coverage.unsupported_cards %}
+                <details class="mt-2">
+                    <summary class="cursor-pointer text-txt2">{{ seat.coverage.unsupported }} unsupported card{{ seat.coverage.unsupported|pluralize }}</summary>
+                    <ul class="mt-1.5 text-txt3 font-light leading-[1.45]" style="margin-bottom:0;padding-left:16px;list-style:disc">
+                        {% for card in seat.coverage.unsupported_cards %}
+                        <li><span translate="no" class="text-txt2">{% if card.quantity > 1 %}{{ card.quantity }}× {% endif %}{{ card.name }}</span>{% if card.commander %} (commander){% endif %} — {{ card.reason }}</li>
+                        {% endfor %}
+                    </ul>
+                </details>
+                {% endif %}
+            </div>
+            {% endif %}
         </div>
         {% endfor %}
     </div>
+
+    {% if match.status == 'finished' and summary_seats %}
+    <div class="panel-card overflow-hidden">
+        <div class="flex items-center gap-[9px] py-4 px-[18px] border-b border-line2">
+            <span translate="no" class="ms text-txt2 text-[20px]">insights</span>
+            <span class="font-semibold text-[15px]">Match summary</span>
+            <span class="text-[12px] text-txt3">computed from the log</span>
+        </div>
+        <div class="seat-grid p-[18px]">
+            {% for seat, stats in summary_seats %}
+            <div class="seat-card text-[12.5px]">
+                <div translate="no" class="font-cinzel font-semibold text-[15px] leading-[1.2] mb-2">{{ seat.deck_name }}</div>
+                <div class="flex flex-col gap-1.5 text-txt2">
+                    <div class="flex justify-between gap-2"><span class="text-txt3">Final life</span><span class="font-mono2">{{ stats.final_life }}</span></div>
+                    <div class="flex justify-between gap-2"><span class="text-txt3">Damage dealt</span><span class="font-mono2">{{ stats.damage_dealt.combat }} combat · {{ stats.damage_dealt.commander }} commander · {{ stats.damage_dealt.effects }} effects</span></div>
+                    <div class="flex justify-between gap-2"><span class="text-txt3">Spells cast</span><span class="font-mono2">{% for kind, count in stats.spells_cast.items %}{{ count }} {{ kind }}{% if not forloop.last %} · {% endif %}{% empty %}none{% endfor %}</span></div>
+                    <div class="flex justify-between gap-2"><span class="text-txt3">Commander</span><span class="font-mono2">{{ stats.commander_casts }} cast{{ stats.commander_casts|pluralize }}, {{ stats.commander_tax_paid }} tax</span></div>
+                    <div class="flex justify-between gap-2"><span class="text-txt3">Lands played</span><span class="font-mono2">{{ stats.lands_played }}</span></div>
+                    {% if stats.dead_spells_drawn or stats.unsupported_skipped %}
+                    <div class="flex justify-between gap-2 text-gold"><span>Dead spells drawn</span><span class="font-mono2">{{ stats.dead_spells_drawn }} ({{ stats.unsupported_skipped }} could have been cast)</span></div>
+                    {% endif %}
+                    {% if stats.agent.rated_decisions or stats.agent.error_fallbacks %}
+                    <div class="flex justify-between gap-2"><span class="text-txt3">Model decisions</span><span class="font-mono2">{{ stats.agent.rated_decisions }}{% if stats.agent.mean_confidence is not None %}, mean confidence {{ stats.agent.mean_confidence|floatformat:2 }}{% endif %}</span></div>
+                    <div class="flex justify-between gap-2"><span class="text-txt3">Handed to the heuristic</span><span class="font-mono2">{{ stats.agent.low_confidence_fallbacks }} unsure · {{ stats.agent.error_fallbacks }} errors</span></div>
+                    {% endif %}
+                    <div class="font-mono2 text-[11px] text-txt3 mt-1" title="Life at the end of each round">{% for life in stats.life_by_round %}{{ life }}{% if not forloop.last %} › {% endif %}{% endfor %}</div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="px-[18px] pb-4 text-[12px] text-txt3 font-light">
+            Mana was paid automatically and opening hands kept by a fixed rule: no agent made those choices.
+            {% if summary.caveats.lowest_coverage is not None and summary.caveats.lowest_coverage < 100 %}The lowest deck coverage at the table was {{ summary.caveats.lowest_coverage }}%.{% endif %}
+        </div>
+    </div>
+    {% endif %}
 
     <div class="panel-card overflow-hidden">
         <div class="flex items-center gap-[9px] py-4 px-[18px] border-b border-line2">
@@ -50,12 +123,18 @@ swap); the finished render drops the trigger and polling stops.
             <div class="event-row{% if event.kind == 'turn' or event.kind == 'game_over' or event.kind == 'eliminated' %} event-headline{% endif %}">
                 <span class="font-mono2 text-[11px] text-txt3 min-w-[19px] flex-none">{{ event.seq }}</span>
                 <div class="min-w-0">
-                    <div class="{% if event.kind == 'agent_fallback' or event.kind == 'decision_limit' %}text-gold{% elif event.kind == 'eliminated' %}text-danger{% endif %}">{{ event.text }}</div>
+                    <div class="{% if event.kind == 'agent_fallback' or event.kind == 'decision_limit' or event.kind == 'warning' or event.kind == 'limit' or event.kind == 'unsupported_skipped' %}text-gold{% elif event.kind == 'eliminated' %}text-danger{% endif %}">{{ event.text }}</div>
+                    {% if event.payload.confidence is not None %}
+                    <div class="event-reason">
+                        {% if event.payload.fallback_kind == 'low_confidence' %}<span class="text-gold">Low confidence {{ event.payload.confidence|floatformat:2 }}</span>{% else %}<span class="font-mono2 text-txt2">{{ event.payload.confidence|floatformat:2 }}</span>{% endif %}
+                        {% for option in event.payload.probabilities|slice:"1:" %}{% if forloop.first %} · runner-up: {% else %}, {% endif %}{{ option.label }} <span class="font-mono2">{{ option.p|floatformat:2 }}</span>{% endfor %}
+                    </div>
+                    {% endif %}
                     {% if event.reasoning %}<div class="event-reason">“{{ event.reasoning }}”</div>{% endif %}
                 </div>
             </div>
             {% empty %}
-            <div class="py-5 px-[18px] text-txt3 text-[13px]">Shuffling up…</div>
+            <div class="py-5 px-[18px] text-txt3 text-[13px]">Compiling the decks and shuffling up…</div>
             {% endfor %}
         </div>
     </div>
