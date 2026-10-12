@@ -1,20 +1,28 @@
 """Synthetic decks and cards shared by the tests (no network, no Scryfall)."""
 
-from playtest.engine.cards import CardSpec, DeckSpec, Kind
+from playtest.engine.cards import DeckSpec, card
 
-FOREST = CardSpec("Forest", Kind.LAND)
-
-
-def bear(i=0, mana_value=2, power=2):
-    return CardSpec(f"Bear {i}", Kind.CREATURE, mana_value, power, power)
+FOREST = card("Forest", "Basic Land", produces="G")
 
 
-def engine_deck(name="Deck", *, lands=38, commander_power=5, commander_cost=4, library=None):
-    """A 100-card deck: lands, 2-mana bears, and a creature commander."""
+def bear(i=0, cost="{1}{G}", power=2, keywords=()):
+    return card(f"Bear {i}", "Creature", cost, power, power, keywords=keywords)
+
+
+def engine_deck(name="Deck", *, lands=38, commander_power=5, commander_cost="{3}{G}", library=None):
+    """A 100-card deck: Forests, green 2/2s, and a creature commander."""
     if library is None:
         library = [FOREST] * lands + [bear(i) for i in range(99 - lands)]
-    commander = CardSpec(f"{name} Commander", Kind.CREATURE, commander_cost, commander_power, commander_power)
+    commander = card(f"{name} Commander", "Legendary Creature", commander_cost, commander_power, commander_power)
     return DeckSpec(name=name, commander=commander, library=tuple(library))
+
+
+def _cost(cmc):
+    """A green mana cost of mana value ``cmc``: 4 -> ``{3}{G}``."""
+    cmc = int(cmc)
+    if not cmc:
+        return ""
+    return (f"{{{cmc - 1}}}" if cmc > 1 else "") + "{G}"
 
 
 def scryfall_card(
@@ -31,7 +39,7 @@ def scryfall_card(
         "image_urls": list(image_urls),
         "color_identity": ["G"],
         "legalities": {"commander": "legal", "duel": "legal"},
-        "faces": [{"name": name, "type_line": type_line, "rules_text": "", "mana_cost": ""}],
+        "faces": [{"name": name, "type_line": type_line, "rules_text": "", "mana_cost": _cost(cmc)}],
     }
 
 
@@ -56,6 +64,18 @@ def stored_cards(commander="Bear Lord"):
     return cards
 
 
+def cache_raw_cards(cards):
+    """Caches a raw Scryfall card for each stored card, as a real import does."""
+    from decks.cache import DbCardCache
+    from decks.text_utils import card_slug, front_face_name
+    from playtest.judge import raw_from_stored
+
+    cache = DbCardCache()
+    for item in cards:
+        data = item["data"]
+        cache.set_card(f"card_en_{card_slug(front_face_name(data['name']))}", raw_from_stored(data))
+
+
 def make_deck(owner, name="Bears", fmt="commander", **fields):
     from decks.models import Deck
 
@@ -67,6 +87,7 @@ def make_deck(owner, name="Bears", fmt="commander", **fields):
         "status": Deck.Status.READY,
     }
     defaults.update(fields)
+    cache_raw_cards(defaults["cards"])
     return Deck.objects.create(owner=owner, name=name, format=fmt, **defaults)
 
 

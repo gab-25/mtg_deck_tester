@@ -9,8 +9,8 @@ from playtest.agents.random_agent import RandomAgent
 from playtest.engine.actions import Action, ActionKind
 
 OPTIONS = [
-    Action(ActionKind.PLAY_LAND, 1, label="Play land Forest"),
-    Action(ActionKind.CAST_SPELL, 2, label="Cast Bear (mana value 2)"),
+    Action(ActionKind.PLAY_LAND, card=1, label="Play land Forest"),
+    Action(ActionKind.CAST, card=2, label="Cast Bear (mana value 2)"),
     Action(ActionKind.PASS, label="End your main phase"),
 ]
 VIEW = {"round": 1, "you": {"life": 40}, "opponents": []}
