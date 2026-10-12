@@ -85,3 +85,36 @@ class BulkDataLoad(models.Model):
 
     class Meta:
         db_table = "scryfall_bulk_loads"
+
+
+class CardRule(models.Model):
+    """A card's compiled rules, as the playtest judge produced them.
+
+    Keyed by Scryfall ``oracle_id`` and DSL version: a card is compiled once per
+    DSL version, whatever printing a deck uses. ``model`` and ``compiled_at``
+    are not part of the key — recompiling every card on each model release
+    would defeat the cache. ``program`` is the validated program as opaque JSON
+    (this app does not read it), or null when the card is unsupported.
+    """
+
+    class Status(models.TextChoices):
+        SUPPORTED = "supported", "Supported"
+        PARTIAL = "partial", "Partial"
+        UNSUPPORTED = "unsupported", "Unsupported"
+
+    oracle_id = models.CharField(max_length=64)
+    dsl_version = models.CharField(max_length=16)
+    program = models.JSONField(null=True, blank=True)
+    status = models.CharField(max_length=16, choices=Status.choices)
+    reason = models.TextField(blank=True, default="")
+    # The reason's group (blocklisted, unstable, low_confidence…), for coverage reports.
+    reason_kind = models.CharField(max_length=32, blank=True, default="")
+    # The versioned judge model that answered, e.g. "typesafe/jev-1.13".
+    model = models.CharField(max_length=128, blank=True, default="")
+    compiled_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = "card_rules"
+        constraints = [
+            models.UniqueConstraint(fields=["oracle_id", "dsl_version"], name="unique_card_rule"),
+        ]

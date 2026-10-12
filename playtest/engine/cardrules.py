@@ -1,0 +1,365 @@
+"""The deterministic pre-pass: everything about a card that needs no model.
+
+Mana cost, types, power/toughness, colors, printed keywords, "enters tapped"
+and — critically — the mana a card makes come straight from Scryfall JSON.
+What is left of the rules text afterwards, the *residual*, is all the judge
+ever sees: an empty residual is a fully supported card with no model call, and
+a residual matching the blocklist is unsupported with no model call either.
+
+Pure: no Django, no I/O.
+"""
+
+import re
+from dataclasses import dataclass
+
+from .manacost import MANA_SYMBOLS, ManaCostError, parse_mana_cost
+
+
+class ResidualClass:
+    EMPTY = "empty"
+    BLOCKED = "blocked"
+    NEEDS_JUDGE = "needs_judge"
+
+
+# The printed keywords the kernel implements (lowercase).
+SUPPORTED_KEYWORDS = (
+    "flying",
+    "trample",
+    "haste",
+    "vigilance",
+    "lifelink",
+    "deathtouch",
+    "first strike",
+    "double strike",
+    "menace",
+    "reach",
+    "defender",
+    "flash",
+    "hexproof",
+    "indestructible",
+    "ward",
+)
+
+# Mechanics the DSL cannot express, refused without asking the judge. Each
+# entry is (regex over the lowercased residual, human-readable reason).
+BLOCKLIST = (
+    (r"\bcascade\b", "cascade"),
+    (r"\bstorm\b", "storm"),
+    (r"\bcop(?:y|ies)\b", "copies"),
+    (r"\binstead\b", "replacement effect (instead)"),
+    (r"\bsearch(?:es)? (?:your|their|his or her) library\b", "library search"),
+    (r"\bfor each\b", "for each"),
+    (r"\bas long as\b", "as long as"),
+    (r"\bprotection from\b", "protection"),
+    (r"\bcan't\b|\bcannot\b", "restriction (can't)"),
+    (r"\bexile\b.*\buntil\b", "exile until"),
+    (r"\bloyalty\b", "loyalty"),
+    (r"\bmutate\b", "mutate"),
+    (r"\bdaybound\b|\bnightbound\b", "day/night"),
+    (r"\brole token\b", "role token"),
+    (r"\bdungeon\b|\bventure into\b|\binitiative\b", "dungeon"),
+    (r"\bx is\b", "X is"),
+    (r"^enchant\b", "aura"),
+    (r"\bequip\b|\battach", "equipment"),
+    (r"\btransform\b|\bconvert\b", "transform"),
+    (r"\bemblem\b|\bthe monarch\b", "emblem / monarch"),
+    (r"\bthis spell costs\b|\bcosts? \{\d+\} less\b|\bcosts? \{\d+\} more\b", "cost modification"),
+    (r"\byou may cast\b|\bwithout paying\b", "free or alternative casting"),
+)
+
+# Supertypes the type line may carry; the rest of the words before the dash are types.
+_SUPERTYPES = {"basic", "legendary", "snow", "world", "ongoing", "token", "elite", "host"}
+
+# Card types whose rules the kernel cannot run at all.
+BLOCKED_TYPES = {"planeswalker": "planeswalker", "saga": "saga", "dungeon": "dungeon"}
+
+_REMINDER = re.compile(r"\s*\([^)]*\)")
+# Regeneration does not exist in the kernel, so forbidding it changes nothing.
+_NO_REGENERATION = re.compile(r"\s*(?:it|they) can't be regenerated\.", re.I)
+_LEADING_INT = re.compile(r"^\d+")
+_ENTERS_TAPPED = re.compile(r"\benters(?: the battlefield)? tapped\b")
+# A free mana ability: "{T}: Add ..." with nothing but the tap as its cost and
+# nothing else on the line (a painland's damage makes its line not free).
+_MANA_ABILITY = re.compile(r"^\{T\}: Add ([^.]*)\.$")
+# What such an ability may add: fixed symbols, a choice of symbols, or N mana of
+# any color. Anything else ("{G} for each creature you control") is not read here.
+_ADD_CLAUSE = re.compile(
+    r"^(?:(?:\{[WUBRGC]\})+(?:,? (?:or )?(?:\{[WUBRGC]\})+)*"
+    r"|(?:one|two|three) mana of any (?:one )?(?:color|type)\b.*)$"
+)
+# Basic and typed lands carry their mana ability as reminder text only.
+_REMINDER_MANA = re.compile(r"^\((\{T\}: Add [^)]*\.)\)$")
+_WARD = re.compile(r"^ward \{(\d+)\}$")
+
+NUMBER_WORDS = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+}
+
+
+@dataclass(frozen=True, slots=True)
+class CardFacts:
+    """What the kernel knows about a card before any model is involved."""
+
+    name: str
+    oracle_id: str
+    type_line: str
+    types: tuple[str, ...]
+    subtypes: tuple[str, ...]
+    supertypes: tuple[str, ...]
+    mana_cost: str
+    mana_value: int
+    power: int | None
+    toughness: int | None
+    colors: tuple[str, ...]
+    # Colors (and C) this card's mana ability can make, from ``produced_mana``.
+    produced_mana: tuple[str, ...]
+    # Mana one activation makes (Sol Ring: 2); 0 when the card is no mana source.
+    mana_amount: int
+    enters_tapped: bool
+    keywords: tuple[str, ...]
+    ward: int
+    # Rules text of the front face, as printed (reminder text included).
+    oracle_text: str
+    # The rules text left for the judge, one ability per line, lowercased,
+    # with the card's own name replaced by "this <type>".
+    residual: str
+    residual_class: str
+    block_reason: str = ""
+    # Multi-faced cards are played as their front face only.
+    partial: bool = False
+
+    @property
+    def legendary(self) -> bool:
+        return "legendary" in self.supertypes
+
+    def has_type(self, card_type: str) -> bool:
+        return card_type in self.types
+
+    @property
+    def is_land(self) -> bool:
+        return "land" in self.types
+
+    @property
+    def is_creature(self) -> bool:
+        return "creature" in self.types
+
+    @property
+    def is_instant_or_sorcery(self) -> bool:
+        return "instant" in self.types or "sorcery" in self.types
+
+    @property
+    def is_permanent(self) -> bool:
+        return not self.is_instant_or_sorcery
+
+    @property
+    def is_mana_source(self) -> bool:
+        return self.mana_amount > 0 and bool(self.produced_mana)
+
+
+def printed_stat(value) -> int | None:
+    """A printed power/toughness as a number: ``"3"`` -> 3, ``"1+*"`` -> 1, ``"*"`` -> 0."""
+    if value is None:
+        return None
+    match = _LEADING_INT.match(str(value))
+    return int(match.group(0)) if match else 0
+
+
+def number_value(word: str) -> int | None:
+    """``"3"`` / ``"three"`` -> 3; anything else -> None."""
+    word = word.lower()
+    if word.isdigit():
+        return int(word)
+    return NUMBER_WORDS.get(word)
+
+
+def _front(card: dict) -> tuple[dict, bool]:
+    faces = card.get("card_faces") or []
+    if faces:
+        return faces[0], True
+    return card, False
+
+
+def _split_type_line(type_line: str) -> tuple[tuple, tuple, tuple]:
+    left, _, right = type_line.partition("—")
+    words = left.lower().split()
+    supertypes = tuple(w for w in words if w in _SUPERTYPES)
+    types = tuple(w for w in words if w not in _SUPERTYPES)
+    subtypes = tuple(right.lower().split())
+    return supertypes, types, subtypes
+
+
+def self_noun(types: tuple[str, ...]) -> str:
+    """How rules text refers to the card itself: ``this creature``, ``this spell``…"""
+    if "instant" in types or "sorcery" in types:
+        return "this spell"
+    for card_type in ("creature", "land", "artifact", "enchantment", "planeswalker", "battle"):
+        if card_type in types:
+            return f"this {card_type}"
+    return "this permanent"
+
+
+def _self_names(name: str) -> list[str]:
+    names = [name]
+    # Legendary cards refer to themselves by the short name: "Atraxa".
+    short = name.split(",")[0].strip()
+    if short != name and len(short) > 2:
+        names.append(short)
+    return names
+
+
+def _mana_amount(add_clause: str) -> int:
+    """How much mana an "Add ..." clause makes in one activation."""
+    clause = add_clause.strip()
+    words = re.match(r"^(\w+) mana\b", clause, re.I)
+    if words and number_value(words.group(1)):
+        return number_value(words.group(1))
+    # "{G} or {U}", "{R}, {G}, or {W}": one symbol per option.
+    options = re.split(r",?\s+or\s+|,\s+", clause)
+    return max((len(re.findall(r"\{[^}]+\}", option)) for option in options), default=1) or 1
+
+
+def _keyword_line(line: str, card_keywords: set[str]) -> list[str] | None:
+    """The keywords a line consists of, or None when it is not a keyword line."""
+    parts = [p.strip() for p in re.split(r"[,;]", line) if p.strip()]
+    found = []
+    for part in parts:
+        lowered = part.lower()
+        match = next(
+            (
+                kw
+                for kw in sorted(card_keywords, key=len, reverse=True)
+                if lowered == kw
+                or lowered.startswith(kw + " ")
+                and re.fullmatch(r"(\{[^}]+\})+|\d+|—.*", lowered[len(kw) + 1 :].strip())
+            ),
+            None,
+        )
+        if match is None:
+            return None
+        found.append(lowered)
+    return found
+
+
+def characteristics(card: dict) -> CardFacts:
+    """Derives a card's :class:`CardFacts` from its raw Scryfall JSON."""
+    face, partial = _front(card)
+    name = face.get("name") or card.get("name") or "Unknown card"
+    type_line = (face.get("type_line") or card.get("type_line") or "").split("//")[0].strip()
+    supertypes, types, subtypes = _split_type_line(type_line)
+
+    raw_cost = face.get("mana_cost") if "mana_cost" in face else card.get("mana_cost", "")
+    block_reason = ""
+    try:
+        mana_value = parse_mana_cost(raw_cost or "").mana_value
+    except ManaCostError as exc:
+        mana_value = int(card.get("cmc") or 0)
+        block_reason = str(exc)
+
+    if "power" in face:
+        power, toughness = printed_stat(face.get("power")), printed_stat(face.get("toughness"))
+    else:
+        power, toughness = printed_stat(card.get("power")), printed_stat(card.get("toughness"))
+
+    colors = face.get("colors", card.get("colors")) or []
+    produced = [c for c in MANA_SYMBOLS if c in (card.get("produced_mana") or [])]
+    oracle_text = face.get("oracle_text") or ""
+    card_keywords = {k.lower() for k in card.get("keywords") or []}
+    noun = self_noun(types)
+
+    keywords: list[str] = []
+    ward = 0
+    enters_tapped = False
+    mana_amount = 0
+    mana_colors: set[str] = set()
+    residual_lines: list[str] = []
+    for raw_line in oracle_text.splitlines():
+        reminder = _REMINDER_MANA.match(raw_line.strip())
+        line = reminder.group(1) if reminder else _NO_REGENERATION.sub("", _REMINDER.sub("", raw_line)).strip()
+        if not line:
+            continue
+        for self_name in _self_names(name):
+            line = line.replace(self_name, noun)
+
+        mana = _MANA_ABILITY.match(line)
+        if mana and produced and _ADD_CLAUSE.match(mana.group(1)):
+            mana_amount = max(mana_amount, _mana_amount(mana.group(1)))
+            # The colors this ability names; "any color" takes Scryfall's list.
+            named = set(re.findall(r"\{([WUBRGC])\}", mana.group(1)))
+            mana_colors |= named or set(produced)
+            continue
+
+        lowered = line.lower()
+        if _ENTERS_TAPPED.search(lowered) and (
+            lowered.startswith(noun) or lowered.startswith("as " + noun)
+        ):
+            enters_tapped = True
+            continue
+
+        found = _keyword_line(line, card_keywords)
+        if found is not None:
+            unsupported = []
+            for keyword in found:
+                ward_match = _WARD.match(keyword)
+                if ward_match:
+                    keywords.append("ward")
+                    ward = int(ward_match.group(1))
+                elif keyword in SUPPORTED_KEYWORDS:
+                    keywords.append(keyword)
+                else:
+                    unsupported.append(keyword)
+            if unsupported:
+                block_reason = block_reason or f"unsupported keyword: {', '.join(unsupported)}"
+                residual_lines.append(lowered)
+            continue
+
+        residual_lines.append(lowered)
+
+    residual = "\n".join(residual_lines)
+    blocked_type = next((BLOCKED_TYPES[t] for t in types + subtypes if t in BLOCKED_TYPES), "")
+    if blocked_type:
+        block_reason = block_reason or f"unsupported card type: {blocked_type}"
+    if not block_reason:
+        block_reason = next(
+            (reason for pattern, reason in BLOCKLIST if re.search(pattern, residual, re.M)), ""
+        )
+
+    if block_reason:
+        residual_class = ResidualClass.BLOCKED
+    elif residual:
+        residual_class = ResidualClass.NEEDS_JUDGE
+    else:
+        residual_class = ResidualClass.EMPTY
+
+    return CardFacts(
+        name=name,
+        oracle_id=card.get("oracle_id") or face.get("oracle_id") or card.get("id") or name,
+        type_line=type_line,
+        types=types,
+        subtypes=subtypes,
+        supertypes=supertypes,
+        mana_cost=raw_cost or "",
+        mana_value=mana_value,
+        power=power if "creature" in types else None,
+        toughness=toughness if "creature" in types else None,
+        colors=tuple(c for c in "WUBRG" if c in colors),
+        # Always a subset of Scryfall's produced_mana: never a model's guess.
+        produced_mana=tuple(c for c in produced if c in mana_colors),
+        mana_amount=mana_amount if mana_colors & set(produced) else 0,
+        enters_tapped=enters_tapped,
+        keywords=tuple(sorted(set(keywords), key=SUPPORTED_KEYWORDS.index)),
+        ward=ward,
+        oracle_text=oracle_text,
+        residual=residual,
+        residual_class=residual_class,
+        block_reason=block_reason,
+        partial=partial,
+    )
