@@ -58,6 +58,19 @@ The engine (`playtest/engine/`) supports:
 Not supported yet: the stack and priority, instant-speed play, blocking, abilities
 and card effects, colored mana, mulligans.
 
+## Documentation
+
+- [Architecture](docs/architecture.md) — how the apps fit together, the request →
+  background job → stored result flow, the data model and the boundaries.
+- [Game engine](docs/engine.md) — state, actions, rules, per-seat views, the turn
+  loop, and how to add a rule.
+- [Agents](docs/agents.md) — the agent interface, the random and LLM agents, the
+  OpenRouter client and the fallback.
+- [Deck import](docs/deck-import.md) — parsing, Scryfall fetching, the card cache,
+  legality checks and the format registry.
+- [Development](docs/development.md) — running locally and with Docker, tests,
+  template/asset constraints, migrations.
+
 ## Project structure
 
 ```
@@ -78,6 +91,7 @@ playtest/               # App: matches between agents
 │   ├── state.py        #     Game and player state, per-format game rules
 │   ├── actions.py      #     The actions offered to an agent
 │   ├── rules.py        #     What the actions do; eliminations
+│   ├── events.py       #     What the engine reports (the match log)
 │   ├── view.py         #     What a seat may see (no hidden information)
 │   └── game.py         #     Setup, turns, phases, asking agents, the result
 ├── agents/             #   Random agent, LLM agent, OpenRouter client
@@ -85,6 +99,8 @@ playtest/               # App: matches between agents
 └── runner.py           #   Stored decks → engine → stored events and result
 theme/static/           # Precompiled stylesheet, vendored fonts and icons
 tests/
+docs/                   # Project documentation (see Documentation above)
+CLAUDE.md               # Notes for Claude Code
 ```
 
 ## Running it
