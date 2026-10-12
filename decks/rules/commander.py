@@ -20,9 +20,9 @@ from .cards import front_type_line, is_basic_land, rules_text
 # Commander deck-construction rules (Comprehensive Rules 903).
 # A deck is exactly 100 cards, commander included.
 COMMANDER_DECK_SIZE = 100
-# A single commander. The official rules also allow two with partner or a
-# background; this app deliberately does not.
-MAX_COMMANDERS = 1
+# One commander, or two when they form a partner pair (Partner, Partner with,
+# Friends forever, or a commander that chooses a Background and that Background).
+MAX_COMMANDERS = 2
 
 # Cards whose rules text lifts the singleton restriction (Relentless Rats,
 # Shadowborn Apostle, Persistent Petitioners, Dragon's Approach, ...).
@@ -115,7 +115,45 @@ def _can_be_commander(card_data: dict) -> bool:
     type_line = front_type_line(card_data)
     if "legendary" in type_line and "creature" in type_line:
         return True
+    # A Background is a commander only next to one that chooses it
+    # (checked by partner_issue).
+    if "background" in type_line:
+        return True
     return CAN_BE_COMMANDER_TEXT in rules_text(card_data)
+
+
+def _is_background(card_data: dict) -> bool:
+    type_line = front_type_line(card_data)
+    return "background" in type_line and "creature" not in type_line
+
+
+def _has_keyword_line(text: str, keyword: str) -> bool:
+    return any(
+        line.strip() == keyword or line.strip().startswith(keyword + " (") for line in text.splitlines()
+    )
+
+
+def partner_issue(cmdrs: list) -> str | None:
+    """Why two commanders cannot share a deck, or None when they can (CR 702.124)."""
+    if len(cmdrs) != 2:
+        return None
+    a, b = (item["data"] for item in cmdrs)
+    names = [front_face_name(card.get("name", "")).lower() for card in (a, b)]
+    texts = [rules_text(a), rules_text(b)]
+    if all(_has_keyword_line(t, "partner") for t in texts):
+        return None
+    if f"partner with {names[1]}" in texts[0] and f"partner with {names[0]}" in texts[1]:
+        return None
+    if all(_has_keyword_line(t, "friends forever") for t in texts):
+        return None
+    for chooser, other in ((a, b), (b, a)):
+        if "choose a background" in rules_text(chooser) and "background" in front_type_line(other):
+            return None
+    return (
+        f"“{a.get('name', 'Unknown card')}” and “{b.get('name', 'Unknown card')}” cannot share "
+        "a deck: two commanders must be a partner pair (Partner, Partner with, Friends "
+        "forever, or a Background)."
+    )
 
 
 def _allows_duplicates(card_data: dict) -> bool:
@@ -139,7 +177,7 @@ def _size_issue(total: int) -> list:
 
 
 def _commander_count_issues(count: int) -> list:
-    """The "exactly one commander" rule, shared by both passes."""
+    """The "one commander, or a pair" rule, shared by both passes."""
     if count == 0:
         return [
             "No commander declared: list it under a “Commander” header or tag "
@@ -147,8 +185,8 @@ def _commander_count_issues(count: int) -> list:
         ]
     if count > MAX_COMMANDERS:
         return [
-            f"{count} commanders declared: a deck has exactly "
-            f"{MAX_COMMANDERS} commander."
+            f"{count} commanders declared: a deck has one commander, or two "
+            "that form a partner pair."
         ]
     return []
 
@@ -212,6 +250,13 @@ def check_deck(processed_cards: list, fmt: str = DEFAULT_FORMAT) -> list:
 
     cmdrs = commanders(processed_cards)
     issues += _commander_count_issues(len(cmdrs))
+
+    if len(cmdrs) == 2:
+        issue = partner_issue(cmdrs)
+        if issue:
+            issues.append(issue)
+    elif any(_is_background(item["data"]) for item in cmdrs):
+        issues.append("A Background is only a commander next to one that says “Choose a Background”.")
 
     for item in cmdrs:
         if not _can_be_commander(item["data"]):

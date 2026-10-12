@@ -77,7 +77,7 @@ def import_decklist(text: str, cache, fmt: str, progress=None) -> dict:
     main = [item for item in cards if board_of(item) == "main"]
     return {
         "cards": cards,
-        "commander": names[0] if names else "",
+        "commander": " / ".join(names),
         # Without a commander the deck's colors are its main deck's.
         "color_identity": deck_color_identity(main),
     }
