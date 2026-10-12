@@ -2,16 +2,12 @@
 
 from decks.scryfall import (
     _extract_price_eur,
+    card_image_urls,
     get_face_details,
     process_cached_card,
 )
 
-
-class _NoImageCache:
-    """Minimal cache stub that reports no images (so nothing is downloaded)."""
-
-    def has_image(self, name):
-        return False
+CDN = "https://cards.scryfall.io/normal"
 
 
 class TestExtractPriceEur:
@@ -84,20 +80,20 @@ class TestGetFaceDetails:
 
 class TestProcessCachedCard:
     def test_uses_english_name(self):
-        out = process_cached_card({"id": "x", "name": "Forest"}, _NoImageCache())
+        out = process_cached_card({"id": "x", "name": "Forest"})
         assert out["name"] == "Forest"
 
     def test_missing_name_falls_back(self):
-        out = process_cached_card({"id": "x"}, _NoImageCache())
+        out = process_cached_card({"id": "x"})
         assert out["name"] == "Unknown Card"
 
     def test_carries_the_legalities_through(self):
         card = {"id": "x", "name": "Black Lotus", "legalities": {"commander": "banned"}}
-        out = process_cached_card(card, _NoImageCache())
+        out = process_cached_card(card)
         assert out["legalities"] == {"commander": "banned"}
 
     def test_missing_legalities_becomes_an_empty_dict(self):
-        out = process_cached_card({"id": "x", "name": "Forest"}, _NoImageCache())
+        out = process_cached_card({"id": "x", "name": "Forest"})
         assert out["legalities"] == {}
 
 
@@ -111,9 +107,42 @@ class TestProducedMana:
             "type_line": "Land",
             "produced_mana": ["W", "U", "B", "R", "G"],
         }
-        processed = process_cached_card(card, _NoImageCache())
+        processed = process_cached_card(card)
         assert processed["produced_mana"] == ["W", "U", "B", "R", "G"]
 
     def test_missing_produced_mana_is_an_empty_list(self):
         card = {"id": "x", "name": "Lightning Bolt", "type_line": "Instant"}
-        assert process_cached_card(card, _NoImageCache())["produced_mana"] == []
+        assert process_cached_card(card)["produced_mana"] == []
+
+
+class TestCardImageUrls:
+    """Images are served from Scryfall's CDN: the import only keeps their URLs."""
+
+    def test_single_faced_card_has_one_url(self):
+        card = {"id": "x", "image_uris": {"normal": f"{CDN}/front/x.jpg?1"}}
+        assert card_image_urls(card) == [f"{CDN}/front/x.jpg?1"]
+
+    def test_double_faced_card_has_one_url_per_face(self):
+        card = {
+            "id": "x",
+            "card_faces": [
+                {"name": "Front", "image_uris": {"normal": f"{CDN}/front/x.jpg"}},
+                {"name": "Back", "image_uris": {"normal": f"{CDN}/back/x.jpg"}},
+            ],
+        }
+        assert card_image_urls(card) == [f"{CDN}/front/x.jpg", f"{CDN}/back/x.jpg"]
+
+    def test_split_card_uses_the_shared_root_image(self):
+        card = {
+            "id": "x",
+            "image_uris": {"normal": f"{CDN}/front/x.jpg"},
+            "card_faces": [{"name": "Fire"}, {"name": "Ice"}],
+        }
+        assert card_image_urls(card) == [f"{CDN}/front/x.jpg"]
+
+    def test_card_without_images_has_none(self):
+        assert card_image_urls({"id": "x"}) == []
+
+    def test_processed_card_carries_the_urls(self):
+        card = {"id": "x", "name": "Forest", "image_uris": {"normal": f"{CDN}/front/x.jpg"}}
+        assert process_cached_card(card)["image_urls"] == [f"{CDN}/front/x.jpg"]

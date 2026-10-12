@@ -8,7 +8,6 @@ from django.views.decorators.http import require_http_methods
 from mtg_deck_tester.access import get_owned_or_404
 from mtg_deck_tester.jobs import start_job
 
-from .cache import DbCardCache
 from .formats import DEFAULT_FORMAT, FORMATS, format_choices
 from .importer import decklist_errors, run_import
 from .models import Deck
@@ -97,36 +96,24 @@ def delete_deck(request, deck_id):
     return redirect("deck_list")
 
 
-# The card art cache is shared across every deck and keyed by card: public
-# Scryfall data, not user data, so it needs no ownership check.
-@login_required
-@require_http_methods(["GET"])
-def media(request, name: str):
-    """Serves a cached card image from the database."""
-    data = DbCardCache().get_image(name)
-    if data is None:
-        return HttpResponse("Image not found", status=404)
-    return HttpResponse(data, content_type="image/jpeg")
+# Only card images on Scryfall's CDN may be shown in the zoom modal, so the
+# endpoint can't be used to render arbitrary URLs.
+SCRYFALL_IMAGE_PREFIX = "https://cards.scryfall.io/"
 
 
 @login_required
 @require_http_methods(["GET"])
 def card_image_modal(request):
-    """Returns the zoom-modal fragment for a cached card's faces (HTMX).
+    """Returns the zoom-modal fragment for a card's faces (HTMX).
 
-    Thumbnails ``hx-get`` this endpoint with one ``name`` per printed face, so a
+    Thumbnails ``hx-get`` this endpoint with one ``url`` per printed face, so a
     double-faced card ships both images at once and the flip costs no further
-    request. Called without a ``name`` it returns an empty body, which the
+    request. Called without a ``url`` it returns an empty body, which the
     overlay uses to close itself.
     """
-    names = [name for name in request.GET.getlist("name") if name]
-    if not names:
+    urls = [url for url in request.GET.getlist("url") if url]
+    if not urls:
         return HttpResponse("")
-    cache = DbCardCache()
-    if any(not cache.has_image(name) for name in names):
-        return HttpResponse("Image not found", status=404)
-    return render(
-        request,
-        "partials/card_image_modal.html",
-        {"image_urls": [f"/media/{name}" for name in names]},
-    )
+    if any(not url.startswith(SCRYFALL_IMAGE_PREFIX) for url in urls):
+        return HttpResponse("Not a Scryfall image", status=400)
+    return render(request, "partials/card_image_modal.html", {"image_urls": urls})

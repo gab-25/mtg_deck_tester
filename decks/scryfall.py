@@ -1,4 +1,4 @@
-"""Fetching card data and images from Scryfall (with local cache)."""
+"""Fetching card data from Scryfall (with local cache)."""
 
 import time
 import urllib.parse
@@ -8,7 +8,7 @@ import requests
 from .text_utils import card_slug, front_face_name
 
 # Scryfall asks every client to identify itself with a custom User-Agent.
-SCRYFALL_HEADERS = {"User-Agent": "MTGDeckTester/0.1.0", "Accept": "application/json"}
+SCRYFALL_HEADERS = {"User-Agent": "MTGDeckTester/1.0.0", "Accept": "application/json"}
 
 # Polite delay between Scryfall requests (their guidelines ask for 50-100ms).
 _REQUEST_DELAY = 0.1
@@ -40,14 +40,6 @@ def _scryfall_get(url: str, max_retries: int = 5):
 
         return resp
 
-    return None
-
-
-def download_image(url: str) -> bytes | None:
-    """Downloads an image from Scryfall and returns its bytes (or None)."""
-    resp = _scryfall_get(url)
-    if resp is not None and resp.status_code == 200:
-        return resp.content
     return None
 
 
@@ -113,39 +105,24 @@ def _combat_stats(card: dict) -> tuple:
     return source.get("power"), source.get("toughness")
 
 
-def process_cached_card(card: dict, cache) -> dict:
-    """Processes Scryfall card JSON, caches missing images, and structures the data.
+def card_image_urls(card: dict) -> list:
+    """The ``normal`` image URL of each printed face, on Scryfall's CDN.
 
-    The returned ``image_paths`` are cache *keys* (image basenames); the bytes
-    themselves live in the cache backend.
+    One URL when the root carries ``image_uris`` (split and room cards too,
+    whose faces share one physical image), one per face for double-sided cards.
+    The browser loads them straight from ``cards.scryfall.io``.
     """
-    card_id = card.get("id", "unknown")
-    lang = card.get("lang", "en")
-    image_names = []
-
-    def _ensure_image(name: str, url: str) -> None:
-        if not cache.has_image(name):
-            data = download_image(url)
-            if data:
-                cache.set_image(name, data)
-        if cache.has_image(name):
-            image_names.append(name)
-
-    # Check layout / image uris.
     if "image_uris" in card:
-        # Single physical image.
-        _ensure_image(f"img_{card_id}_{lang}.jpg", card["image_uris"]["normal"])
+        return [card["image_uris"]["normal"]]
+    faces = card.get("card_faces") or []
+    if faces and "image_uris" in faces[0]:
+        return [face["image_uris"]["normal"] for face in faces]
+    return []
 
-    elif (
-        "card_faces" in card
-        and len(card["card_faces"]) > 0
-        and "image_uris" in card["card_faces"][0]
-    ):
-        # Double-sided card (distinct images per face).
-        for idx, face in enumerate(card["card_faces"]):
-            _ensure_image(
-                f"img_{card_id}_{lang}_face{idx}.jpg", face["image_uris"]["normal"]
-            )
+
+def process_cached_card(card: dict) -> dict:
+    """Structures Scryfall card JSON into the data stored on a deck."""
+    card_id = card.get("id", "unknown")
 
     # Extract details.
     faces_details = []
@@ -163,7 +140,7 @@ def process_cached_card(card: dict, cache) -> dict:
     return {
         "id": card_id,
         "name": card.get("name") or "Unknown Card",
-        "image_paths": image_names,
+        "image_urls": card_image_urls(card),
         "faces": faces_details,
         "price_eur": _extract_price_eur(card),
         "type_line": card.get("type_line", ""),
@@ -183,7 +160,7 @@ def fetch_card_data(card_name: str, cache) -> dict:
     """Fetches English card data from cache or Scryfall.
 
     ``cache`` is a cache backend (see :mod:`decks.cache`) exposing
-    ``get_card``/``set_card``/``has_image``/``get_image``/``set_image``.
+    ``get_card``/``set_card``.
     """
     # Keyed on the front face, so "Sink into Stupor" and "Sink into Stupor //
     # Soporific Springs" share the one entry they both resolve to.
@@ -195,7 +172,7 @@ def fetch_card_data(card_name: str, cache) -> dict:
     if cached is not None:
         if cached.get("error") == "not_found":
             return None
-        return process_cached_card(cached, cache)
+        return process_cached_card(cached)
 
     # 2. Fetch the exact English match from the Scryfall API.
     encoded_name = urllib.parse.quote(card_name)
@@ -216,4 +193,4 @@ def fetch_card_data(card_name: str, cache) -> dict:
         return None
 
     cache.set_card(cache_key, card)
-    return process_cached_card(card, cache)
+    return process_cached_card(card)

@@ -29,8 +29,9 @@ built so real rules can be added inside the engine without touching the rest.
   log as they happen (HTMX polling), including the reason each LLM gave for each move.
 - **Reproducible**: a match has a seed. The same seed with random agents replays the
   same game, event for event.
-- **Scryfall cache in the database**: card JSON and images are cached in Postgres
-  (`scryfall_cards`, `scryfall_images`) and shared by every deck.
+- **Scryfall cache in the database**: card JSON is cached in Postgres
+  (`scryfall_cards`) and shared by every deck. Card images are not stored: the
+  browser loads them straight from Scryfall's CDN (`cards.scryfall.io`).
 - **Ownership**: decks and matches belong to the user who created them; anyone
   else gets a 404.
 
@@ -67,7 +68,7 @@ mtg_deck_tester/        # Django project: settings, URLs, layout templates, home
 decks/                  # App: decks and the Scryfall cache
 ├── rules/              #   Decklist parsing, card types, Commander legality (pure)
 ├── formats.py          #   Commander / Duel Commander parameters
-├── scryfall.py         #   Card data and image fetching
+├── scryfall.py         #   Card data fetching
 ├── cache.py            #   Database and filesystem cache backends
 └── importer.py         #   parse → fetch → validate, and the import job
 playtest/               # App: matches between agents

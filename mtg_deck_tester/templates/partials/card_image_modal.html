@@ -7,7 +7,7 @@ A double-faced card ships both faces here at once; a hidden checkbox and the
 no request.
 
 Closing: the backdrop and the Close button each hx-get this same endpoint with
-no name, which returns an empty body and so clears the container. The backdrop's
+no url, which returns an empty body and so clears the container. The backdrop's
 trigger is filtered to `target:#card-image-modal` on purpose — clicks bubble, so
 without the filter every click inside the card (the Flip label included) would
 close the modal too. Close needs its own hx-get rather than a second filter,

@@ -38,8 +38,8 @@ class Deck(models.Model):
     # WUBRG letters of the deck's color identity, e.g. ``["W", "U"]``.
     color_identity = models.JSONField(default=list)
     # Fetched cards: ``[{"quantity": int, "is_commander": bool, "data": {...}}]``,
-    # where ``data`` is the processed Scryfall card and its ``image_paths`` are
-    # cache keys (image basenames).
+    # where ``data`` is the processed Scryfall card and its ``image_urls`` point
+    # at Scryfall's image CDN.
     cards = models.JSONField(default=list)
 
     created_at = models.DateTimeField(default=timezone.now)
@@ -69,14 +69,3 @@ class ScryfallCard(models.Model):
 
     class Meta:
         db_table = "scryfall_cards"
-
-
-class ScryfallImage(models.Model):
-    """Cached card image bytes, keyed by basename (``img_<id>_en.jpg``)."""
-
-    name = models.CharField(max_length=255, primary_key=True)
-    data = models.BinaryField()
-    created_at = models.DateTimeField(default=timezone.now)
-
-    class Meta:
-        db_table = "scryfall_images"
