@@ -97,3 +97,38 @@ def legal_decklist(commander="Atraxa, Praetors' Voice"):
     lines += [f"1 Spell {i}" for i in range(60)]
     lines.append("39 Forest")
     return "\n".join(lines)
+
+
+def legal_constructed_decklist():
+    """A legal 60+15 Modern decklist."""
+    lines = [f"4 Spell {i}" for i in range(9)] + ["24 Mountain", "", "Sideboard"]
+    lines += [f"3 Side {i}" for i in range(5)]
+    return "\n".join(lines)
+
+
+def constructed_cards(fmt="modern"):
+    """A legal 60+15 deck in the stored ``Deck.cards`` shape."""
+    cards = [
+        {
+            "quantity": 4,
+            "is_commander": False,
+            "board": "main",
+            "data": scryfall_card(f"Spell {i}", "Creature — Goblin", 1.0, "2", "1"),
+        }
+        for i in range(9)
+    ]
+    cards.append(
+        {"quantity": 24, "is_commander": False, "board": "main", "data": scryfall_card("Mountain", "Basic Land — Mountain")}
+    )
+    cards += [
+        {"quantity": 3, "is_commander": False, "board": "side", "data": scryfall_card(f"Side {i}", "Instant", 1.0)}
+        for i in range(5)
+    ]
+    for item in cards:
+        item["data"]["legalities"][fmt] = "legal"
+        item["data"]["color_identity"] = ["R"]
+    return cards
+
+
+def make_constructed_deck(owner, name="Goblins", fmt="modern"):
+    return make_deck(owner, name=name, fmt=fmt, cards=constructed_cards(fmt), commander="", color_identity=["R"])

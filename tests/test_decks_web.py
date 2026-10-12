@@ -16,6 +16,12 @@ def _fake_fetch(name, cache):
         return scryfall_card(name, "Legendary Creature — Phyrexian Angel", 4.0, "4", "4")
     if name == "Forest":
         return scryfall_card(name, "Basic Land — Forest")
+    if name == "Mountain":
+        return scryfall_card(name, "Basic Land — Mountain")
+    if name.startswith("Spell ") or name.startswith("Side "):
+        card = scryfall_card(name, "Instant", 1.0)
+        card["legalities"]["modern"] = "legal"
+        return card
     return scryfall_card(name, "Creature — Bear", 2.0, "2", "2")
 
 
@@ -186,3 +192,38 @@ def test_card_image_modal_refuses_urls_outside_scryfall_cdn(client, url):
 @pytest.mark.django_db
 def test_images_are_no_longer_proxied(client):
     assert client.get("/media/img_x_en.jpg").status_code == 404
+
+
+@pytest.mark.django_db
+def test_importing_a_constructed_deck_keeps_the_sideboard(client, user):
+    from .factories import legal_constructed_decklist
+
+    response = client.post("/decks/create", {"name": "Burn", "format": "modern", "decklist": legal_constructed_decklist()})
+    assert response.status_code == 302
+    deck = Deck.objects.get(owner=user)
+    assert deck.status == Deck.Status.READY, deck.error
+    assert deck.commander == ""
+    assert (deck.total_cards, deck.sideboard_total) == (60, 15)
+    page = client.get(f"/decks/{deck.id}").content.decode()
+    assert "Sideboard" in page and ">Commander</div>" not in page
+
+
+@pytest.mark.django_db
+def test_an_illegal_constructed_deck_is_refused_on_the_spot(client, user):
+    response = client.post("/decks/create", {"name": "Short", "format": "modern", "decklist": "4 Spell\n20 Mountain\n"})
+    assert response.status_code == 422
+    assert b"needs at least 60" in response.content
+
+
+@pytest.mark.django_db
+def test_an_old_deck_without_boards_is_all_main(client, user):
+    deck = make_deck(user)
+    assert deck.total_cards == 100 and deck.sideboard_total == 0
+    assert client.get(f"/decks/{deck.id}").status_code == 200
+
+
+@pytest.mark.django_db
+def test_the_import_form_shows_the_rules_of_each_format(client):
+    page = client.get("/decks/new").content.decode()
+    assert 'data-format-rules="commander"' in page and 'data-format-rules="modern"' in page
+    assert "at most 15" in page

@@ -9,23 +9,24 @@ from mtg_deck_tester.logging_context import job_log_context
 
 from .cache import DbCardCache
 from .formats import FORMATS
-from .rules.commander import check_deck, check_decklist, commander_names, deck_color_identity
+from .rules.commander import commander_names, deck_color_identity
 from .rules.decklist import parse_decklist_text
+from .rules.legality import board_of, check_deck, check_decklist
 from .scryfall import fetch_card_data
 
 logger = logging.getLogger(__name__)
 
 
-def decklist_errors(text: str) -> list:
-    """Every rule the pasted text breaks that can be settled without Scryfall.
+def decklist_errors(text: str, fmt: str) -> list:
+    """Every rule of ``fmt`` the pasted text breaks that can be settled without Scryfall.
 
     Cheap and synchronous, so the creation form can reject a deck on the spot;
     the rules that need the real cards are enforced by :func:`import_decklist`.
     """
-    entries = parse_decklist_text(text)
+    entries = parse_decklist_text(text, fmt)
     if not entries:
         return ["No cards could be parsed from the decklist."]
-    return check_decklist(entries)
+    return check_decklist(entries, fmt)
 
 
 def import_decklist(text: str, cache, fmt: str, progress=None) -> dict:
@@ -36,7 +37,7 @@ def import_decklist(text: str, cache, fmt: str, progress=None) -> dict:
     legal in ``fmt``.
     """
     notify = progress or (lambda _msg: None)
-    entries = parse_decklist_text(text)
+    entries = parse_decklist_text(text, fmt)
     if not entries:
         raise ValueError("No cards could be parsed from the decklist.")
 
@@ -48,13 +49,14 @@ def import_decklist(text: str, cache, fmt: str, progress=None) -> dict:
         if data is None:
             unresolved.append(entry["name"])
             continue
-        cards.append(
-            {
-                "quantity": entry["quantity"],
-                "is_commander": entry["is_commander"],
-                "data": data,
-            }
-        )
+        item = {
+            "quantity": entry["quantity"],
+            "is_commander": entry["is_commander"],
+            "data": data,
+        }
+        if "board" in entry:
+            item["board"] = entry["board"]
+        cards.append(item)
 
     # A card that didn't resolve is missing from the deck, which would surface
     # as a puzzling "99 cards" further down: name the culprits instead.
@@ -72,10 +74,12 @@ def import_decklist(text: str, cache, fmt: str, progress=None) -> dict:
         )
 
     names = commander_names(cards)
+    main = [item for item in cards if board_of(item) == "main"]
     return {
         "cards": cards,
         "commander": names[0] if names else "",
-        "color_identity": deck_color_identity(cards),
+        # Without a commander the deck's colors are its main deck's.
+        "color_identity": deck_color_identity(main),
     }
 
 

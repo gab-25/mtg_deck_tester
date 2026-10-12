@@ -12,7 +12,7 @@ from .cache import DbCardCache
 from .formats import DEFAULT_FORMAT, FORMATS, format_choices
 from .importer import decklist_errors, run_import
 from .models import Deck
-from .presentation import card_groups, commander_cards, deck_pips
+from .presentation import card_groups, commander_cards, deck_pips, sideboard_group
 
 
 def _grid_context(user) -> dict:
@@ -33,7 +33,7 @@ def deck_list(request):
 
 
 def _form_context(**extra) -> dict:
-    return {"format_choices": format_choices(), "form_format": DEFAULT_FORMAT, **extra}
+    return {"format_choices": format_choices(), "formats": FORMATS, "form_format": DEFAULT_FORMAT, **extra}
 
 
 @login_required
@@ -53,7 +53,7 @@ def create_deck(request):
 
     # Cheap validation first, so an illegal deck is reported inline; the
     # Scryfall fetch runs in the background afterwards.
-    errors = decklist_errors(decklist)
+    errors = decklist_errors(decklist, fmt)
     if errors:
         context = _form_context(
             errors=errors, form_name=name, form_decklist=decklist, form_format=fmt
@@ -88,8 +88,10 @@ def deck_detail(request, deck_id):
             "pips": deck_pips(deck),
             "card_groups": card_groups(deck.cards),
             "commander_cards": commander_cards(deck.cards),
-            # Only from the caches: a page view never compiles a card.
-            "coverage": cached_coverage(deck.cards, DbCardCache()),
+            "sideboard": sideboard_group(deck.cards),
+            # Only from the caches: a page view never compiles a card. The
+            # sideboard never plays, so it does not count.
+            "coverage": cached_coverage(deck.main_cards, DbCardCache()),
         },
     )
 

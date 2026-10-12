@@ -25,7 +25,7 @@ The deck cards, each annotated by the view with `.pips` (a list of {letter, hex}
                     {% if deck.is_busy %}
                     Fetching cards from Scryfall…
                     {% else %}
-                    <span translate="no" class="ms text-[17px] text-txt3">playing_cards</span>{{ deck.total_cards }} cards
+                    <span translate="no" class="ms text-[17px] text-txt3">playing_cards</span>{{ deck.total_cards }} cards{% if deck.sideboard_total %} + {{ deck.sideboard_total }}{% endif %}
                     {% endif %}
                 </div>
                 <div class="text-[11px] text-txt3">{{ deck.created_at|timesince }} ago</div>

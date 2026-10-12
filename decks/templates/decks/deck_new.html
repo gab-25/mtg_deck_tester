@@ -7,7 +7,7 @@
     <a href="{% url 'deck_list' %}" class="link-back mb-[18px]">
         <span translate="no" class="ms text-[18px]">arrow_back</span>Cancel
     </a>
-    <div class="kicker">New Commander deck</div>
+    <div class="kicker">New deck</div>
     <h1 class="font-cinzel font-semibold text-[32px] mt-[7px] mb-6 tracking-[.02em]">Import a deck</h1>
 
     <form method="post" action="{% url 'create_deck' %}">
@@ -35,25 +35,35 @@
                         placeholder="Commander&#10;1 Atraxa, Praetors' Voice&#10;&#10;Deck&#10;1 Sol Ring&#10;1 Cultivate&#10;…" required>{{ form_decklist }}</textarea>
                     <div class="text-[12px] text-txt3 mt-2 font-light">
                         One card per line, Moxfield style: <span class="font-mono2 text-txt2">quantity name</span>.
-                        List the commander under a <span class="font-mono2 text-txt2">Commander</span> header
-                        (or tag its line with <span class="font-mono2 text-txt2">*CMDR*</span>).
+                        Commander decks list the commander under a <span class="font-mono2 text-txt2">Commander</span> header
+                        (or tag its line with <span class="font-mono2 text-txt2">*CMDR*</span>); constructed decks list the
+                        sideboard under a <span class="font-mono2 text-txt2">Sideboard</span> header.
                     </div>
                 </div>
             </div>
 
             <div class="editor-sidebar flex flex-col gap-4 sticky top-[78px]">
-                <div class="panel-card p-[18px]">
+                {% for key, fmt in formats.items %}
+                <div class="panel-card p-[18px]" data-format-rules="{{ key }}" {% if key != form_format %}hidden{% endif %}>
                     <div class="flex items-center gap-[7px] font-semibold text-[12.5px] tracking-[.06em] text-txt2 mb-3">
-                        <span translate="no" class="ms text-[18px]">gavel</span>COMMANDER RULES
+                        <span translate="no" class="ms text-[18px]">gavel</span>{{ fmt.label|upper }} RULES
                     </div>
                     <ul class="text-[12.5px] text-txt3 font-light leading-[1.6]" style="margin:0;padding-left:18px;list-style:disc">
+                        {% if fmt.has_commander %}
                         <li>Exactly 100 cards, commander included.</li>
-                        <li>Exactly one commander.</li>
+                        <li>Exactly one commander, under a “Commander” header or tagged *CMDR*.</li>
                         <li>Singleton: one copy of each card, basic lands aside.</li>
                         <li>Every card within the commander's color identity.</li>
-                        <li>Nothing banned in the chosen format.</li>
+                        {% else %}
+                        <li>At least 60 cards in the main deck.</li>
+                        <li>A sideboard of at most 15 cards, under a “Sideboard” header.</li>
+                        <li>At most 4 copies of a card, main deck and sideboard together{% if key == 'vintage' %}; 1 of a restricted card{% endif %}.</li>
+                        <li>No commander.</li>
+                        {% endif %}
+                        <li>Nothing banned in {{ fmt.label }}.</li>
                     </ul>
                 </div>
+                {% endfor %}
 
                 <button type="submit" class="btn btn-grad btn-block">
                     <span translate="no" class="ms text-[20px]">add</span>Import deck
@@ -65,4 +75,12 @@
         </div>
     </form>
 </div>
+<script>
+  // Show the rules of the chosen format.
+  document.querySelector('select[name="format"]').addEventListener("change", (e) => {
+    document.querySelectorAll("[data-format-rules]").forEach((el) => {
+      el.hidden = el.dataset.formatRules !== e.target.value;
+    });
+  });
+</script>
 {% endblock %}

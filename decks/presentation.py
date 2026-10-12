@@ -61,7 +61,8 @@ def deck_pips(deck) -> list:
 
 
 def card_groups(stored_cards: list) -> list:
-    """Groups cards by category into row view-models for the deck page."""
+    """Groups the main deck's cards by category into row view-models for the deck page."""
+    stored_cards = [item for item in stored_cards if item.get("board") != "side"]
     grouped = {cat: [] for cat in CATEGORY_ORDER}
     for item in stored_cards:
         grouped[classify_card(item["data"])].append(item)
@@ -100,6 +101,20 @@ def card_groups(stored_cards: list) -> list:
             }
         )
     return groups
+
+
+def sideboard_group(stored_cards: list) -> dict | None:
+    """The sideboard as one row group for the deck page, or None when there is none."""
+    side = [{**item, "board": "main"} for item in stored_cards if item.get("board") == "side"]
+    if not side:
+        return None
+    rows = [row for group in card_groups(side) for row in group["cards"]]
+    return {
+        "label": "Sideboard",
+        "hex": TYPE_HEX["Other"],
+        "count": sum(item["quantity"] for item in side),
+        "cards": rows,
+    }
 
 
 def commander_cards(stored_cards: list) -> list:

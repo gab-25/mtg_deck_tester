@@ -6,7 +6,7 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-from .formats import DEFAULT_FORMAT, format_choices
+from .formats import DEFAULT_FORMAT, FORMATS, format_choices
 
 
 class Deck(models.Model):
@@ -52,8 +52,25 @@ class Deck(models.Model):
         return self.name
 
     @property
+    def main_cards(self) -> list:
+        """The cards a match plays with (an entry without ``board`` is main deck)."""
+        return [item for item in self.cards if item.get("board") != "side"]
+
+    @property
+    def sideboard_cards(self) -> list:
+        return [item for item in self.cards if item.get("board") == "side"]
+
+    @property
     def total_cards(self) -> int:
-        return sum(item["quantity"] for item in self.cards)
+        return sum(item["quantity"] for item in self.main_cards)
+
+    @property
+    def sideboard_total(self) -> int:
+        return sum(item["quantity"] for item in self.sideboard_cards)
+
+    @property
+    def has_commander(self) -> bool:
+        return FORMATS[self.format].has_commander
 
     @property
     def is_busy(self) -> bool:
