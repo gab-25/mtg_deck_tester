@@ -103,6 +103,7 @@ def player_view(state: GameState, seat: int) -> dict:
         "round": state.round,
         "turn": state.turn,
         "step": str(state.step),
+        "format": state.rules.format_name,
         "active_seat": state.active_seat,
         "you": {
             "seat": seat,

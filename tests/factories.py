@@ -132,3 +132,10 @@ def constructed_cards(fmt="modern"):
 
 def make_constructed_deck(owner, name="Goblins", fmt="modern"):
     return make_deck(owner, name=name, fmt=fmt, cards=constructed_cards(fmt), commander="", color_identity=["R"])
+
+
+def constructed_deck(name="Deck", *, lands=24, library=None):
+    """A 60-card deck with no commander: Forests and green 2/2s."""
+    if library is None:
+        library = [FOREST] * lands + [bear(i % 9) for i in range(60 - lands)]
+    return DeckSpec(name=name, commander=None, library=tuple(library))

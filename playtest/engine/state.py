@@ -48,6 +48,8 @@ class GameRules:
     # Each previous cast from the command zone adds this much to the commander's cost.
     commander_tax: int = 2
     max_hand_size: int = 7
+    # Shown to agents ("a game of Magic: The Gathering (Modern)").
+    format_name: str = "Commander"
 
 
 @dataclass(slots=True)

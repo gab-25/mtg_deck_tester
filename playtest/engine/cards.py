@@ -155,8 +155,8 @@ def card(
 
 @dataclass(frozen=True, slots=True)
 class DeckSpec:
-    """A deck ready to be played: its commander and the other 99 cards."""
+    """A deck ready to be played: its library and, in Commander formats, its commander."""
 
     name: str
-    commander: CardSpec
+    commander: CardSpec | None
     library: tuple[CardSpec, ...]

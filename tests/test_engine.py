@@ -557,3 +557,41 @@ def test_when_the_active_player_leaves_others_spells_stay_on_the_stack():
     state.player(0).life = 0
     check_state(state)
     assert [item.name for item in state.stack] == ["Bear 9"]
+
+
+MODERN = GameRules(starting_life=20, commander_damage_limit=None, format_name="Modern")
+
+
+def test_a_constructed_game_has_no_commander_and_reaches_a_winner():
+    from .factories import constructed_deck
+
+    decks = [constructed_deck("A"), constructed_deck("B")]
+    game = Game(decks, [HeuristicAgent(0), HeuristicAgent(1)], MODERN, seed=4, max_rounds=40, check_invariants=True)
+    assert all(not p.command for p in game.state.players)
+    result = game.run()
+    assert result.winner_seat is not None
+    assert not any(e.event.payload.get("commander") for e in result.events if e.event.kind == EventKind.CAST)
+
+
+def test_without_a_commander_no_commander_action_or_cost_is_shown():
+    from .factories import constructed_deck
+
+    game = Game([constructed_deck("A"), constructed_deck("B")], [Passive(), Passive()], MODERN, seed=1)
+    state = game.state
+    state.order, state.round, state.turn, state.active_seat, state.step = [0, 1], 1, 1, 0, Step.MAIN1
+    for _ in range(9):
+        _put(state, FOREST)
+    assert commander_cost(state, 0) is None
+    assert all(a.kind != ActionKind.CAST_COMMANDER for a in legal_actions(state, 0))
+    view = player_view(state, 0)
+    assert view["format"] == "Modern" and view["you"]["commander_cost"] is None
+
+
+def test_a_constructed_game_replays_from_its_seed():
+    from .factories import constructed_deck
+
+    def play():
+        decks = [constructed_deck("A"), constructed_deck("B")]
+        return _log(Game(decks, [HeuristicAgent(0), HeuristicAgent(1)], MODERN, seed=8, max_rounds=20).run())
+
+    assert play() == play()

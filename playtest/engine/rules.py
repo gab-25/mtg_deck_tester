@@ -20,8 +20,9 @@ Mana:
   engine taps the sources that keep the most colors open. Players do not
   choose how to pay, so holding up a specific land is not a decision anyone
   makes.
-* The commander is cast from the command zone for its cost plus 2 for each
-  previous cast; if it would die or be exiled it returns to the command zone.
+* In Commander formats the commander is cast from the command zone for its
+  cost plus 2 for each previous cast; if it would die or be exiled it returns
+  to the command zone. Constructed formats have no commander.
 
 Spells and abilities:
 
@@ -50,10 +51,10 @@ Combat:
 
 Losing:
 
-* A player loses at 0 life, after drawing from an empty library, or at the
-  format's limit of combat damage from a single commander. A player who loses
-  leaves the game with everything they own. The last player standing wins; a
-  game that reaches the round limit is a draw.
+* A player loses at 0 life, after drawing from an empty library, or (in
+  Commander) at the format's limit of combat damage from a single commander.
+  A player who loses leaves the game with everything they own. The last
+  player standing wins; a game that reaches the round limit is a draw.
 * Opening hands use a deterministic London mulligan: keep 2–5 lands, at most
   two mulligans (the first is free with three or more players).
 

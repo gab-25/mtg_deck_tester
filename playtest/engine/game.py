@@ -141,10 +141,12 @@ class Game:
         state = GameState(rules=self.rules, players=[])
         for seat, deck in enumerate(self.decks):
             library = [Card(state.new_id(), spec, seat) for spec in deck.library]
-            commander = Card(state.new_id(), deck.commander, seat, is_commander=True)
+            command = []
+            if deck.commander is not None:
+                command = [Card(state.new_id(), deck.commander, seat, is_commander=True)]
             self.shuffle_rng.shuffle(library)
             state.players.append(
-                Player(seat=seat, name=deck.name, life=self.rules.starting_life, library=library, command=[commander])
+                Player(seat=seat, name=deck.name, life=self.rules.starting_life, library=library, command=command)
             )
         return state
 
