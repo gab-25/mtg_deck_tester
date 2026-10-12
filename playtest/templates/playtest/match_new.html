@@ -26,8 +26,8 @@
                 <div>
                     <label class="field-label mb-2">Format</label>
                     <select name="format" class="field" style="font-size:16px;font-weight:500">
-                        {% for value, label in format_choices %}
-                        <option value="{{ value }}" {% if value == form_format %}selected{% endif %}>{{ label }}</option>
+                        {% for value, fmt in formats.items %}
+                        <option value="{{ value }}" data-max-seats="{{ fmt.max_seats }}" data-family="{{ fmt.family }}" {% if value == form_format %}selected{% endif %}>{{ fmt.label }}</option>
                         {% endfor %}
                     </select>
                     <div class="text-[12px] text-txt3 mt-2 font-light">
@@ -45,20 +45,20 @@
                     </div>
                     <div class="flex flex-col gap-4 p-[18px]">
                         {% for row in rows %}
-                        <div class="seat-row">
+                        <div class="seat-row" data-seat-row="{{ row.index }}">
                             <div class="field-label">Seat {{ row.index|add:1 }}</div>
                             <select name="seat-{{ row.index }}-deck" class="field">
                                 <option value="">— empty —</option>
                                 {% if decks %}
                                 <optgroup label="Your decks">
                                     {% for deck in decks %}
-                                    <option value="{{ deck.id }}" {% if row.deck == deck.id|stringformat:'s' %}selected{% endif %}>{{ deck.name }} ({{ deck.get_format_display }})</option>
+                                    <option value="{{ deck.id }}" data-format="{{ deck.format }}" {% if row.deck == deck.id|stringformat:'s' %}selected{% endif %}>{{ deck.name }} ({{ deck.get_format_display }})</option>
                                     {% endfor %}
                                 </optgroup>
                                 {% endif %}
-                                <optgroup label="Benchmark decks (any format)">
-                                    {% for value, label in benchmarks %}
-                                    <option value="{{ value }}" {% if row.deck == value %}selected{% endif %}>{{ label }}</option>
+                                <optgroup label="Benchmark decks">
+                                    {% for value, label, family in benchmarks %}
+                                    <option value="{{ value }}" data-family="{{ family }}" {% if row.deck == value %}selected{% endif %}>{{ label }}</option>
                                     {% endfor %}
                                 </optgroup>
                             </select>
@@ -108,6 +108,8 @@
                     </div>
                     <ul class="text-[12.5px] text-txt3 font-light leading-[1.6]" style="margin:0;padding-left:18px;list-style:disc">
                         <li>The stack, priority, colored mana, blockers, first strike, trample and the usual keywords.</li>
+                        <li>Commander formats: commander tax and commander damage apply.</li>
+                        <li>Constructed formats: 20 life, two players, no commander; the sideboard stays out of the game.</li>
                         <li>Cards do what their compiled rules say; a card the compiler cannot read plays as a blank.</li>
                         <li>Mana is paid automatically, and opening hands use a fixed mulligan rule.</li>
                         <li>Benchmark decks are opponents built to be fully simulated.</li>
@@ -121,4 +123,20 @@
         </div>
     </form>
 </div>
+<script>
+  // Offer only the decks, benchmarks and seats of the chosen format; the
+  // server still checks all of it.
+  (() => {
+    const select = document.querySelector('select[name="format"]');
+    const apply = () => {
+      const chosen = select.selectedOptions[0];
+      const fmt = chosen.value, family = chosen.dataset.family, seats = Number(chosen.dataset.maxSeats);
+      document.querySelectorAll("option[data-format]").forEach((o) => { o.hidden = o.dataset.format !== fmt; });
+      document.querySelectorAll("option[data-family]:not([data-max-seats])").forEach((o) => { o.hidden = o.dataset.family !== family; });
+      document.querySelectorAll("[data-seat-row]").forEach((row) => { row.hidden = Number(row.dataset.seatRow) >= seats; });
+    };
+    select.addEventListener("change", apply);
+    apply();
+  })();
+</script>
 {% endblock %}

@@ -54,7 +54,9 @@ def _form_context(user, post=None, **extra) -> dict:
         "form_seed": post.get("seed", ""),
         "form_max_rounds": post.get("max_rounds", 20),
         "agent_choices": Seat.Agent.choices,
-        "benchmarks": [(BENCHMARK_PREFIX + key, label) for key, label in benchmarks.choices()],
+        "benchmarks": [
+            (BENCHMARK_PREFIX + key, label, benchmarks.family(key)) for key, label in benchmarks.choices()
+        ],
         "default_model": openrouter.default_model(),
         "jev_model": typesafe.default_model(),
         "llm_available": openrouter.api_key() is not None,

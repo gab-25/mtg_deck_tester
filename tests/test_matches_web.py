@@ -41,7 +41,7 @@ def test_new_match_form_lists_my_ready_decks(client, user):
 def test_new_match_form_prefills_the_deck_from_its_page(client, user):
     deck = make_deck(user, fmt="duel")
     content = client.get(f"/matches/new?deck={deck.id}&format=duel").content.decode()
-    assert f'value="{deck.id}" selected' in content
+    assert f'value="{deck.id}" data-format="duel" selected' in content
 
 
 @pytest.mark.django_db
@@ -306,3 +306,49 @@ def test_the_deck_page_shows_coverage_only_from_the_cache(client, user):
     ScryfallCard.objects.filter(key="card_en_forest").delete()
     # A card missing from the cache: no coverage, and no network call to fill it in.
     assert "Playtest coverage" not in client.get(f"/decks/{deck.id}").content.decode()
+
+
+@pytest.mark.django_db
+def test_a_constructed_match_between_two_decks(client, user):
+    from .factories import make_constructed_deck
+
+    decks = [make_constructed_deck(user, name=f"Goblins {i}") for i in range(2)]
+    client.post("/matches/create", _form("modern", decks, agent="heuristic"))
+    match = Match.objects.get(owner=user)
+    assert match.status == Match.Status.FINISHED, match.error
+    page = client.get(f"/matches/{match.id}").content.decode()
+    summary = page.split("Match summary")[1]
+    assert "Damage dealt" in summary and " commander" not in summary.split("Game log")[0]
+
+
+@pytest.mark.django_db
+def test_a_constructed_match_against_a_60_card_benchmark(client, user):
+    from .factories import make_constructed_deck
+
+    deck = make_constructed_deck(user)
+    data = {"format": "modern", "max_rounds": "6", "seed": "3", "seat-0-deck": str(deck.id), "seat-0-agent": "heuristic",
+            "seat-1-deck": "benchmark:aggro60", "seat-1-agent": "heuristic"}
+    assert client.post("/matches/create", data).status_code == 302
+    assert Match.objects.get(owner=user).status == Match.Status.FINISHED
+
+
+@pytest.mark.django_db
+def test_constructed_tables_seat_two_and_take_their_own_benchmarks(client, user):
+    from .factories import make_constructed_deck
+
+    decks = [make_constructed_deck(user, name=f"Goblins {i}") for i in range(3)]
+    response = client.post("/matches/create", _form("modern", decks, agent="heuristic"))
+    assert response.status_code == 422 and b"exactly 2 players; 3 chosen" in response.content
+    data = {"format": "modern", "seat-0-deck": str(decks[0].id), "seat-1-deck": "benchmark:aggro"}
+    response = client.post("/matches/create", data)
+    assert response.status_code == 422 and b"not a Modern benchmark" in response.content
+
+
+@pytest.mark.django_db
+def test_the_new_match_form_tags_decks_and_benchmarks_by_format(client, user):
+    from .factories import make_constructed_deck
+
+    make_constructed_deck(user, name="Goblins")
+    page = client.get("/matches/new").content.decode()
+    assert 'data-format="modern"' in page
+    assert 'value="benchmark:aggro60" data-family="constructed"' in page

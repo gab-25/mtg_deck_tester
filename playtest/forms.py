@@ -79,6 +79,9 @@ def parse_match_form(post, user) -> tuple[MatchForm | None, list[str]]:
             if key not in benchmarks.BENCHMARKS:
                 errors.append(f"Seat {row + 1}: unknown benchmark deck {key!r}.")
                 continue
+            if benchmarks.family(key) != rules.family:
+                errors.append(f"Seat {row + 1}: {benchmarks.label(key)} is not a {rules.label} benchmark.")
+                continue
             seats.append(SeatChoice(deck=None, benchmark=key, agent=agent, model=model))
             continue
         deck = decks.get(deck_id)
