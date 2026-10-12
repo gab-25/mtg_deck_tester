@@ -1,8 +1,9 @@
 # MTG Deck Tester
 
-A **Django** web app where **AI agents playtest Magic: The Gathering Commander decks**.
-Import your decks from a plain-text list (cards resolved through the **Scryfall** API),
-seat two to four of them at a table — or pit them against bundled benchmark decks — and
+A **Django** web app where **AI agents playtest competitive Magic: The Gathering decks**:
+Standard, Pioneer, Modern, Legacy, Vintage, Pauper, Commander (cEDH included) and Duel
+Commander. Import your decks from a plain-text list (cards resolved through the
+**Scryfall** API), seat them at a table — or pit them against bundled benchmark decks — and
 let the agents play the game out under real rules: the stack and priority, colored mana,
 blockers, and each card's own effects. Pages are **HTMX** over a precompiled stylesheet,
 data lives in **Postgres**.
@@ -16,14 +17,24 @@ picks one of them.
 
 ## Features
 
-- **Deck import**: paste a Moxfield-style list (`1 Sol Ring`, commander under a
-  `Commander` header or tagged `*CMDR*`). Construction rules that plain text can
-  settle are checked on the spot; the cards are then fetched from Scryfall in the
-  background and checked again — commander eligibility, color identity, and the ban
-  list of the deck's format. Every problem is reported at once.
-- **Commander and Duel Commander**: a deck declares its format. A Commander match
-  seats 2–4 players at 40 life and tracks commander damage; a Duel Commander match
-  seats exactly 2 at 20 life.
+- **Deck import**: paste a Moxfield-style list (`4 Lightning Bolt`; a commander under a
+  `Commander` header or tagged `*CMDR*`; a sideboard under a `Sideboard` header).
+  Construction rules that plain text can settle are checked on the spot; the cards are
+  then fetched from Scryfall in the background and checked again — copy limits,
+  commander eligibility and color identity, and the ban list of the deck's format.
+  Every problem is reported at once.
+- **Formats**: a deck declares its format, and is checked against that format's
+  construction rules and ban list:
+
+  | Format | Players | Life | Deck | Copies | Commander |
+  |---|---|---|---|---|---|
+  | Standard, Pioneer, Modern, Legacy, Pauper | 2 | 20 | 60+ main, ≤15 sideboard | 4 | — |
+  | Vintage | 2 | 20 | 60+ main, ≤15 sideboard | 4 (restricted: 1) | — |
+  | Commander (cEDH included) | 2–4 | 40 | exactly 100 | 1 | yes, 21 damage |
+  | Duel Commander | 2 | 20 | exactly 100 | 1 | yes |
+
+  A constructed deck lists its sideboard under a `Sideboard` header; the sideboard is
+  imported and checked, but a match is a single game played with the main deck.
 - **Agents**: each seat gets its own agent — `heuristic` (fixed rules, no network),
   `jev` (Jev picks each action through OpenRouter; its confidence and runner-up actions
   are logged), `llm` (a language model of your choice through OpenRouter, with its
@@ -38,8 +49,9 @@ picks one of them.
   warnings for an unsupported commander and for dead spells, and the list of
   unsupported cards with their reasons. The deck page shows it too once every card is
   in the cache.
-- **Benchmark decks**: three bundled opponents (aggro, midrange, control) built to
-  compile at 100% coverage, selectable for any seat in either format.
+- **Benchmark decks**: bundled opponents (aggro, midrange, control) built to compile
+  at 100% coverage: three 100-card decks for the Commander formats and three 60-card
+  decks for the constructed ones.
 - **Live game log and summary**: a match runs in the background; its page shows the
   table and the log as they happen (HTMX polling), each Jev decision with its
   confidence, and at the end a deterministic summary per seat (damage by source,
@@ -56,7 +68,9 @@ picks one of them.
 
 ## Rules
 
-The kernel (`playtest/engine/`) plays 2–4 player Commander and 2-player Duel Commander:
+The kernel (`playtest/engine/`) plays 2-player constructed games, 2–4 player Commander
+and 2-player Duel Commander. Everything below applies to every format; the commander
+rules apply to the Commander formats only.
 
 - **Turns and priority**: untap, upkeep, draw, main, combat (beginning, attackers,
   blockers, first-strike damage, damage, end), second main, end step, cleanup. The
@@ -136,8 +150,8 @@ mtg_deck_tester/        # Django project: settings, URLs, layout templates, home
 ├── access.py           #   Ownership check shared by every view
 └── logging_context.py  #   Stamps "[match <id>]" / "[deck <id>]" on job logs
 decks/                  # App: decks and the Scryfall cache
-├── rules/              #   Decklist parsing, card types, Commander legality (pure)
-├── formats.py          #   Commander / Duel Commander parameters
+├── rules/              #   Decklist parsing, card types, Commander and constructed legality (pure)
+├── formats.py          #   Every format's parameters and family
 ├── scryfall.py         #   Card data fetching
 ├── cache.py            #   Database and filesystem cache backends
 └── importer.py         #   parse → fetch → validate, and the import job

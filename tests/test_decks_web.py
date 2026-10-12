@@ -227,3 +227,9 @@ def test_the_import_form_shows_the_rules_of_each_format(client):
     page = client.get("/decks/new").content.decode()
     assert 'data-format-rules="commander"' in page and 'data-format-rules="modern"' in page
     assert "at most 15" in page
+
+
+@pytest.mark.django_db
+def test_home_names_the_competitive_formats(client):
+    page = client.get("/").content.decode()
+    assert "Modern" in page and "Pauper" in page
