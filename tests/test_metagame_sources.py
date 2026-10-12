@@ -26,15 +26,16 @@ def _file(name):
 
 
 def _mtgtop8_get(url, headers, timeout):
+    if "mtgo?d=" in url:
+        name = "mtgtop8_mtgo_EDH.txt" if url.endswith("898986") else "mtgtop8_mtgo_MO.txt"
+        return _Response(content=_file(name))
     pages = {
         "format?f=MO": "mtgtop8_format_MO.html",
-        "archetype?a=": "mtgtop8_archetype_MO.html",
         "format?f=EDH": "mtgtop8_format_EDH.html",
-        "event?e=": "mtgtop8_event_EDH.html",
+        "cEDH_decks?f=EDH": "mtgtop8_breakdown_EDH.html",
+        "f=EDH": "mtgtop8_archetype_EDH.html",
+        "archetype?a=": "mtgtop8_archetype_MO.html",
     }
-    if "mtgo?d=" in url:
-        name = "mtgtop8_mtgo_EDH.txt" if url.endswith("898991") else "mtgtop8_mtgo_MO.txt"
-        return _Response(content=_file(name))
     for key, name in pages.items():
         if key in url:
             return _Response(content=_file(name))
@@ -67,12 +68,22 @@ def test_mtgtop8_reads_constructed_archetypes_with_their_share():
     assert any(c["board"] == "side" for c in cards)
 
 
-def test_mtgtop8_duel_commander_moves_the_commander_out_of_the_sideboard():
-    entries = mtgtop8.fetch("duel", 1, get=_mtgtop8_get, sleep=lambda s: None)
-    [entry] = entries
-    assert entry.archetype == "Commodore Guff" and entry.meta_share is None
-    cards = parse_decklist_text(entry.decklist, "duel")
-    assert [c["name"] for c in cards if c["is_commander"]] == ["Commodore Guff"]
+def test_mtgtop8_reads_the_duel_commander_metagame_breakdown():
+    urls = []
+
+    def get(url, headers, timeout):
+        urls.append(url)
+        return _mtgtop8_get(url, headers, timeout)
+
+    entries = mtgtop8.fetch("duel", 2, get=get, sleep=lambda s: None)
+    assert [(e.archetype, e.meta_share, e.rank) for e in entries] == [
+        ("Brigid, Clachan's Heart", 6.05, 1),
+        ("Cloud, Midgar Mercenary", 5.76, 2),
+    ]
+    # The breakdown is loaded the way the page's script loads it, for the page's period.
+    assert any("cEDH_decks?f=EDH&show=pop" in u and "meta=115" in u for u in urls)
+    cards = parse_decklist_text(entries[0].decklist, "duel")
+    assert [c["name"] for c in cards if c["is_commander"]] == ["Brigid, Clachan's Heart"]
     assert sum(c["quantity"] for c in cards) == 100
 
 

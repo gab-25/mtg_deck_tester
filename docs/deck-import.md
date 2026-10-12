@@ -188,7 +188,7 @@ opponents (`decks.MetagameDeck`, table `metagame_decks`):
 |---|---|---|
 | `commander` | EDHTop16 | One GraphQL request: the most popular commanders of the last three months, their meta share, and the full list of their best-placed entry (partners included). |
 | constructed | MTGTop8 | The format page's archetypes and shares; the first deck listed for each archetype, through MTGTop8's MTGO export. |
-| `duel` | MTGTop8 | No metagame page: the best-placed deck of each recent event; the export's `Sideboard` (the commander) becomes `Commander`. |
+| `duel` | MTGTop8 | The same, from the breakdown the format page loads with a script (`cEDH_decks`, shares in per mille); the export's `Sideboard` (the commander) becomes `Commander`. |
 
 MTGGoldfish is not used: its `robots.txt` disallows `/deck/download*`.
 

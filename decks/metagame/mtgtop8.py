@@ -1,11 +1,13 @@
 """MTGTop8: the top decks of Duel Commander and the constructed formats.
 
-Constructed formats have a metagame page (archetypes with their share): for each
-archetype, the first listed deck is taken. Duel Commander has none, so the
-best-placed deck of each of the latest events is taken instead. Decklists come from MTGTop8's
-MTGO export, which ``robots.txt`` allows (MTGGoldfish's download does not).
+Each format page has a metagame breakdown (archetypes with their share): for
+each archetype, the first listed deck is taken. Constructed formats render it in
+the page; Duel Commander loads it with a script from ``cEDH_decks`` (shares in
+per mille), which is requested the same way. Decklists come from MTGTop8's MTGO
+export, which ``robots.txt`` allows (MTGGoldfish's download does not).
 """
 
+import html
 import re
 import time
 
@@ -34,10 +36,14 @@ _ARCHETYPE = re.compile(
     r'<a href=["]?(archetype\?a=\d+&meta=\d+&f=[A-Z]+)["]?>([^<]+)</a></div>\s*<div>\s*<div[^>]*>(\d+) %'
 )
 _DECK_REF = re.compile(r"name=deck_ref\[\d+\] value=(\d+)")
-_EVENT = re.compile(r'href=["]?event\?e=(\d+)&f=EDH')
-# One row per deck of an event, in placement order: the rank cell, then the deck link.
-_EVENT_ROW = re.compile(r'align=center class=S14>([^<]*)</div>')
-_ROW_DECK = re.compile(r'd=(\d+)&f=EDH["]?>([^<]+)</a>')
+# The Duel Commander breakdown: one row per commander, its share in per mille.
+_BREAKDOWN_ROW = re.compile(
+    r'<a href=["]?(archetype\?a=\d+&meta=\d+&f=EDH[^ >"]*)["]?>([^<]+)</a></div>'
+    r'.{0,600}?class=S14 align=center>([\d.]+) <span class=O14>&permil;',
+    re.S,
+)
+# The period the page shows by default (its first ``meta`` value).
+_DEFAULT_META = re.compile(r"\bmeta\s*=\s*\"?(\d+)")
 
 
 class _Client:
@@ -72,46 +78,32 @@ def fetch(fmt: str, limit: int, *, get=None, post=None, sleep=time.sleep) -> lis
         raise SourceError(f"MTGTop8 has no {fmt} decks.")
     client = _Client(get, sleep)
     page = client.text(f"format?f={code}")
-    entries = []
     if fmt == "duel":
-        events = list(dict.fromkeys(_EVENT.findall(page)))
-        for event_id in events:
-            if len(entries) >= limit:
-                break
-            event = client.text(f"event?e={event_id}&f=EDH")
-            top = None
-            for row in _EVENT_ROW.finditer(event):
-                top = _ROW_DECK.search(event, row.end(), row.end() + 600)
-                if top:
-                    break
-            if top is None:
-                continue
-            deck_id, commander = top.groups()
-            export = client.text(f"mtgo?d={deck_id}")
-            entries.append(
-                MetagameEntry(
-                    archetype=commander.strip(),
-                    source_url=f"{BASE_URL}/event?e={event_id}&d={deck_id}&f=EDH",
-                    decklist=_duel_decklist(export),
-                    rank=len(entries) + 1,
-                )
-            )
+        meta = (_DEFAULT_META.findall(page) or ["115"])[0]
+        breakdown = client.text(
+            f"cEDH_decks?f=EDH&show=pop&cid=&meta={meta}&gamerid1=&gamerid2=&cEDH_cp=1"
+        )
+        archetypes = [
+            (path, name, float(per_mille) / 10) for path, name, per_mille in _BREAKDOWN_ROW.findall(breakdown)
+        ]
     else:
-        archetypes = _ARCHETYPE.findall(page)[:limit]
-        for rank, (path, name, share) in enumerate(archetypes, start=1):
-            refs = _DECK_REF.findall(client.text(path))
-            if not refs:
-                continue
-            export = client.text(f"mtgo?d={refs[0]}")
-            entries.append(
-                MetagameEntry(
-                    archetype=name.strip(),
-                    source_url=f"{BASE_URL}/{path}",
-                    decklist=export,
-                    meta_share=float(share),
-                    rank=rank,
-                )
+        archetypes = [(path, name, float(share)) for path, name, share in _ARCHETYPE.findall(page)]
+
+    entries = []
+    for rank, (path, name, share) in enumerate(archetypes[:limit], start=1):
+        refs = _DECK_REF.findall(client.text(path))
+        if not refs:
+            continue
+        export = client.text(f"mtgo?d={refs[0]}")
+        entries.append(
+            MetagameEntry(
+                archetype=html.unescape(name).strip(),
+                source_url=f"{BASE_URL}/{path}",
+                decklist=_duel_decklist(export) if fmt == "duel" else export,
+                meta_share=round(share, 2),
+                rank=rank,
             )
+        )
     if not entries:
         raise SourceError(f"MTGTop8 listed no {fmt} decks: the page layout may have changed.")
     return entries
