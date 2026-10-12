@@ -639,7 +639,7 @@ def apply_op(state: GameState, ability: Ability, op: Op, ctx: EffectContext, ind
             for ref in refs:
                 item = state.stack_item(parse_ref(ref)[1])
                 if item is not None:
-                    events += counter_item(state, item, f"countered by {name}")
+                    events += counter_item(state, item, f"countered by {name}", _COUNTERED_ZONES[op.to or "GRAVEYARD"])
     return events
 
 
@@ -663,6 +663,8 @@ def matches_filter(spec: CardSpec, filt: str) -> bool:
         return not spec.is_land and not spec.is_creature
     if filt == "ARTIFACT_OR_ENCHANTMENT":
         return "artifact" in spec.types or "enchantment" in spec.types
+    if filt == "EQUIPMENT":
+        return "equipment" in spec.subtypes
     return filt.lower() in spec.types
 
 
@@ -692,8 +694,11 @@ def _search(state: GameState, op: Op, ctx: EffectContext, amount: int) -> list[E
     found = []
     for _ in range(amount):
         seen, options = set(), []
+        limit = ctx.x if op.max_mv == "X" else op.max_mv
         for card in player.library:
-            if matches_filter(card.spec, op.filter) and card.name not in seen:
+            fits = matches_filter(card.spec, op.filter) and (limit is None or card.spec.mana_value <= limit)
+            fits = fits and (op.max_toughness is None or (card.spec.is_creature and (card.spec.toughness or 0) <= op.max_toughness))
+            if fits and card.name not in seen:
                 seen.add(card.name)
                 options.append(ChoiceOption(f"c{len(options):02d}", f"Find {card.name}", card_value(state, ctx.controller, card.spec), card.id))
         # The library is hidden: a player may always fail to find.
@@ -841,7 +846,7 @@ def _counter_unless_pays(state: GameState, item: StackItem, op: Op, ctx: EffectC
         if ctx.ask(state, payer, "pay", f"{ctx.source_name}: pay {op.mana} or {item.name} is countered", options).key == "c00":
             paid = pay(state, payer, cost)
             return paid + [Event(EventKind.EFFECT, payer, f"{state.player(payer).name} pays {op.mana} for {item.name}.", {"effect": "pay_unless", "mana": op.mana})]
-    return counter_item(state, item, f"countered by {ctx.source_name}")
+    return counter_item(state, item, f"countered by {ctx.source_name}", _COUNTERED_ZONES[op.to or "GRAVEYARD"])
 
 
 def _token_ability(cost: Cost, op: Op, text: str) -> Ability:
@@ -882,14 +887,17 @@ def cycling_ability(spec: CardSpec) -> Ability:
     return Ability(Trigger.ACTIVATED, (op,), you, text="cycling")
 
 
-def counter_item(state: GameState, item: StackItem, why: str) -> list[Event]:
-    """Removes ``item`` from the stack without effect; a spell goes to its owner's graveyard."""
+_COUNTERED_ZONES = {"GRAVEYARD": Zone.GRAVEYARD, "EXILE": Zone.EXILE, "TOP": Zone.LIBRARY_TOP, "HAND": Zone.HAND}
+
+
+def counter_item(state: GameState, item: StackItem, why: str, zone: str = Zone.GRAVEYARD) -> list[Event]:
+    """Removes ``item`` from the stack without effect; a spell goes to its owner's ``zone``."""
     if item.card is not None and item.card.spec.uncounterable:
         return [Event(EventKind.EFFECT, item.controller, f"{item.name} can't be countered.", {"card": item.name, "effect": "uncounterable"})]
     if item in state.stack:
         state.stack.remove(item)
     if item.card is not None:
-        put_card(state, item.card, Zone.EXILE if item.flashback else Zone.GRAVEYARD)
+        put_card(state, item.card, Zone.EXILE if item.flashback else zone)
     return [Event(EventKind.COUNTERED, item.controller, f"{item.name} is {why}.", {"card": item.name, "reason": why})]
 
 

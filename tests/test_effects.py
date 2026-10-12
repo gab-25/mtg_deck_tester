@@ -1033,3 +1033,71 @@ def test_a_game_with_alternative_costs_flashback_and_cycling_keeps_its_invariant
         assert "agent_fallback" not in [e.event.kind for e in result.events]
         labels |= {e.event.payload.get("effect") for e in result.events}
     assert {"pitch", "cycle"} <= labels
+
+
+# -- counter variants and tutors ---------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text, zone",
+    [
+        ("Counter target spell. If that spell is countered this way, exile it instead of putting it into its owner's graveyard.", "exile"),
+        ("Counter target spell. If that spell is countered this way, put it on top of its owner's library instead of into that player's graveyard.", "library"),
+        ("Counter target spell. If that spell is countered this way, put it into its owner's hand instead of into that player's graveyard.", "hand"),
+    ],
+)
+def test_a_countered_spell_can_go_elsewhere(text, zone):
+    game, state = _table()
+    rock = _opponent_casts(state, card("Rock", "Artifact", "{1}"))
+    _mana(state, amount=1)
+    _cast(state, compiled_spec("Lapse", "Instant", "{1}", text), targets=[f"s{state.stack[-1].id}"])
+    player = state.player(1)
+    where = {"exile": player.exile, "library": player.library[:1], "hand": player.hand}[zone]
+    assert rock in where and rock not in player.graveyard
+
+
+@pytest.mark.parametrize(
+    "text, kept",
+    [
+        ("Search your library for an artifact or enchantment card, reveal it, then shuffle and put that card on top.", "top"),
+        ("Search your library for a card, then shuffle and put that card on top. You lose 2 life.", "top"),
+        ("Search your library for a creature card with toughness 2 or less, reveal it, put it into your hand, then shuffle.", "hand"),
+        ("Search your library for an Equipment card, reveal it, put it into your hand, then shuffle.", "hand"),
+    ],
+)
+def test_tutors_put_the_card_where_they_say(text, kept):
+    game, state = _table()
+    _mana(state, amount=2)
+    wanted = {
+        "artifact": card("Board", "Artifact — Equipment", "{1}"),
+        "small": card("Small", "Creature", "{1}", 1, 2),
+        "big": card("Big", "Creature", "{1}", 5, 5),
+    }
+    _library(state, 0, *wanted.values())
+    asked = []
+
+    def choose(state_, seat, kind, prompt, options):
+        asked.append([o.label for o in options])
+        return options[0].key
+
+    _cast_with(state, compiled_spec("Tutor", "Sorcery", "{2}", text), choose)
+    found = state.player(0).library[0] if kept == "top" else state.player(0).hand[-1]
+    assert asked and f"Find {found.name}" == asked[0][0]
+    if "toughness" in text:
+        assert "Find Big" not in asked[0] and "Find Small" in asked[0]
+    if "Equipment" in text:
+        assert asked[0][:1] == ["Find Board"] and "Find Small" not in asked[0]
+
+
+def test_chord_finds_a_creature_with_mana_value_up_to_x():
+    game, state = _table()
+    _mana(state, amount=4)
+    _library(state, 0, card("Two", "Creature", "{2}", 2, 2), card("Five", "Creature", "{5}", 5, 5))
+    text = "Search your library for a creature card with mana value X or less, put it onto the battlefield, then shuffle."
+    spec = compiled_spec("Chord", "Sorcery", "{X}{2}", text)
+    item = _hand(state, spec)
+    action = next(a for a in legal_actions(state, 0) if a.card == item.id and a.x == 2)
+    asked = []
+    apply(state, 0, action)
+    resolve_top(state, lambda st, seat, kind, prompt, options: asked.append([o.label for o in options]) or options[0].key)
+    assert "Find Two" in asked[0] and "Find Five" not in asked[0]

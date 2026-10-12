@@ -144,7 +144,10 @@ def card(
     subtypes: tuple[str, ...] = (),
 ) -> CardSpec:
     """A card built by hand (tests, scripted games): ``card("Bear", "Creature", "{1}{G}", 2, 2)``."""
+    type_line, _, subtype_words = type_line.partition("—")
     words = type_line.lower().split()
+    if subtype_words.strip() and not subtypes:
+        subtypes = tuple(subtype_words.lower().split())
     supertypes = tuple(w for w in words if w in ("legendary", "basic", "snow"))
     types = tuple(w for w in words if w not in supertypes)
     unknown = [k for k in keywords if k not in SUPPORTED_KEYWORDS]

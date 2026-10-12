@@ -26,7 +26,7 @@ from .manacost import ManaCostError, parse_mana_cost, parse_mana_symbols
 
 # Bump only when the accepted vocabulary or a program's meaning changes: it is
 # part of the compiled-rules cache key.
-DSL_VERSION = "5"
+DSL_VERSION = "6"
 
 
 class DslError(ValueError):
@@ -327,6 +327,14 @@ _KW = "(?:" + "|".join(KEYWORD_WORDS) + ")"
 # "it deals" is read as this permanent only when nothing earlier in the ability
 # was targeted (the judge checks): otherwise "it" is that target.
 _SELF_SUBJECT = r"(?:(?:this (?:creature|spell|artifact|enchantment|land|permanent)|it) )?"
+# "with mana value 2 or less" / "with toughness 2 or less" on a library search.
+_SEARCH_LIMIT = r"(?: with (?P<limit>mana value|toughness) (?P<mv>\d+|x) or less)?"
+# Where a countered spell goes instead of its owner's graveyard.
+_COUNTERED_TO = (
+    r"(?:\. if that spell is countered this way, (?P<instead>exile it instead of putting it into its owner's graveyard|"
+    r"put it on top of its owner's library instead of into that player's graveyard|"
+    r"put it into its owner's hand instead of into that player's graveyard))?"
+)
 # "equal to its power": the last known value of the object an earlier part affected.
 _ITS_STAT = r"equal to its (?P<stat>power|toughness|mana value)"
 _COLOR_WORDS = r"(?:white|blue|black|red|green|colorless)(?: and (?:white|blue|black|red|green))?"
@@ -482,11 +490,14 @@ OPS: dict[str, OpSpec] = {
     "SEARCH_LIBRARY": OpSpec(
         "its controller searches their library for cards of a kind and puts them in a zone, then shuffles",
         ("target", "amount", "filter", "to"),
-        (),
+        ("max_mv", "max_toughness"),
         _PLAYERS,
         (
-            rf"^search your library for {_N} (?:(?P<filter>[a-z ,]+?) )?cards?, put (?:it|that card|them|those cards) "
+            rf"^search your library for {_N} (?:(?P<filter>[a-z ,]+?) )?cards?{_SEARCH_LIMIT}(?:, reveal (?:it|that card))?, "
+            r"put (?:it|that card|them|those cards) "
             r"(?P<to>onto the battlefield(?: tapped)?|into your hand|on top of your library|into your graveyard)$",
+            rf"^search your library for {_N} (?:(?P<filter>[a-z ,]+?) )?cards?{_SEARCH_LIMIT}(?:, reveal it)?,? "
+            r"then shuffle and put (?P<to>that card on top)$",
         ),
     ),
     "DIG": OpSpec(
@@ -533,18 +544,18 @@ OPS: dict[str, OpSpec] = {
         (rf"^surveil {_N}$",),
     ),
     "COUNTER_SPELL": OpSpec(
-        "counters a spell on the stack, which goes to its owner's graveyard without effect",
+        "counters a spell on the stack, which goes to its owner's graveyard (or exile, hand, library) without effect",
         ("target",),
-        (),
+        ("to",),
         frozenset({SelKind.SPELL}),
-        (rf"^counter {_T}$",),
+        (rf"^counter {_T}{_COUNTERED_TO}$",),
     ),
     "COUNTER_UNLESS_PAYS": OpSpec(
         "counters a spell on the stack unless its controller pays an amount of generic mana",
         ("target", "mana"),
-        (),
+        ("to",),
         frozenset({SelKind.SPELL}),
-        (rf"^counter {_T} unless its controller pays (?P<mana>\{{\d+\}})$",),
+        (rf"^counter {_T} unless its controller pays (?P<mana>\{{\d+\}}){_COUNTERED_TO}$",),
     ),
     "CREATE_ARTIFACT_TOKEN": OpSpec(
         "a player creates Treasure, Clue, Food or Blood artifact tokens (investigate creates a Clue)",
@@ -590,13 +601,20 @@ SEARCH_FILTERS = (
     "NONLAND",
     "NONCREATURE_NONLAND",
     "ARTIFACT_OR_ENCHANTMENT",
+    "EQUIPMENT",
 )
+COUNTER_DESTINATIONS = {
+    "exile it instead of putting it into its owner's graveyard": "EXILE",
+    "put it on top of its owner's library instead of into that player's graveyard": "TOP",
+    "put it into its owner's hand instead of into that player's graveyard": "HAND",
+}
 SEARCH_DESTINATIONS = {
     "onto the battlefield": "BATTLEFIELD",
     "onto the battlefield tapped": "BATTLEFIELD_TAPPED",
     "into your hand": "HAND",
     "on top of your library": "TOP",
     "into your graveyard": "GRAVEYARD",
+    "that card on top": "TOP",
 }
 
 
@@ -616,6 +634,7 @@ def search_filter(phrase: str) -> str | None:
         "nonland": "NONLAND",
         "noncreature, nonland": "NONCREATURE_NONLAND",
         "artifact or enchantment": "ARTIFACT_OR_ENCHANTMENT",
+        "equipment": "EQUIPMENT",
     }
     if phrase in simple:
         return simple[phrase]
@@ -676,7 +695,10 @@ def parse_clause(op: str, clause: str) -> dict | None:
         if op == "SEARCH_LIBRARY":
             fields["to"] = SEARCH_DESTINATIONS[groups["to"]]
         if "mv" in groups:
-            fields["max_mv"] = int(groups["mv"])
+            limit = "X" if groups["mv"] == "x" else int(groups["mv"])
+            fields["max_toughness" if groups.get("limit") == "toughness" else "max_mv"] = limit
+        if "instead" in groups:
+            fields["to"] = COUNTER_DESTINATIONS[groups["instead"]]
         if op == "DIG":
             fields["to"] = DIG_DESTINATIONS[groups["rest"].removesuffix(" in any order")]
         if "shuffle" in groups:
@@ -739,6 +761,7 @@ class Op:
     filter: str = ""
     to: str = ""
     max_mv: int | None = None
+    max_toughness: int | None = None
     # DIG: how many of the cards looked at go to the hand.
     count: int | None = None
     # ARRANGE_TOP: its controller may shuffle instead.
@@ -818,6 +841,7 @@ _OP_FIELDS = {
     "filter",
     "to",
     "max_mv",
+    "max_toughness",
     "count",
     "shuffle",
     "token",
@@ -1137,6 +1161,19 @@ def _validate_op(data, path: str, targets: dict, trigger: str, grounded: set[int
         if data["to"] not in SEARCH_DESTINATIONS.values():
             raise DslError(f"{path}.to", f"unknown destination {data['to']!r}")
         fields.update(filter=filt, to=data["to"])
+        if data.get("max_mv") is not None:
+            if data["max_mv"] == "X":
+                if trigger != Trigger.SPELL or not has_x:
+                    raise DslError(f"{path}.max_mv", "X limits only in spells with {X} in their cost")
+                fields["max_mv"] = "X"
+            else:
+                fields["max_mv"] = grounded_int("max_mv", 0, PT_MAX)
+        if data.get("max_toughness") is not None:
+            fields["max_toughness"] = grounded_int("max_toughness", 0, PT_MAX)
+    if name in ("COUNTER_SPELL", "COUNTER_UNLESS_PAYS") and data.get("to") is not None:
+        if data["to"] not in COUNTER_DESTINATIONS.values():
+            raise DslError(f"{path}.to", f"unknown destination {data['to']!r}")
+        fields["to"] = data["to"]
     if name in ("SEARCH_LIBRARY", "DIG", "PUT_BACK", "ARRANGE_TOP") and targets[fields["target"]].selector != "YOU":
         raise DslError(f"{path}.target", f"{name} only works on its controller's own cards")
     if name == "DISCARD_CHOSEN":

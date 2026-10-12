@@ -72,6 +72,13 @@ BLOCKLIST = (
     (r"\byou may cast\b|\bwithout paying\b", "free or alternative casting"),
 )
 
+# Phrases a DSL grammar states exactly, so the blocklist word inside them is no
+# reason to refuse the card (a countered spell exiled "instead").
+_BLOCKLIST_EXEMPT = re.compile(
+    r"if that spell is countered this way, (?:exile it instead of putting it into its owner's graveyard|"
+    r"put it (?:on top of its owner's library|into its owner's hand) instead of into that player's graveyard)"
+)
+
 # Supertypes the type line may carry; the rest of the words before the dash are types.
 _SUPERTYPES = {"basic", "legendary", "snow", "world", "ongoing", "token", "elite", "host"}
 
@@ -465,7 +472,8 @@ def characteristics(card: dict) -> CardFacts:
     blocked_type = next((BLOCKED_TYPES[t] for t in types + subtypes if t in BLOCKED_TYPES), "")
     if blocked_type:
         reasons.append(f"unsupported card type: {blocked_type}")
-    reasons += [reason for pattern, reason in BLOCKLIST if re.search(pattern, residual, re.M)]
+    screened = _BLOCKLIST_EXEMPT.sub("", residual)
+    reasons += [reason for pattern, reason in BLOCKLIST if re.search(pattern, screened, re.M)]
     block_reason = reasons[0] if reasons else ""
 
     if block_reason:
