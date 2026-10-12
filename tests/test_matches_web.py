@@ -359,3 +359,53 @@ def test_hidden_seats_and_decks_are_cleared_not_just_hidden(client):
     page = client.get("/matches/new").content.decode()
     # Hidden rows and options must not stay selected and be posted unseen.
     assert 'select.value = ""' in page
+
+
+def _metagame(fmt="modern", **fields):
+    from decks.models import MetagameDeck
+
+    from .factories import cache_raw_cards, constructed_cards
+
+    cards = constructed_cards(fmt)
+    cache_raw_cards(cards)
+    defaults = {"source": "mtgtop8", "archetype": "Goblins", "meta_share": 8.4, "rank": 1, "cards": cards,
+                "coverage": {"percent": 46}}
+    defaults.update(fields)
+    return MetagameDeck.objects.create(format=fmt, **defaults)
+
+
+@pytest.mark.django_db
+def test_the_form_offers_metagame_decks_with_a_coverage_warning(client):
+    deck = _metagame()
+    page = client.get("/matches/new").content.decode()
+    assert f'value="metagame:{deck.id}" data-format="modern"' in page
+    assert "Goblins — 8.4% — coverage 46% ⚠ low coverage" in page
+
+
+@pytest.mark.django_db
+def test_a_match_against_a_metagame_deck(client, user):
+    from .factories import make_constructed_deck
+
+    mine = make_constructed_deck(user)
+    meta = _metagame()
+    data = {"format": "modern", "max_rounds": "8", "seed": "2", "seat-0-deck": str(mine.id), "seat-0-agent": "heuristic",
+            "seat-1-deck": f"metagame:{meta.id}", "seat-1-agent": "heuristic"}
+    assert client.post("/matches/create", data).status_code == 302
+    match = Match.objects.get(owner=user)
+    assert match.status == Match.Status.FINISHED, match.error
+    seat = match.seats.get(position=1)
+    assert seat.metagame_deck == meta and seat.deck_name == "Goblins"
+    assert "Metagame · MTGTop8" in client.get(f"/matches/{match.id}").content.decode()
+
+
+@pytest.mark.django_db
+def test_a_metagame_deck_of_another_format_or_failed_is_refused(client, user):
+    from .factories import make_constructed_deck
+
+    mine = make_constructed_deck(user)
+    other = _metagame("pauper")
+    broken = _metagame(status="failed", error="Missing Card")
+    for value, message in ((f"metagame:{other.id}", b"not a Modern metagame deck"), (f"metagame:{broken.id}", b"could not be imported")):
+        data = {"format": "modern", "seat-0-deck": str(mine.id), "seat-1-deck": value}
+        response = client.post("/matches/create", data)
+        assert response.status_code == 422 and message in response.content

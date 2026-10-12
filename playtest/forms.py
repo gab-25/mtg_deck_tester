@@ -4,7 +4,7 @@ import random
 from dataclasses import dataclass
 
 from decks.formats import DEFAULT_FORMAT, FORMATS
-from decks.models import Deck
+from decks.models import Deck, MetagameDeck
 
 from . import benchmarks
 from .agents import openrouter
@@ -12,6 +12,8 @@ from .models import Seat
 
 # A seat's deck picker value for a bundled benchmark deck.
 BENCHMARK_PREFIX = "benchmark:"
+# A seat's deck picker value for a metagame deck.
+METAGAME_PREFIX = "metagame:"
 # Seats that ask a model through OpenRouter.
 MODEL_AGENTS = {Seat.Agent.LLM, Seat.Agent.JEV}
 
@@ -22,15 +24,20 @@ MAX_ROUNDS_LIMIT = 100
 
 @dataclass
 class SeatChoice:
-    # A user's deck, or None for a bundled benchmark deck.
+    # A user's deck, or None for a bundled benchmark or a metagame deck.
     deck: Deck | None
     benchmark: str
     agent: str
     model: str
+    metagame_deck: MetagameDeck | None = None
 
     @property
     def name(self) -> str:
-        return self.deck.name if self.deck is not None else benchmarks.label(self.benchmark)
+        if self.deck is not None:
+            return self.deck.name
+        if self.metagame_deck is not None:
+            return self.metagame_deck.archetype
+        return benchmarks.label(self.benchmark)
 
 
 @dataclass
@@ -74,6 +81,17 @@ def parse_match_form(post, user) -> tuple[MatchForm | None, list[str]]:
         if agent not in agents:
             errors.append(f"Seat {row + 1}: unknown agent {agent!r}.")
         model = (post.get(f"seat-{row}-model") or "").strip()
+        if deck_id.startswith(METAGAME_PREFIX):
+            meta = MetagameDeck.objects.filter(pk=_int(deck_id.removeprefix(METAGAME_PREFIX))).first()
+            if meta is None:
+                errors.append(f"Seat {row + 1}: that metagame deck is gone; sync again or pick another.")
+            elif meta.format != fmt:
+                errors.append(f"Seat {row + 1}: {meta.archetype} is not a {rules.label} metagame deck.")
+            elif meta.status != MetagameDeck.Status.READY:
+                errors.append(f"Seat {row + 1}: {meta.archetype} could not be imported ({meta.error}).")
+            else:
+                seats.append(SeatChoice(deck=None, benchmark="", agent=agent, model=model, metagame_deck=meta))
+            continue
         if deck_id.startswith(BENCHMARK_PREFIX):
             key = deck_id.removeprefix(BENCHMARK_PREFIX)
             if key not in benchmarks.BENCHMARKS:

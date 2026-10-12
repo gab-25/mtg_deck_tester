@@ -92,9 +92,13 @@ def build_agent(seat: Seat, seed: int):
 
 
 def compile_seat(seat: Seat, cache) -> list[judge.DeckEntry]:
-    """The compiled cards of a seat's deck: a bundled benchmark, or the user's deck."""
+    """The compiled cards of a seat's deck: a benchmark, a metagame deck, or the user's deck."""
     if seat.benchmark:
         return benchmarks.entries(seat.benchmark)
+    if seat.metagame_deck_id is not None:
+        if seat.metagame_deck is None:
+            raise ValueError(f"The metagame deck of seat {seat.position + 1} was replaced by a newer sync.")
+        return judge.compile_deck(seat.metagame_deck.main_cards, cache)
     if seat.deck is None:
         raise ValueError(f"The deck of seat {seat.position + 1} was deleted.")
     # The sideboard never plays.
@@ -105,7 +109,7 @@ def run_match(match_id) -> None:
     """Background job: plays ``match_id`` and records every event as it happens."""
     with job_log_context("match", match_id):
         match = Match.objects.get(pk=match_id)
-        seats = list(match.seats.select_related("deck"))
+        seats = list(match.seats.select_related("deck", "metagame_deck"))
         Match.objects.filter(pk=match_id).update(status=Match.Status.RUNNING)
 
         def persist(recorded):

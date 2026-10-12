@@ -6,13 +6,13 @@ from django.shortcuts import redirect, render
 from django.views.decorators.http import require_http_methods
 
 from decks.formats import DEFAULT_FORMAT, FORMATS, format_choices
-from decks.models import Deck
+from decks.models import Deck, MetagameDeck
 from mtg_deck_tester.access import get_owned_or_404
 from mtg_deck_tester.jobs import start_job
 
 from . import benchmarks
 from .agents import openrouter, typesafe
-from .forms import BENCHMARK_PREFIX, SEAT_ROWS, parse_match_form
+from .forms import BENCHMARK_PREFIX, METAGAME_PREFIX, SEAT_ROWS, parse_match_form
 from .models import Match, Seat
 from .runner import run_match
 
@@ -54,6 +54,10 @@ def _form_context(user, post=None, **extra) -> dict:
         "form_seed": post.get("seed", ""),
         "form_max_rounds": post.get("max_rounds", 20),
         "agent_choices": Seat.Agent.choices,
+        "metagame_decks": [
+            (f"{METAGAME_PREFIX}{meta.id}", meta)
+            for meta in MetagameDeck.objects.filter(status=MetagameDeck.Status.READY).order_by("format", "rank")
+        ],
         "benchmarks": [
             (BENCHMARK_PREFIX + key, label, benchmarks.family(key)) for key, label in benchmarks.choices()
         ],
@@ -95,6 +99,7 @@ def create_match(request):
                 position=position,
                 deck=choice.deck,
                 benchmark=choice.benchmark,
+                metagame_deck=choice.metagame_deck,
                 deck_name=choice.name,
                 agent=choice.agent,
                 model=choice.model,

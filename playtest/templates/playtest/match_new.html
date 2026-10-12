@@ -56,6 +56,13 @@
                                     {% endfor %}
                                 </optgroup>
                                 {% endif %}
+                                {% if metagame_decks %}
+                                <optgroup label="Metagame">
+                                    {% for value, meta in metagame_decks %}
+                                    <option value="{{ value }}" data-format="{{ meta.format }}" {% if row.deck == value %}selected{% endif %}>{{ meta.label }}{% if meta.low_coverage %} ⚠ low coverage{% endif %}</option>
+                                    {% endfor %}
+                                </optgroup>
+                                {% endif %}
                                 <optgroup label="Benchmark decks">
                                     {% for value, label, family in benchmarks %}
                                     <option value="{{ value }}" data-family="{{ family }}" {% if row.deck == value %}selected{% endif %}>{{ label }}</option>
@@ -113,6 +120,7 @@
                         <li>Cards do what their compiled rules say; a card the compiler cannot read plays as a blank.</li>
                         <li>Mana is paid automatically, and opening hands use a fixed mulligan rule.</li>
                         <li>Benchmark decks are opponents built to be fully simulated.</li>
+                        <li>Metagame decks are the top decks of each format (<span class="font-mono2">manage.py sync_metagame</span>); ⚠ marks a deck under 70% coverage.</li>
                     </ul>
                 </div>
 
