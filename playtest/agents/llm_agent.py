@@ -71,5 +71,5 @@ class LLMAgent:
         except (openrouter.ChatError, ValueError) as exc:
             logger.warning("LLM agent (%s) fell back to random: %s", self.model, exc)
             fallback = self.fallback.choose(view, options)
-            return Decision(fallback.action, fallback_reason=str(exc))
+            return Decision(fallback.action, fallback_reason=str(exc), fallback_agent="random", fallback_kind="error")
         return Decision(options[index], reasoning=reason)
