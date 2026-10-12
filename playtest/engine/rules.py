@@ -80,6 +80,7 @@ from .effects import (
     toughness,
     ward_cost,
     counter_item,
+    cycling_ability,
     first_option,
     player_ref,
     perm_ref,
@@ -87,7 +88,7 @@ from .effects import (
 from .events import Event, EventKind
 from .limits import Limits
 from .mana import pay
-from .manacost import parse_mana_cost
+from .manacost import ManaCost, parse_mana_cost
 from .state import GameState, PendingTarget, Player, StackItem
 from .zones import (
     Zone,
@@ -130,6 +131,8 @@ def apply(state: GameState, seat: int, action: Action, limits: Limits = Limits()
             return _cast(state, seat, action)
         case ActionKind.ACTIVATE:
             return _activate(state, seat, action)
+        case ActionKind.CYCLE:
+            return _cycle(state, seat, action)
         case ActionKind.DECLARE_ATTACKER:
             perm = state.permanent(action.permanent)
             perm.attacking = action.defender
@@ -187,13 +190,22 @@ def _missing_slot(item: StackItem) -> str | None:
 def _cast(state: GameState, seat: int, action: Action) -> list[Event]:
     player = state.player(seat)
     commander = action.kind == ActionKind.CAST_COMMANDER
-    zone = player.command if commander else player.hand
+    flashback = action.via == "flashback"
+    zone = player.command if commander else player.graveyard if flashback else player.hand
     card = next(c for c in zone if c.id == action.card)
-    base = commander_cost(state, seat, card.id) if commander else card.spec.cost
+    if commander:
+        base = commander_cost(state, seat, card.id)
+    elif flashback:
+        base = parse_mana_cost(card.spec.flashback)
+    elif action.via is not None:
+        base = ManaCost()
+    else:
+        base = card.spec.cost
     ward = sum(ward_cost(state, ref, seat) for _, ref in action.targets)
     cost = base.with_x(action.x or 0).plus_generic(ward)
     paid = pay(state, seat, cost)
     take_from(zone, card.id)
+    paid += _pay_other_costs(state, seat, card, action)
     tax = state.rules.commander_tax * player.commander_casts.get(card.id, 0) if commander else 0
     if commander:
         player.commander_casts[card.id] = player.commander_casts.get(card.id, 0) + 1
@@ -208,6 +220,7 @@ def _cast(state: GameState, seat: int, action: Action) -> list[Event]:
         targets=dict(action.targets),
         x=action.x or 0,
         is_creature_spell=card.spec.is_creature,
+        flashback=flashback,
     )
     state.stack.append(item)
     queue_event_triggers(state, Trigger.CAST, lambda perm, ability: cast_matches(ability.when, perm, seat, card.spec), seat)
@@ -278,6 +291,44 @@ def _activate(state: GameState, seat: int, action: Action) -> list[Event]:
     if missing is not None:
         state.pending_target = PendingTarget(item.id, missing)
     return events
+
+
+def _pay_other_costs(state: GameState, seat: int, card, action: Action) -> list[Event]:
+    """Pays what an alternative or additional cost asks beyond mana (``action.paid_with``)."""
+    player = state.player(seat)
+    events = []
+    paid_with = list(action.paid_with)
+    if action.via is not None and action.via.startswith("alt:"):
+        alt = card.spec.alt_costs[int(action.via.split(":")[1])]
+        if alt.life:
+            player.life -= alt.life
+            events.append(
+                Event(EventKind.EFFECT, seat, f"{player.name} pays {alt.life} life ({player.life}).", {"effect": "lose_life", "amount": alt.life, "life": player.life, "source": card.name, "source_seat": seat})
+            )
+        for _ in range(alt.exile_count):
+            pitched = take_from(player.hand, paid_with.pop(0))
+            put_card(state, pitched, Zone.EXILE)
+            events.append(Event(EventKind.EFFECT, seat, f"{player.name} exiles {pitched.name} from their hand.", {"effect": "pitch", "card": pitched.name}))
+        if alt.return_land:
+            land = state.permanent(paid_with.pop(0))
+            events.append(Event(EventKind.EFFECT, seat, f"{player.name} returns {land.name} to their hand.", {"effect": "return_to_hand", "card": land.name}))
+            events += leave_battlefield(state, land, Zone.HAND)
+    if card.spec.extra_sacrifice:
+        victim = state.permanent(paid_with.pop(0))
+        events.append(Event(EventKind.EFFECT, seat, f"{player.name} sacrifices {victim.name}.", {"effect": "sacrifice", "card": victim.name}))
+        events += leave_battlefield(state, victim, Zone.GRAVEYARD)
+    return events
+
+
+def _cycle(state: GameState, seat: int, action: Action) -> list[Event]:
+    player = state.player(seat)
+    card = take_from(player.hand, action.card)
+    events = pay(state, seat, parse_mana_cost(card.spec.cycling))
+    put_card(state, card, Zone.GRAVEYARD)
+    state.stack.append(
+        StackItem(id=state.new_id(), controller=seat, card=None, source_name=card.name, source_id=None, abilities=(cycling_ability(card.spec),))
+    )
+    return events + [Event(EventKind.ACTIVATE, seat, f"{player.name} cycles {card.name}.", {"card": card.name, "effect": "cycle"})]
 
 
 def cast_matches(when: str, watcher, caster: int, spec) -> bool:
@@ -355,7 +406,7 @@ def resolve_top(state: GameState, choose=None) -> list[Event]:
     else:
         events += effects
     if item.card is not None:
-        put_card(state, item.card, Zone.GRAVEYARD)
+        put_card(state, item.card, Zone.EXILE if item.flashback else Zone.GRAVEYARD)
     return events
 
 

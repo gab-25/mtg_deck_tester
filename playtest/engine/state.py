@@ -129,6 +129,8 @@ class StackItem:
     is_creature_spell: bool = False
     # A triggered ability: the player its event was about ("that player").
     event_player: int | None = None
+    # A spell cast with flashback is exiled instead of going anywhere else.
+    flashback: bool = False
 
     @property
     def is_spell(self) -> bool:

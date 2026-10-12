@@ -872,12 +872,24 @@ ARTIFACT_TOKENS = {
 }
 
 
+def cycling_ability(spec: CardSpec) -> Ability:
+    """What cycling ``spec`` puts on the stack: draw a card, or find a land (landcycling)."""
+    you = (Target("t1", "YOU"),)
+    if spec.landcycling:
+        op = Op("SEARCH_LIBRARY", target="t1", amount=1, filter=spec.landcycling, to="HAND")
+    else:
+        op = Op("DRAW_CARDS", target="t1", amount=1)
+    return Ability(Trigger.ACTIVATED, (op,), you, text="cycling")
+
+
 def counter_item(state: GameState, item: StackItem, why: str) -> list[Event]:
     """Removes ``item`` from the stack without effect; a spell goes to its owner's graveyard."""
+    if item.card is not None and item.card.spec.uncounterable:
+        return [Event(EventKind.EFFECT, item.controller, f"{item.name} can't be countered.", {"card": item.name, "effect": "uncounterable"})]
     if item in state.stack:
         state.stack.remove(item)
     if item.card is not None:
-        put_card(state, item.card, Zone.GRAVEYARD)
+        put_card(state, item.card, Zone.EXILE if item.flashback else Zone.GRAVEYARD)
     return [Event(EventKind.COUNTERED, item.controller, f"{item.name} is {why}.", {"card": item.name, "reason": why})]
 
 

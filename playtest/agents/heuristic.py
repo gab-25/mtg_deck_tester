@@ -195,7 +195,7 @@ def incoming_damage(view: dict) -> int:
 
 
 def _card(view: dict, card_id: int) -> dict | None:
-    for zone in (view["you"]["hand"], view["you"]["command_zone"]):
+    for zone in (view["you"]["hand"], view["you"]["command_zone"], view["you"].get("graveyard_castable", [])):
         for card in zone:
             if card["id"] == card_id:
                 return card
@@ -351,6 +351,14 @@ def action_value(view: dict, action: Action) -> float:
     return total
 
 
+def _cycle_value(view: dict, card: dict) -> float:
+    """Cycle what will not be cast soon: lands past the fifth, spells well above the mana at hand."""
+    lands = sum(1 for p in view["you"]["battlefield"] if "land" in p["types"])
+    if "land" in card.get("types", ()):
+        return 1 if lands >= 5 else 0
+    return 1 if card.get("unsupported") or card.get("mana_value", 0) > lands + 2 else 0
+
+
 def is_removal(view: dict, action: Action) -> bool:
     me = view["you"]["seat"]
     for ref in dict(action.targets).values():
@@ -416,6 +424,11 @@ class HeuristicAgent:
         main = my_turn and view["step"] in ("main1", "main2") and not view["stack"]
         by_kind = lambda kind: [o for o in options if o.kind == kind]  # noqa: E731
         casts = by_kind(ActionKind.CAST)
+        # An alternative cost (pitching a card, returning a land) only when the
+        # mana cost cannot be paid; each card it uses up costs a little.
+        hard = {o.card for o in casts if o.via is None}
+        casts = [o for o in casts if o.via is None or o.via == "flashback" or o.card not in hard]
+        pitch = lambda o: 1.5 * len(o.paid_with) if o.via and o.via.startswith("alt:") else 0  # noqa: E731
 
         if main:
             lands = by_kind(ActionKind.PLAY_LAND)
@@ -428,7 +441,7 @@ class HeuristicAgent:
         if view["stack"] and view["stack"][-1]["controller"] != me:
             counter = _best(
                 [o for o in casts if any(r[0] == "s" for r in dict(o.targets).values())],
-                lambda o: action_value(view, o),
+                lambda o: action_value(view, o) - pitch(o),
             )
             if counter:
                 return counter
@@ -438,11 +451,11 @@ class HeuristicAgent:
             if removal:
                 return removal
         if main:
-            creatures = [o for o in casts if "creature" in (_card(view, o.card) or {}).get("types", ())]
+            creatures = [o for o in casts if "creature" in (_card(view, o.card) or {}).get("types", ()) and not pitch(o)]
             if creatures:
                 return min(creatures, key=lambda o: (-(_card(view, o.card) or {}).get("mana_value", 0), _tie_break(o)))
             permanents_ = [o for o in casts if not action_abilities(view, o) and "instant" not in (_card(view, o.card) or {}).get("types", ())]
-            spells = [o for o in casts if action_abilities(view, o)]
+            spells = [o for o in casts if action_abilities(view, o) and not pitch(o)]
             other = _best(spells, lambda o: action_value(view, o)) or _best(permanents_, lambda o: 1 + (_card(view, o.card) or {}).get("mana_value", 0))
             if other:
                 return other
@@ -458,6 +471,11 @@ class HeuristicAgent:
             activation = _best(by_kind(ActionKind.ACTIVATE), lambda o: action_value(view, o) - 0.5)
             if activation:
                 return activation
+        if instant_window:
+            # Nothing better to do with the mana: cycle what will not be cast soon.
+            cycle = _best(by_kind(ActionKind.CYCLE), lambda o: _cycle_value(view, _card(view, o.card) or {}))
+            if cycle:
+                return cycle
         return options[0]
 
     # -- combat ------------------------------------------------------------

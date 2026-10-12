@@ -26,7 +26,7 @@ from .manacost import ManaCostError, parse_mana_cost, parse_mana_symbols
 
 # Bump only when the accepted vocabulary or a program's meaning changes: it is
 # part of the compiled-rules cache key.
-DSL_VERSION = "4"
+DSL_VERSION = "5"
 
 
 class DslError(ValueError):

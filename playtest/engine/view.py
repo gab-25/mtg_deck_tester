@@ -55,6 +55,13 @@ def card_view(card: Card) -> dict:
         data["effects"] = effects(spec)
     if card.is_commander:
         data["commander"] = True
+    extras = {
+        "flashback": spec.flashback,
+        "cycling": spec.cycling,
+        "alternative_costs": len(spec.alt_costs),
+        "cant_be_countered": spec.uncounterable,
+    }
+    data.update({key: value for key, value in extras.items() if value})
     return data
 
 
@@ -116,6 +123,8 @@ def player_view(state: GameState, seat: int) -> dict:
             "command_zone": [card_view(c) for c in me.command],
             "commander_cost": costs or None,
             "graveyard": [c.name for c in me.graveyard],
+            # Cards castable from the graveyard (flashback), with their effects.
+            "graveyard_castable": [card_view(c) for c in me.graveyard if c.spec.flashback and c.spec.supported],
             "library_count": len(me.library),
             "lands_played_this_turn": me.lands_played,
             "commander_damage_taken": {

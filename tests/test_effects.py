@@ -893,3 +893,143 @@ def test_that_player_only_names_the_player_of_an_event():
     assert not you_cast.supported
     rhystic = compiled_spec("Tithe", "Enchantment", "{1}", "Whenever an opponent casts a spell, that player loses 1 life.")
     assert rhystic.program.abilities[0].when == "OPPONENT:SPELL"
+
+
+# -- alternative and additional costs, flashback, cycling --------------------------------
+
+
+FOW = "You may pay 1 life and exile a blue card from your hand rather than pay this spell's mana cost.\nCounter target spell."
+
+
+def _opponent_casts(state, spec, seat=1):
+    _mana(state, amount=spec.cost.mana_value, seat=seat)
+    spell = _hand(state, spec, seat=seat)
+    state.active_seat = seat
+    apply(state, seat, next(a for a in legal_actions(state, seat) if a.card == spell.id))
+    state.active_seat = 0
+    return spell
+
+
+def test_force_of_will_pitches_a_blue_card_and_pays_life():
+    game, state = _table()
+    _opponent_casts(state, card("Rock", "Artifact", "{1}"))
+    fow = _hand(state, compiled_spec("FoW", "Instant", "{3}{U}{U}", FOW))
+    brainstorm = _hand(state, card("Storm", "Instant", "{U}"))
+    _hand(state, card("Bolt", "Instant", "{R}"))
+    casts = [a for a in legal_actions(state, 0) if a.card == fow.id]
+    assert [a.paid_with for a in casts] == [(brainstorm.id,)]
+    assert "exiling Storm" in casts[0].label and "1 life" in casts[0].label
+    apply(state, 0, casts[0])
+    resolve_top(state)
+    assert state.player(0).life == 19
+    assert [c.name for c in state.player(0).exile] == ["Storm"]
+    assert any(c.name == "Rock" for c in state.player(1).graveyard)
+
+
+def test_force_of_negation_only_off_turn_and_daze_returns_an_island():
+    game, state = _table()
+    fon_text = "If it's not your turn, you may exile a blue card from your hand rather than pay this spell's mana cost.\nCounter target noncreature spell."
+    _opponent_casts(state, card("Rock", "Artifact", "{1}"))
+    fon = _hand(state, compiled_spec("FoN", "Instant", "{1}{U}{U}", fon_text))
+    _hand(state, card("Storm", "Instant", "{U}"))
+    state.active_seat = 0
+    assert not [a for a in legal_actions(state, 0) if a.card == fon.id]
+    state.active_seat = 1
+    assert [a for a in legal_actions(state, 0) if a.card == fon.id]
+
+    game, state = _table()
+    _opponent_casts(state, card("Rock", "Artifact", "{1}"))
+    island = _put(state, card("Island", "Basic Land", produces="U"), tapped=True)
+    daze = _hand(state, compiled_spec("Daze", "Instant", "{1}{U}", "You may return an Island you control to its owner's hand rather than pay this spell's mana cost.\nCounter target spell unless its controller pays {1}."))
+    [cast] = [a for a in legal_actions(state, 0) if a.card == daze.id]
+    apply(state, 0, cast)
+    assert island not in state.battlefield and any(c.name == "Island" for c in state.player(0).hand)
+
+
+def test_a_commander_makes_fierce_guardianship_free():
+    game, state = _table(rules=COMMANDER)
+    _opponent_casts(state, card("Rock", "Artifact", "{1}"))
+    text = "If you control a commander, you may cast this spell without paying its mana cost.\nCounter target noncreature spell."
+    guard = _hand(state, compiled_spec("Guard", "Instant", "{2}{U}", text))
+    assert not [a for a in legal_actions(state, 0) if a.card == guard.id]
+    commander = _put(state, bear())
+    commander.card.is_commander = True
+    assert [a for a in legal_actions(state, 0) if a.card == guard.id]
+
+
+def test_an_additional_sacrifice_cost_is_paid_on_cast():
+    game, state = _table()
+    _mana(state, amount=2)
+    rock = _put(state, card("Rock", "Artifact", "{1}"))
+    text = "As an additional cost to cast this spell, sacrifice an artifact or creature.\nDraw two cards."
+    dispute = _hand(state, compiled_spec("Dispute", "Instant", "{2}", text))
+    casts = [a for a in legal_actions(state, 0) if a.card == dispute.id]
+    assert [a.paid_with for a in casts] == [(rock.id,)]
+    hand = len(state.player(0).hand)
+    apply(state, 0, casts[0])
+    assert rock not in state.battlefield
+    resolve_top(state)
+    assert len(state.player(0).hand) == hand + 1
+
+
+def test_flashback_casts_from_the_graveyard_and_exiles_the_card():
+    game, state = _table()
+    _mana(state, amount=3)
+    looting = compiled_spec("Looting", "Sorcery", "{R}", "Draw two cards, then discard two cards.\nFlashback {3}", keywords=("Flashback",))
+    assert looting.flashback
+    state.player(0).graveyard.append(Card(state.new_id(), looting, 0))
+    [cast] = [a for a in legal_actions(state, 0) if a.via == "flashback"]
+    apply(state, 0, cast)
+    resolve_top(state)
+    assert [c.name for c in state.player(0).exile] == ["Looting"] and not state.player(0).graveyard[-1:] == ["Looting"]
+
+
+def test_cycling_and_landcycling():
+    game, state = _table()
+    _mana(state, amount=3)
+    _library(state, 0, card("Plains", "Basic Land", produces="W"))
+    mako = _hand(state, compiled_spec("Mako", "Creature — Shark", "{U}", "Cycling {2}", "1", "1", keywords=("Cycling",)))
+    revealed = _hand(state, compiled_spec("Revealed", "Sorcery", "{4}{U}{U}", "Draw three cards.\nIslandcycling {1}", keywords=("Islandcycling",)))
+    cycles = [a for a in legal_actions(state, 0) if a.kind == ActionKind.CYCLE]
+    assert {a.card for a in cycles} == {mako.id, revealed.id}
+    apply(state, 0, next(a for a in cycles if a.card == mako.id))
+    resolve_top(state)
+    assert mako in state.player(0).graveyard and state.player(0).hand[-1].name == "Plains"
+    _library(state, 0, card("Island", "Basic Land", produces="U"))
+    apply(state, 0, next(a for a in legal_actions(state, 0) if a.kind == ActionKind.CYCLE and a.card == revealed.id))
+    resolve_top(state, _by_label("Find Island"))
+    assert state.player(0).hand[-1].name == "Island"
+
+
+def test_a_spell_that_cant_be_countered():
+    game, state = _table()
+    decay = compiled_spec("Decay", "Instant", "{2}", "This spell can't be countered.\nDraw a card.")
+    assert decay.uncounterable
+    _mana(state, amount=1)
+    _opponent_casts(state, decay)
+    item = state.stack[-1]
+    _cast(state, compiled_spec("Negate", "Instant", "{1}", "Counter target spell."), targets=[f"s{item.id}"])
+    assert item in state.stack
+
+
+def test_a_game_with_alternative_costs_flashback_and_cycling_keeps_its_invariants():
+    from playtest.agents.heuristic import HeuristicAgent
+    from playtest.engine.cards import DeckSpec
+    from playtest.engine.game import Game
+
+    island = card("Island", "Basic Land", produces="U")
+    specs = [
+        compiled_spec("FoW", "Instant", "{3}{U}{U}", FOW),
+        compiled_spec("Daze", "Instant", "{1}{U}", "You may return an Island you control to its owner's hand rather than pay this spell's mana cost.\nCounter target spell unless its controller pays {1}."),
+        compiled_spec("Looting", "Sorcery", "{U}", "Draw two cards, then discard two cards.\nFlashback {2}{U}", keywords=("Flashback",)),
+        compiled_spec("Mako", "Creature — Shark", "{6}{U}{U}", "Cycling {2}", "8", "8", keywords=("Cycling",)),
+        compiled_spec("Dispute", "Instant", "{1}{U}", "As an additional cost to cast this spell, sacrifice an artifact or creature.\nDraw two cards."),
+    ]
+    library = [island] * 22 + specs * 4 + [card(f"Bear {i}", "Creature", "{1}{U}", 2, 2) for i in range(18)]
+    decks = [DeckSpec(name, None, tuple(library)) for name in "AB"]
+    labels = set()
+    for seed in range(4):
+        result = Game(decks, [HeuristicAgent(0), HeuristicAgent(1)], DUEL, seed=seed, max_rounds=30, check_invariants=True).run()
+        assert "agent_fallback" not in [e.event.kind for e in result.events]
+        labels |= {e.event.payload.get("effect") for e in result.events}
+    assert {"pitch", "cycle"} <= labels

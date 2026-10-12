@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from .cardrules import SUPPORTED_KEYWORDS, CardFacts, ManaAbility
+from .cardrules import SUPPORTED_KEYWORDS, AltCost, CardFacts, ManaAbility
 from .dsl import CardProgram, Trigger
 from .manacost import ManaCost, ManaCostError, parse_mana_cost
 
@@ -40,6 +40,14 @@ class CardSpec:
     keywords: tuple[str, ...] = ()
     ward: int = 0
     program: CardProgram | None = CardProgram()
+    # Casting beyond the mana cost (see CardFacts): alternative costs, an extra
+    # sacrifice, "can't be countered", flashback / cycling costs.
+    alt_costs: tuple[AltCost, ...] = ()
+    extra_sacrifice: str = ""
+    uncounterable: bool = False
+    flashback: str = ""
+    cycling: str = ""
+    landcycling: str = ""
 
     @classmethod
     def from_facts(cls, facts: CardFacts, program: CardProgram | None) -> "CardSpec":
@@ -59,6 +67,12 @@ class CardSpec:
             keywords=facts.keywords,
             ward=facts.ward,
             program=program,
+            alt_costs=facts.alt_costs,
+            extra_sacrifice=facts.extra_sacrifice,
+            uncounterable=facts.uncounterable,
+            flashback=facts.flashback,
+            cycling=facts.cycling,
+            landcycling=facts.landcycling,
         )
 
     @property

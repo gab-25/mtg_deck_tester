@@ -2,7 +2,7 @@
 
 import pytest
 
-from playtest.engine.cardrules import ResidualClass, characteristics
+from playtest.engine.cardrules import AltCost, ResidualClass, characteristics
 from playtest.engine.clauses import SplitError, split_abilities
 from playtest.engine.dsl import Trigger
 from playtest.engine.manacost import ManaCost, ManaCostError, parse_mana_cost
@@ -279,3 +279,51 @@ def test_costed_mana_abilities_are_refused():
 def test_modes_on_a_triggered_ability_are_refused():
     with pytest.raises(SplitError, match="modes"):
         _split("When this creature enters, choose one —\n• You gain 3 life.\n• Draw a card.", "Creature — Elf")
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        (
+            "You may pay 1 life and exile a blue card from your hand rather than pay this spell's mana cost.",
+            AltCost(life=1, exile_color="U", exile_count=1),
+        ),
+        (
+            "If it's not your turn, you may exile a blue card from your hand rather than pay this spell's mana cost.",
+            AltCost(exile_color="U", exile_count=1, condition="NOT_YOUR_TURN"),
+        ),
+        ("You may return an Island you control to its owner's hand rather than pay this spell's mana cost.", AltCost(return_land="island")),
+        ("If you control a commander, you may cast this spell without paying its mana cost.", AltCost(condition="CONTROL_COMMANDER")),
+    ],
+)
+def test_alternative_costs_are_read_in_code(text, expected):
+    facts = characteristics(raw_card("Spell", "Instant", "{3}{U}", text + "\nDraw a card."))
+    assert facts.alt_costs == (expected,)
+    assert facts.residual == "draw a card."
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "You may discard two cards rather than pay this spell's mana cost.",
+        "You may cast this spell without paying its mana cost.",
+    ],
+)
+def test_an_alternative_cost_it_cannot_check_stays_in_the_text(text):
+    facts = characteristics(raw_card("Spell", "Instant", "{3}{U}", text))
+    assert facts.alt_costs == () and facts.residual
+
+
+def test_casting_keywords_and_additional_costs():
+    facts = characteristics(
+        raw_card(
+            "Spell",
+            "Sorcery",
+            "{1}{R}",
+            "As an additional cost to cast this spell, sacrifice a creature.\nThis spell can't be countered.\nDraw a card.\nFlashback {2}{R}\nMountaincycling {1}",
+            keywords=["Flashback", "Mountaincycling"],
+        )
+    )
+    assert (facts.extra_sacrifice, facts.uncounterable, facts.flashback) == ("creature", True, "{2}{R}")
+    assert (facts.cycling, facts.landcycling) == ("{1}", "TYPES:mountain")
+    assert facts.residual == "draw a card."

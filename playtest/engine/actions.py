@@ -15,7 +15,7 @@ same state) are offered once.
 """
 
 from dataclasses import dataclass, field
-from itertools import product
+from itertools import combinations, product
 
 from .cards import CardSpec
 from .dsl import Trigger, describe_ability
@@ -50,6 +50,8 @@ class ActionKind:
     CHOOSE_TARGET = "choose_target"
     # An answer to a choice an effect asks for while it resolves.
     CHOOSE = "choose"
+    # Cycling or landcycling a card from hand.
+    CYCLE = "cycle"
 
 
 # The do-nothing actions: what a forced or capped decision falls back to.
@@ -63,6 +65,7 @@ _RANK = {
     ActionKind.CAST_COMMANDER: 2,
     ActionKind.CAST: 3,
     ActionKind.ACTIVATE: 4,
+    ActionKind.CYCLE: 4,
     ActionKind.DECLARE_ATTACKER: 5,
     ActionKind.DECLARE_BLOCKER: 5,
     ActionKind.UNDO_BLOCKER: 6,
@@ -89,6 +92,11 @@ class Action:
     attacker: int | None = None
     # CHOOSE_TARGET: the ref chosen.
     ref: str | None = None
+    # How a spell is paid for beyond mana: "alt:<index>" (an alternative cost)
+    # or "flashback"; and the cards or permanents that cost uses (exiled from
+    # hand, returned, sacrificed).
+    via: str | None = None
+    paid_with: tuple[int, ...] = ()
     # Human-readable description, for agents and the match log.
     label: str = field(default="", compare=False)
     # The card's name, for sorting and agents.
@@ -96,12 +104,14 @@ class Action:
 
     def to_dict(self) -> dict:
         data = {"kind": self.kind, "label": self.label}
-        for key in ("card", "permanent", "ability", "mode", "x", "defender", "attacker", "ref"):
+        for key in ("card", "permanent", "ability", "mode", "x", "defender", "attacker", "ref", "via"):
             value = getattr(self, key)
             if value is not None:
                 data[key] = value
         if self.targets:
             data["targets"] = dict(self.targets)
+        if self.paid_with:
+            data["paid_with"] = list(self.paid_with)
         return data
 
     @property
@@ -168,7 +178,73 @@ def _targets_label(state: GameState, targets) -> str:
     return " targeting " + ", ".join(ref_label(state, ref) for _, ref in targets)
 
 
-def _spell_actions(state: GameState, seat: int, card: Card, kind: str, base: ManaCost, limits: Limits) -> list[Action]:
+def _fits_sacrifice(perm: Permanent, what: str) -> bool:
+    match what:
+        case "artifact or creature":
+            return perm.spec.is_creature or "artifact" in perm.spec.types
+        case "nonland permanent":
+            return not perm.spec.is_land
+        case "permanent":
+            return True
+    return what in perm.spec.types
+
+
+def alt_cost_usable(state: GameState, seat: int, alt) -> bool:
+    if alt.condition == "NOT_YOUR_TURN" and state.active_seat == seat:
+        return False
+    if alt.condition == "CONTROL_COMMANDER" and not any(p.is_commander for p in state.controlled(seat)):
+        return False
+    # CR 119.4: life can be paid only up to the life total.
+    return state.player(seat).life >= alt.life
+
+
+def _payments(state: GameState, seat: int, card: Card, base: ManaCost, via: str | None) -> list[tuple]:
+    """The ways to pay for ``card``: ``(via, paid_with, mana cost, label)``."""
+    spec = card.spec
+    player = state.player(seat)
+    ways = [(via, (), base, " for its flashback cost" if via == "flashback" else "")]
+    if via is None:
+        for index, alt in enumerate(spec.alt_costs):
+            if not alt_cost_usable(state, seat, alt):
+                continue
+            pitches = [()]
+            if alt.exile_count:
+                pool, seen = [], set()
+                for other in sorted(player.hand, key=lambda c: c.id):
+                    if other.id != card.id and alt.exile_color in other.spec.colors:
+                        pool.append(other)
+                pitches = []
+                for combo in combinations(pool, alt.exile_count):
+                    names = tuple(sorted(c.name for c in combo))
+                    if names not in seen:
+                        seen.add(names)
+                        pitches.append(combo)
+            bounces = [None]
+            if alt.return_land:
+                bounces = [p for p in _distinct(state, state.controlled(seat)) if p.spec.is_land and alt.return_land in p.spec.subtypes]
+            for pitch in pitches:
+                for bounce in bounces:
+                    parts = [f"paying {alt.life} life"] if alt.life else []
+                    if pitch:
+                        parts.append("exiling " + " and ".join(c.name for c in pitch))
+                    if bounce is not None:
+                        parts.append(f"returning {bounce.name}")
+                    label = " by " + " and ".join(parts) if parts else " without paying its mana cost"
+                    paid = tuple(c.id for c in pitch) + ((bounce.id,) if bounce is not None else ())
+                    ways.append((f"alt:{index}", paid, ManaCost(), label))
+    if not spec.extra_sacrifice:
+        return ways
+    victims = [p for p in _distinct(state, state.controlled(seat)) if _fits_sacrifice(p, spec.extra_sacrifice)]
+    return [
+        (way, paid + (victim.id,), cost, label + f", sacrificing {victim.name}")
+        for way, paid, cost, label in ways
+        for victim in victims
+    ]
+
+
+def _spell_actions(
+    state: GameState, seat: int, card: Card, kind: str, base: ManaCost, limits: Limits, via: str | None = None
+) -> list[Action]:
     spec = card.spec
     srcs = sources(state, seat)
     total = sum(s.amount for s in srcs)
@@ -180,20 +256,26 @@ def _spell_actions(state: GameState, seat: int, card: Card, kind: str, base: Man
         mode_label = ""
         if mode is not None:
             mode_label = f" — mode: {describe_ability(spec.program.abilities[mode])}"
-        xs = range(0, max(0, min(total - base.total(), limits.max_x)) + 1) if base.x else [None]
-        for x in xs:
-            cost = base.with_x(x or 0)
-            for targets in combos if combos is not None else [()]:
-                ward = sum(ward_cost(state, ref, seat) for _, ref in targets)
-                if not can_pay(srcs, cost.plus_generic(ward)):
-                    continue
-                verb = "Cast your commander" if kind == ActionKind.CAST_COMMANDER else "Cast"
-                label = f"{verb} {spec.name} ({cost.plus_generic(ward)})"
-                if x is not None:
-                    label += f" with X={x}"
-                label += mode_label
-                label += _targets_label(state, targets) if combos is not None else " (targets chosen next)"
-                actions.append(Action(kind, card=card.id, mode=mode, x=x, targets=targets, label=label, name=spec.name))
+        for way, paid_with, way_cost, way_label in _payments(state, seat, card, base, via):
+            # An alternative cost replaces the whole mana cost, X included (X is 0).
+            xs = range(0, max(0, min(total - way_cost.total(), limits.max_x)) + 1) if way_cost.x else [None]
+            for x in xs:
+                cost = way_cost.with_x(x or 0)
+                for targets in combos if combos is not None else [()]:
+                    ward = sum(ward_cost(state, ref, seat) for _, ref in targets)
+                    if not can_pay(srcs, cost.plus_generic(ward)):
+                        continue
+                    verb = "Cast your commander" if kind == ActionKind.CAST_COMMANDER else "Cast"
+                    label = f"{verb} {spec.name} ({cost.plus_generic(ward)}){way_label}"
+                    if x is not None:
+                        label += f" with X={x}"
+                    label += mode_label
+                    label += _targets_label(state, targets) if combos is not None else " (targets chosen next)"
+                    actions.append(
+                        Action(
+                            kind, card=card.id, mode=mode, x=x, targets=targets, via=way, paid_with=paid_with, label=label, name=spec.name
+                        )
+                    )
     return actions
 
 
@@ -272,11 +354,32 @@ def _priority_actions(state: GameState, seat: int, limits: Limits) -> list[Actio
             if spec.is_spell_only and not spec.supported:
                 continue
             actions += _spell_actions(state, seat, card, ActionKind.CAST, spec.cost, limits)
+        seen = set()
+        for card in sorted(player.graveyard, key=lambda c: c.id):
+            spec = card.spec
+            if not spec.flashback or not spec.supported or card.name in seen or not _can_cast_now(state, seat, spec):
+                continue
+            seen.add(card.name)
+            actions += _spell_actions(state, seat, card, ActionKind.CAST, parse_mana_cost(spec.flashback), limits, via="flashback")
+        actions += _cycling(state, seat)
         for commander in sorted(player.command, key=lambda c: c.id):
             cost = commander_cost(state, seat, commander.id)
             if _can_cast_now(state, seat, commander.spec) and (commander.spec.supported or not commander.spec.is_spell_only):
                 actions += _spell_actions(state, seat, commander, ActionKind.CAST_COMMANDER, cost, limits)
         actions += _activations(state, seat, limits)
+    return actions
+
+
+def _cycling(state: GameState, seat: int) -> list[Action]:
+    actions, seen = [], set()
+    srcs = sources(state, seat)
+    for card in sorted(state.player(seat).hand, key=lambda c: c.id):
+        spec = card.spec
+        if not spec.cycling or card.name in seen or not can_pay(srcs, parse_mana_cost(spec.cycling)):
+            continue
+        seen.add(card.name)
+        what = "find a " + spec.landcycling.removeprefix("TYPES:").replace("_", " ").lower() if spec.landcycling else "draw a card"
+        actions.append(Action(ActionKind.CYCLE, card=card.id, label=f"Cycle {spec.name} ({spec.cycling}): discard it, {what}", name=spec.name))
     return actions
 
 
@@ -394,6 +497,8 @@ def _sort_key(action: Action):
         action.attacker or 0,
         action.targets,
         action.ref or "",
+        action.via or "",
+        action.paid_with,
     )
 
 

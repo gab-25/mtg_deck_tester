@@ -135,6 +135,20 @@ class ManaAbility:
 
 
 @dataclass(frozen=True, slots=True)
+class AltCost:
+    """A cost a spell may be cast for instead of its mana cost, read from its text."""
+
+    life: int = 0
+    # Cards of this color (W, U, B, R, G) exiled from its caster's hand, and how many.
+    exile_color: str = ""
+    exile_count: int = 0
+    # A land of this subtype its caster controls, returned to its owner's hand.
+    return_land: str = ""
+    # When it may be used: "" always, "NOT_YOUR_TURN", "CONTROL_COMMANDER".
+    condition: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class CardFacts:
     """What the kernel knows about a card before any model is involved."""
 
@@ -170,6 +184,17 @@ class CardFacts:
     mana_abilities: tuple[ManaAbility, ...] = ()
     # Multi-faced cards are played as their front face only.
     partial: bool = False
+    # How the card may be cast or used beyond its mana cost, read in code:
+    # alternative costs, a permanent sacrificed as an additional cost
+    # ("artifact or creature"…), "can't be countered", and the flashback,
+    # cycling and landcycling costs (mana, "" when absent).
+    alt_costs: tuple[AltCost, ...] = ()
+    extra_sacrifice: str = ""
+    uncounterable: bool = False
+    flashback: str = ""
+    cycling: str = ""
+    # What landcycling finds: a search filter ("TYPES:island", "BASIC_LAND").
+    landcycling: str = ""
 
     @property
     def legendary(self) -> bool:
@@ -261,6 +286,45 @@ def _mana_amount(add_clause: str) -> int:
     return max((len(re.findall(r"\{[^}]+\}", option)) for option in options), default=1) or 1
 
 
+_COLOR_NAMES = {"white": "W", "blue": "U", "black": "B", "red": "R", "green": "G"}
+_ALT_COST = re.compile(
+    r"^(?:if (?P<cond>it's not your turn|you control a commander), )?you may "
+    r"(?:(?P<parts>.+?) rather than pay this spell's mana cost|(?P<free>cast this spell without paying its mana cost))\.$"
+)
+_ALT_CONDITIONS = {"it's not your turn": "NOT_YOUR_TURN", "you control a commander": "CONTROL_COMMANDER"}
+_EXTRA_SACRIFICE = re.compile(
+    r"^as an additional cost to cast this spell, sacrifice an? "
+    r"(?P<what>artifact or creature|creature|artifact|enchantment|land|nonland permanent|permanent)\.$"
+)
+_CYCLING = re.compile(r"^(?:(?P<type>plains|island|swamp|mountain|forest|basic land)?cycling) (?P<cost>(?:\{[^}]+\})+)$")
+_FLASHBACK = re.compile(r"^flashback (?P<cost>(?:\{[^}]+\})+)$")
+
+
+def _alt_cost(line: str) -> AltCost | None:
+    """An alternative cost line read in code, or None when it says anything else."""
+    match = _ALT_COST.match(line)
+    if not match:
+        return None
+    fields: dict = {"condition": _ALT_CONDITIONS.get(match.group("cond") or "", "")}
+    if match.group("free"):
+        # Only a condition makes casting for free a choice the kernel can check.
+        return AltCost(**fields) if fields["condition"] else None
+    for part in match.group("parts").split(" and "):
+        life = re.fullmatch(r"pay (\d+) life", part)
+        exile = re.fullmatch(r"exile (a|one|two) (white|blue|black|red|green) cards? from your hand", part)
+        bounce = re.fullmatch(r"return an? (plains|island|swamp|mountain|forest) you control to its owner's hand", part)
+        if life:
+            fields["life"] = int(life.group(1))
+        elif exile:
+            fields["exile_color"] = _COLOR_NAMES[exile.group(2)]
+            fields["exile_count"] = 1 if exile.group(1) in ("a", "one") else 2
+        elif bounce:
+            fields["return_land"] = bounce.group(1)
+        else:
+            return None
+    return AltCost(**fields)
+
+
 def _keyword_line(line: str, card_keywords: set[str]) -> list[str] | None:
     """The keywords a line consists of, or None when it is not a keyword line."""
     parts = [p.strip() for p in re.split(r"[,;]", line) if p.strip()]
@@ -315,6 +379,7 @@ def characteristics(card: dict) -> CardFacts:
     enters_tapped = False
     mana_abilities: list[ManaAbility] = []
     residual_lines: list[str] = []
+    casting: dict = {"alt_costs": []}
     for raw_line in oracle_text.splitlines():
         reminder = _REMINDER_MANA.match(raw_line.strip())
         line = reminder.group(1) if reminder else _NO_REGENERATION.sub("", _REMINDER.sub("", raw_line)).strip()
@@ -342,6 +407,18 @@ def characteristics(card: dict) -> CardFacts:
                 continue
 
         lowered = line.lower()
+        if "instant" in types or "sorcery" in types or "creature" in types:
+            alt = _alt_cost(lowered)
+            if alt is not None:
+                casting["alt_costs"].append(alt)
+                continue
+            extra = _EXTRA_SACRIFICE.match(lowered)
+            if extra and "extra_sacrifice" not in casting:
+                casting["extra_sacrifice"] = extra.group("what")
+                continue
+        if lowered == "this spell can't be countered.":
+            casting["uncounterable"] = True
+            continue
         if _ENTERS_TAPPED.search(lowered) and (
             lowered.startswith(noun) or lowered.startswith("as " + noun)
         ):
@@ -353,6 +430,19 @@ def characteristics(card: dict) -> CardFacts:
             unsupported = []
             for keyword in found:
                 ward_match = _WARD.match(keyword)
+                cycling = _CYCLING.match(keyword)
+                flashback = _FLASHBACK.match(keyword)
+                if cycling:
+                    kind = cycling.group("type")
+                    if kind is None:
+                        casting["cycling"] = cycling.group("cost").upper()
+                    else:
+                        casting["landcycling"] = "BASIC_LAND" if kind == "basic land" else f"TYPES:{kind}"
+                        casting["landcycling_cost"] = cycling.group("cost").upper()
+                    continue
+                if flashback and ("instant" in types or "sorcery" in types):
+                    casting["flashback"] = flashback.group("cost").upper()
+                    continue
                 if ward_match:
                     keywords.append("ward")
                     ward = int(ward_match.group(1))
@@ -410,4 +500,10 @@ def characteristics(card: dict) -> CardFacts:
         block_reason=block_reason,
         block_reasons=tuple(reasons),
         partial=partial,
+        alt_costs=tuple(casting["alt_costs"]),
+        extra_sacrifice=casting.get("extra_sacrifice", ""),
+        uncounterable=casting.get("uncounterable", False),
+        flashback=casting.get("flashback", ""),
+        cycling=casting.get("cycling", "") or casting.get("landcycling_cost", ""),
+        landcycling=casting.get("landcycling", ""),
     )
