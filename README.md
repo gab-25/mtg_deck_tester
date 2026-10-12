@@ -31,7 +31,8 @@ built so real rules can be added inside the engine without touching the rest.
   same game, event for event.
 - **Scryfall cache in the database**: card JSON is cached in Postgres
   (`scryfall_cards`) and shared by every deck. Card images are not stored: the
-  browser loads them straight from Scryfall's CDN (`cards.scryfall.io`).
+  browser loads them straight from Scryfall's CDN (`cards.scryfall.io`). The card table can be
+  filled in one go from Scryfall's bulk data (see [Local card database](#local-card-database)).
 - **Ownership**: decks and matches belong to the user who created them; anyone
   else gets a 404.
 
@@ -108,6 +109,31 @@ uv sync
 cp .env.example .env                  # then edit it
 uv run python manage.py createsuperuser
 uv run python -m mtg_deck_tester      # migrate + runserver
+```
+
+## Local card database
+
+Load every card from Scryfall's [Oracle Cards](https://scryfall.com/docs/api/bulk-data)
+bulk file into `scryfall_cards`, so importing a deck resolves its cards locally instead
+of calling the Scryfall API once per card:
+
+```bash
+uv run python manage.py load_oracle_cards                  # download (~25 MB gzipped) and load
+uv run python manage.py load_oracle_cards --if-newer       # skip if already up to date
+uv run python manage.py load_oracle_cards --file oracle-cards.jsonl.gz   # offline, local file (JSONL, gzipped or not)
+```
+
+With Docker: `docker compose exec web python manage.py load_oracle_cards`.
+
+A second run updates the cards it already has. Cards missing from the table (spoiled
+after the last load, a typo) still go through the Scryfall API.
+
+Scryfall regenerates the file daily, and the prices it carries are those of the download
+day. Run the command **daily or weekly** with `--if-newer` to keep cards and prices
+current, e.g. from cron:
+
+```cron
+30 4 * * * cd /path/to/mtg_deck_tester && uv run python manage.py load_oracle_cards --if-newer
 ```
 
 ## Configuration

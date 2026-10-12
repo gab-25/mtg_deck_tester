@@ -69,3 +69,19 @@ class ScryfallCard(models.Model):
 
     class Meta:
         db_table = "scryfall_cards"
+
+
+class BulkDataLoad(models.Model):
+    """One load of a Scryfall bulk-data file into ``scryfall_cards``."""
+
+    kind = models.CharField(max_length=64)
+    # ``updated_at`` of the remote file; null when loaded from a local file
+    # whose metadata could not be read.
+    updated_at = models.DateTimeField(null=True, blank=True)
+    loaded_at = models.DateTimeField(default=timezone.now)
+    inserted = models.PositiveIntegerField(default=0)
+    updated = models.PositiveIntegerField(default=0)
+    skipped = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        db_table = "scryfall_bulk_loads"
