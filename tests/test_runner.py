@@ -148,3 +148,11 @@ def test_deck_spec_without_a_commander():
     entries = _entries([c for c in constructed_cards() if c["board"] == "main"])
     spec = deck_spec("Goblins", entries, has_commander=False)
     assert spec.commander is None and len(spec.library) == 60
+
+
+def test_deck_spec_reads_a_partner_pair():
+    cards = stored_cards()
+    cards[2] = {"quantity": 1, "is_commander": True, "data": scryfall_card("Bear Partner", "Legendary Creature — Bear", 2.0, "2", "2")}
+    cards[1] = {**cards[1], "quantity": cards[1]["quantity"]}
+    spec = deck_spec("Bears", _entries(cards))
+    assert spec.commander.name == "Bear Lord" and spec.partner.name == "Bear Partner"

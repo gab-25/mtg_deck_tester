@@ -44,19 +44,21 @@ def card_spec(entry: judge.DeckEntry) -> CardSpec:
 
 
 def deck_spec(name: str, entries: list[judge.DeckEntry], *, has_commander: bool = True) -> DeckSpec:
-    """Expands a compiled deck into its library and, in Commander formats, its commander."""
-    commander = None
+    """Expands a compiled deck into its library and, in Commander formats, its
+    commander (and partner)."""
+    commanders = []
     library = []
     for entry in entries:
         spec = card_spec(entry)
-        if has_commander and entry.is_commander and commander is None:
-            commander = spec
+        if has_commander and entry.is_commander and len(commanders) < 2:
+            commanders.append(spec)
             library.extend([spec] * (entry.quantity - 1))
         else:
             library.extend([spec] * entry.quantity)
-    if has_commander and commander is None:
+    if has_commander and not commanders:
         raise ValueError(f"The deck {name!r} has no commander.")
-    return DeckSpec(name=name, commander=commander, library=tuple(library))
+    commander, partner = (commanders + [None, None])[:2]
+    return DeckSpec(name=name, commander=commander, partner=partner, library=tuple(library))
 
 
 def table_names(seats: list) -> list[str]:

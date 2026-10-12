@@ -595,3 +595,43 @@ def test_a_constructed_game_replays_from_its_seed():
         return _log(Game(decks, [HeuristicAgent(0), HeuristicAgent(1)], MODERN, seed=8, max_rounds=20).run())
 
     assert play() == play()
+
+
+def _partner_deck(name):
+    a = card(f"{name} A", "Legendary Creature", "{2}{G}", 11, 11)
+    b = card(f"{name} B", "Legendary Creature", "{2}{G}", 11, 11)
+    return DeckSpec(name=name, commander=a, partner=b, library=tuple([FOREST] * 98))
+
+
+def test_partners_start_in_the_command_zone_with_their_own_tax():
+    game = Game([_partner_deck("P"), engine_deck("B")], [Passive(), Passive()], COMMANDER, seed=1)
+    state = game.state
+    state.order, state.round, state.turn, state.active_seat, state.step = [0, 1], 1, 1, 0, Step.MAIN1
+    first, second = state.player(0).command
+    for _ in range(10):
+        _put(state, FOREST)
+    casts = [a for a in legal_actions(state, 0) if a.kind == ActionKind.CAST_COMMANDER]
+    assert {a.card for a in casts} == {first.id, second.id}
+    apply(state, 0, next(a for a in casts if a.card == first.id))
+    resolve_top(state)
+    assert str(commander_cost(state, 0, second.id)) == "{2}{G}"
+    first_perm = next(p for p in state.battlefield if p.card is first)
+    first_perm.damage = 99
+    check_state(state)
+    assert str(commander_cost(state, 0, first.id)) == "{4}{G}"
+
+
+def test_commander_damage_is_counted_per_commander():
+    game = Game([_partner_deck("P"), engine_deck("B"), engine_deck("C")], [Passive()] * 3, COMMANDER, seed=1)
+    state = game.state
+    a, b = (enter_battlefield(state, c, 0) for c in list(state.player(0).command))
+    state.player(0).command.clear()
+    a.attacking = b.attacking = 1
+    combat_damage(state, False, set())
+    check_state(state)
+    assert state.player(1).alive  # 11 + 11 from two different commanders
+    a.attacking, b.attacking = 1, None
+    combat_damage(state, False, set())
+    events = check_state(state)
+    assert not state.player(1).alive  # 22 from one commander
+    assert any("P A" in e.text for e in events)

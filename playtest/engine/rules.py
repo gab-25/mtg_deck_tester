@@ -171,14 +171,14 @@ def _cast(state: GameState, seat: int, action: Action) -> list[Event]:
     commander = action.kind == ActionKind.CAST_COMMANDER
     zone = player.command if commander else player.hand
     card = next(c for c in zone if c.id == action.card)
-    base = commander_cost(state, seat) if commander else card.spec.cost
+    base = commander_cost(state, seat, card.id) if commander else card.spec.cost
     ward = sum(ward_cost(state, ref, seat) for _, ref in action.targets)
     cost = base.with_x(action.x or 0).plus_generic(ward)
     pay(state, seat, cost)
     take_from(zone, card.id)
-    tax = state.rules.commander_tax * player.commander_casts if commander else 0
+    tax = state.rules.commander_tax * player.commander_casts.get(card.id, 0) if commander else 0
     if commander:
-        player.commander_casts += 1
+        player.commander_casts[card.id] = player.commander_casts.get(card.id, 0) + 1
     abilities = dict(ability_sets(card.spec))[action.mode]
     item = StackItem(
         id=state.new_id(),
@@ -333,9 +333,10 @@ def _loss_reason(state: GameState, player: Player) -> str | None:
         return "drew from an empty library"
     limit = state.rules.commander_damage_limit
     if limit is not None:
-        for source_seat, damage in sorted(player.commander_damage.items()):
+        for commander_id, damage in sorted(player.commander_damage.items()):
             if damage >= limit:
-                return f"{damage} combat damage from {state.player(source_seat).name}'s commander"
+                owner, name = state.commanders[commander_id]
+                return f"{damage} combat damage from {state.player(owner).name}'s commander {name}"
     return None
 
 
@@ -483,11 +484,14 @@ def combat_damage(state: GameState, first_strike_step: bool, dealt_first: set[in
         if first_strike_step:
             dealt_first.add(source.id)
         commander = source.is_commander and ref.startswith("p")
+        if commander:
+            state.commanders.setdefault(source.card.id, (source.owner, source.name))
         events += deal_damage(
             state,
             ref,
             amount,
             source_seat=source.owner if commander else source.controller,
+            commander_id=source.card.id if commander else None,
             source_name=source.name,
             deathtouch=has(state, source, "deathtouch"),
             combat=True,

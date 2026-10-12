@@ -156,9 +156,10 @@ class Player:
     graveyard: list[Card] = field(default_factory=list)
     exile: list[Card] = field(default_factory=list)
     command: list[Card] = field(default_factory=list)
-    commander_casts: int = 0
+    # Casts from the command zone so far, per commander card id (each pays its own tax).
+    commander_casts: dict[int, int] = field(default_factory=dict)
     lands_played: int = 0
-    # Combat damage taken from each opposing commander, by its owner's seat.
+    # Combat damage taken from each commander, by the commander's card id (CR 903.10a).
     commander_damage: dict[int, int] = field(default_factory=dict)
     eliminated_round: int | None = None
     # Set when a draw found the library empty (checked by state-based actions).
@@ -210,6 +211,8 @@ class GameState:
     order: list[int] = field(default_factory=list)
     combat: Combat | None = None
     pending_target: PendingTarget | None = None
+    # Every commander's card id -> (owner seat, name), for damage and messages.
+    commanders: dict[int, tuple[int, str]] = field(default_factory=dict)
     next_id: int = 1
 
     def new_id(self) -> int:

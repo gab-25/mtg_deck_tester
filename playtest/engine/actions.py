@@ -106,12 +106,14 @@ class Action:
         return self.kind in NOTHING
 
 
-def commander_cost(state: GameState, seat: int) -> ManaCost | None:
-    """What casting ``seat``'s commander costs now, or None if it isn't in the command zone."""
+def commander_cost(state: GameState, seat: int, card_id: int | None = None) -> ManaCost | None:
+    """What casting one of ``seat``'s commanders costs now (default: the first in the
+    command zone), or None if it isn't there. Each commander pays its own tax."""
     player = state.player(seat)
-    if not player.command:
+    card = next((c for c in player.command if card_id is None or c.id == card_id), None)
+    if card is None:
         return None
-    return player.command[0].spec.cost.plus_generic(state.rules.commander_tax * player.commander_casts)
+    return card.spec.cost.plus_generic(state.rules.commander_tax * player.commander_casts.get(card.id, 0))
 
 
 def ability_sets(spec: CardSpec) -> list[tuple[int | None, tuple]]:
@@ -267,9 +269,8 @@ def _priority_actions(state: GameState, seat: int, limits: Limits) -> list[Actio
             if spec.is_spell_only and not spec.supported:
                 continue
             actions += _spell_actions(state, seat, card, ActionKind.CAST, spec.cost, limits)
-        cost = commander_cost(state, seat)
-        if cost is not None:
-            commander = player.command[0]
+        for commander in sorted(player.command, key=lambda c: c.id):
+            cost = commander_cost(state, seat, commander.id)
             if _can_cast_now(state, seat, commander.spec) and (commander.spec.supported or not commander.spec.is_spell_only):
                 actions += _spell_actions(state, seat, commander, ActionKind.CAST_COMMANDER, cost, limits)
         actions += _activations(state, seat, limits)

@@ -89,7 +89,7 @@ def jev_state(view: dict) -> str:
             "mana_available": you["mana_available"],
             "hand": [_slim_card(c) for c in you["hand"]],
             "battlefield": [_slim_permanent(p) for p in you["battlefield"]],
-            "commander_in_command_zone": [c["name"] for c in you["command_zone"]],
+            "commanders_in_command_zone": [c["name"] for c in you["command_zone"]],
             "commander_damage_taken": you["commander_damage_taken"],
         },
         "opponents": [

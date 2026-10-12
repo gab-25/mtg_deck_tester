@@ -160,3 +160,9 @@ class DeckSpec:
     name: str
     commander: CardSpec | None
     library: tuple[CardSpec, ...]
+    # The second commander of a partner pair (Partner, Background…).
+    partner: CardSpec | None = None
+
+    @property
+    def commanders(self) -> tuple[CardSpec, ...]:
+        return tuple(c for c in (self.commander, self.partner) if c is not None)

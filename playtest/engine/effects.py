@@ -322,7 +322,7 @@ def discard_order(state: GameState, player: Player) -> list:
 
 
 def deal_damage(
-    state: GameState, ref: str, amount: int, *, source_seat: int, source_name: str, deathtouch=False, combat=False, commander=False
+    state: GameState, ref: str, amount: int, *, source_seat: int, source_name: str, deathtouch=False, combat=False, commander=False, commander_id=None
 ) -> list[Event]:
     """Damage to a player (life loss) or a creature (marked damage)."""
     if amount <= 0:
@@ -331,8 +331,8 @@ def deal_damage(
     if kind == "p":
         player = state.player(value)
         player.life -= amount
-        if commander:
-            player.commander_damage[source_seat] = player.commander_damage.get(source_seat, 0) + amount
+        if commander and commander_id is not None:
+            player.commander_damage[commander_id] = player.commander_damage.get(commander_id, 0) + amount
         return [
             Event(
                 EventKind.DAMAGE,

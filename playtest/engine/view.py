@@ -97,7 +97,7 @@ def player_view(state: GameState, seat: int) -> dict:
     """The game from ``seat``'s side of the table, as plain JSON-ready data."""
     me = state.player(seat)
     srcs = sources(state, seat)
-    cost = commander_cost(state, seat)
+    costs = [str(commander_cost(state, seat, c.id)) for c in sorted(me.command, key=lambda c: c.id)]
     battlefield = sorted(state.battlefield, key=lambda p: p.id)
     return {
         "round": state.round,
@@ -114,11 +114,13 @@ def player_view(state: GameState, seat: int) -> dict:
             "hand": [card_view(c) for c in me.hand],
             "battlefield": [permanent_view(state, p) for p in battlefield if p.controller == seat],
             "command_zone": [card_view(c) for c in me.command],
-            "commander_cost": str(cost) if cost is not None else None,
+            "commander_cost": costs or None,
             "graveyard": [c.name for c in me.graveyard],
             "library_count": len(me.library),
             "lands_played_this_turn": me.lands_played,
-            "commander_damage_taken": {str(k): v for k, v in sorted(me.commander_damage.items())},
+            "commander_damage_taken": {
+                state.commanders[k][1]: v for k, v in sorted(me.commander_damage.items())
+            },
         },
         "opponents": [
             {
@@ -129,7 +131,9 @@ def player_view(state: GameState, seat: int) -> dict:
                 "library_count": len(p.library),
                 "battlefield": [permanent_view(state, perm) for perm in battlefield if perm.controller == p.seat],
                 "command_zone": [card_view(c) for c in p.command],
-                "commander_damage_taken_from_you": p.commander_damage.get(seat, 0),
+                "commander_damage_taken_from_you": sum(
+                    v for k, v in p.commander_damage.items() if state.commanders[k][0] == seat
+                ),
             }
             for p in (state.player(s) for s in state.turn_order_from(seat) if s != seat)
         ],
