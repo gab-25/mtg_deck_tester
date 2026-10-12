@@ -1,6 +1,7 @@
 """Bundled benchmark decks: opponents that compile at 100% coverage.
 
-Each deck is a decklist (``<key>.txt``) plus its card facts and compiled
+Three 100-card decks for the Commander formats and three 60-card decks for
+the constructed ones. Each deck is a decklist (``<key>.txt``) plus its card facts and compiled
 programs (``<key>.rules.json``), committed so a benchmark costs no Scryfall
 call, no judge call and no network — in tests and in production alike.
 ``manage.py build_benchmarks`` regenerates the ``.rules.json`` files.
@@ -10,8 +11,11 @@ coverage gaps as the deck under test, and measure noise against noise.
 """
 
 import json
+from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
+
+from decks.formats import COMMANDER_FAMILY, CONSTRUCTED_FAMILY
 
 from ..engine import dsl
 from ..engine.cardrules import characteristics
@@ -20,10 +24,20 @@ from ..judge import CompiledCard, DeckEntry
 
 DIRECTORY = Path(__file__).resolve().parent
 
+@dataclass(frozen=True)
+class Benchmark:
+    label: str
+    # The format family it sits in: 100-card Commander decks or 60-card decks.
+    family: str
+
+
 BENCHMARKS = {
-    "aggro": "Benchmark: Aggro",
-    "midrange": "Benchmark: Midrange",
-    "control": "Benchmark: Control",
+    "aggro": Benchmark("Benchmark: Aggro", COMMANDER_FAMILY),
+    "midrange": Benchmark("Benchmark: Midrange", COMMANDER_FAMILY),
+    "control": Benchmark("Benchmark: Control", COMMANDER_FAMILY),
+    "aggro60": Benchmark("Benchmark: Aggro (60)", CONSTRUCTED_FAMILY),
+    "midrange60": Benchmark("Benchmark: Midrange (60)", CONSTRUCTED_FAMILY),
+    "control60": Benchmark("Benchmark: Control (60)", CONSTRUCTED_FAMILY),
 }
 
 # The raw Scryfall fields the pre-pass reads; the rest of the card is not kept.
@@ -44,12 +58,17 @@ RAW_FIELDS = (
 FACE_FIELDS = ("name", "type_line", "mana_cost", "oracle_text", "power", "toughness", "colors")
 
 
-def choices() -> list[tuple[str, str]]:
-    return list(BENCHMARKS.items())
+def choices(family: str | None = None) -> list[tuple[str, str]]:
+    """``(key, label)`` of every benchmark, or of one format family's."""
+    return [(key, b.label) for key, b in BENCHMARKS.items() if family is None or b.family == family]
 
 
 def label(key: str) -> str:
-    return BENCHMARKS.get(key, key)
+    return BENCHMARKS[key].label if key in BENCHMARKS else key
+
+
+def family(key: str) -> str:
+    return BENCHMARKS[key].family
 
 
 def slim_raw(card: dict) -> dict:

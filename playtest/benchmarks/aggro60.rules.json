@@ -1,0 +1,284 @@
+{
+ "key": "aggro60",
+ "name": "Benchmark: Aggro (60)",
+ "dsl_version": "1",
+ "cards": [
+  {
+   "quantity": 4,
+   "is_commander": false,
+   "card": {
+    "name": "Mountain Bandit",
+    "oracle_id": "e3638c54-e494-47d2-b614-94c9d9add85a",
+    "layout": "normal",
+    "type_line": "Creature — Human Soldier Rogue",
+    "mana_cost": "{R}",
+    "cmc": 1.0,
+    "oracle_text": "Haste",
+    "power": "1",
+    "toughness": "1",
+    "colors": [
+     "R"
+    ],
+    "keywords": [
+     "Haste"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 4,
+   "is_commander": false,
+   "card": {
+    "name": "Raging Goblin",
+    "oracle_id": "30997b43-fc13-41d3-8064-1ccc2cb6fd2b",
+    "layout": "normal",
+    "type_line": "Creature — Goblin Berserker",
+    "mana_cost": "{R}",
+    "cmc": 1.0,
+    "oracle_text": "Haste (This creature can attack and {T} as soon as it comes under your control.)",
+    "power": "1",
+    "toughness": "1",
+    "colors": [
+     "R"
+    ],
+    "keywords": [
+     "Haste"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 4,
+   "is_commander": false,
+   "card": {
+    "name": "Warship Scout",
+    "oracle_id": "f07e6ba7-42e8-4b4d-9831-00a856059060",
+    "layout": "normal",
+    "type_line": "Creature — Human Scout",
+    "mana_cost": "{R}",
+    "cmc": 1.0,
+    "oracle_text": "",
+    "power": "2",
+    "toughness": "1",
+    "colors": [
+     "R"
+    ],
+    "keywords": []
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 4,
+   "is_commander": false,
+   "card": {
+    "name": "Capital Guard",
+    "oracle_id": "aff20717-265d-4214-a8f5-f520bb243cb5",
+    "layout": "normal",
+    "type_line": "Creature — Human Soldier",
+    "mana_cost": "{1}{R}",
+    "cmc": 2.0,
+    "oracle_text": "",
+    "power": "2",
+    "toughness": "2",
+    "colors": [
+     "R"
+    ],
+    "keywords": []
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 4,
+   "is_commander": false,
+   "card": {
+    "name": "Deer-Dog",
+    "oracle_id": "76c7a339-015b-4074-8e10-14d52b784f9b",
+    "layout": "normal",
+    "type_line": "Creature — Elk Dog",
+    "mana_cost": "{1}{R}",
+    "cmc": 2.0,
+    "oracle_text": "First strike (This creature deals combat damage before creatures without first strike.)",
+    "power": "1",
+    "toughness": "3",
+    "colors": [
+     "R"
+    ],
+    "keywords": [
+     "First strike"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 4,
+   "is_commander": false,
+   "card": {
+    "name": "Defiant Khenra",
+    "oracle_id": "0e6fe04f-b20d-4df9-a7ac-edebc3bcc9be",
+    "layout": "normal",
+    "type_line": "Creature — Jackal Warrior",
+    "mana_cost": "{1}{R}",
+    "cmc": 2.0,
+    "oracle_text": "",
+    "power": "2",
+    "toughness": "2",
+    "colors": [
+     "R"
+    ],
+    "keywords": []
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 4,
+   "is_commander": false,
+   "card": {
+    "name": "Deranged Whelp",
+    "oracle_id": "6f246109-8c8b-4909-9888-561bc46ad776",
+    "layout": "normal",
+    "type_line": "Creature — Wolf",
+    "mana_cost": "{1}{R}",
+    "cmc": 2.0,
+    "oracle_text": "Menace (This creature can't be blocked except by two or more creatures.)",
+    "power": "2",
+    "toughness": "1",
+    "colors": [
+     "R"
+    ],
+    "keywords": [
+     "Menace"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 4,
+   "is_commander": false,
+   "card": {
+    "name": "Falkenrath Reaver",
+    "oracle_id": "6cfd9d88-f450-4408-bbe2-94a2d295b24a",
+    "layout": "normal",
+    "type_line": "Creature — Vampire",
+    "mana_cost": "{1}{R}",
+    "cmc": 2.0,
+    "oracle_text": "",
+    "power": "2",
+    "toughness": "2",
+    "colors": [
+     "R"
+    ],
+    "keywords": []
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 4,
+   "is_commander": false,
+   "card": {
+    "name": "Feral Maaka",
+    "oracle_id": "d4556b82-f96e-4f88-a885-3e84afdb98a1",
+    "layout": "normal",
+    "type_line": "Creature — Cat",
+    "mana_cost": "{1}{R}",
+    "cmc": 2.0,
+    "oracle_text": "",
+    "power": "2",
+    "toughness": "2",
+    "colors": [
+     "R"
+    ],
+    "keywords": []
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  },
+  {
+   "quantity": 24,
+   "is_commander": false,
+   "card": {
+    "name": "Mountain",
+    "oracle_id": "a3fb7228-e76b-4e96-a40e-20b5fed75685",
+    "layout": "normal",
+    "type_line": "Basic Land — Mountain",
+    "mana_cost": "",
+    "cmc": 0.0,
+    "oracle_text": "({T}: Add {R}.)",
+    "colors": [],
+    "keywords": [],
+    "produced_mana": [
+     "R"
+    ]
+   },
+   "status": "supported",
+   "program": {
+    "version": "1",
+    "abilities": []
+   },
+   "reason": "",
+   "reason_kind": "",
+   "model": ""
+  }
+ ]
+}

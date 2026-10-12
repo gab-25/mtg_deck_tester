@@ -174,15 +174,26 @@ def test_deleting_a_match(client, user):
 
 
 def test_every_benchmark_deck_compiles_to_full_coverage():
+    from decks.formats import COMMANDER_FAMILY
     from playtest import benchmarks
     from playtest.engine.coverage import coverage_report
 
     for key in benchmarks.BENCHMARKS:
         entries = benchmarks.entries(key)
         report = coverage_report([e.coverage() for e in entries])
-        assert report["total"] == 100, key
+        commanders = sum(1 for e in entries if e.is_commander)
+        if benchmarks.family(key) == COMMANDER_FAMILY:
+            assert report["total"] == 100 and commanders == 1, key
+        else:
+            assert report["total"] == 60 and commanders == 0, key
         assert report["percent"] == 100 and not report["unsupported_cards"], key
-        assert sum(1 for e in entries if e.is_commander) == 1, key
+
+
+def test_benchmarks_are_offered_by_family():
+    from playtest import benchmarks
+
+    assert {k for k, _ in benchmarks.choices("constructed")} == {"aggro60", "midrange60", "control60"}
+    assert {k for k, _ in benchmarks.choices("commander")} == {"aggro", "midrange", "control"}
 
 
 @pytest.mark.django_db

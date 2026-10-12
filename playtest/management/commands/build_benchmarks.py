@@ -5,6 +5,7 @@ import json
 from django.core.management.base import BaseCommand, CommandError
 
 from decks.cache import DbCardCache, FileCardCache
+from decks.formats import COMMANDER_FAMILY
 from decks.rules.decklist import parse_decklist_text
 from decks.scryfall import fetch_card_raw
 from playtest import benchmarks
@@ -34,7 +35,8 @@ class Command(BaseCommand):
         for key in keys:
             if key not in benchmarks.BENCHMARKS:
                 raise CommandError(f"Unknown benchmark {key!r}.")
-            entries = parse_decklist_text(benchmarks.decklist_path(key).read_text(encoding="utf-8"))
+            fmt = "commander" if benchmarks.family(key) == COMMANDER_FAMILY else "modern"
+            entries = parse_decklist_text(benchmarks.decklist_path(key).read_text(encoding="utf-8"), fmt)
             cards, coverage = [], []
             for entry in entries:
                 raw = fetch_card_raw(entry["name"], cache)
@@ -56,7 +58,8 @@ class Command(BaseCommand):
                 )
             report = coverage_report(coverage)
             total = sum(e["quantity"] for e in entries)
-            if report["percent"] < 100 or total != 100:
+            expected = 100 if benchmarks.family(key) == COMMANDER_FAMILY else 60
+            if report["percent"] < 100 or total != expected:
                 failed.append(key)
                 self.stderr.write(f"{key}: {report['percent']}% of {total} cards — not written.")
                 for card in report["unsupported_cards"]:

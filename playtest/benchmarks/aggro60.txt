@@ -1,0 +1,13 @@
+// Mono-red aggro, 60 cards: the cheapest hasty and evasive creatures, four of each.
+// Every card compiles without the judge (keywords only), so coverage is 100%.
+Deck
+4 Mountain Bandit
+4 Raging Goblin
+4 Warship Scout
+4 Capital Guard
+4 Deer-Dog
+4 Defiant Khenra
+4 Deranged Whelp
+4 Falkenrath Reaver
+4 Feral Maaka
+24 Mountain
