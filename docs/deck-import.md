@@ -50,13 +50,14 @@ decks stored before sideboards existed are all main deck).
 | Rule | `check_decklist` (names only, on submit) | `check_deck` (fetched cards, in the job) |
 |---|---|---|
 | Exactly 100 cards, commander included | ✓ | ✓ |
-| Exactly one commander (no partner / background) | ✓ | ✓ |
+| One commander, or two forming a partner pair | ✓ (count only) | ✓: both `Partner`, `Partner with` each other, both `Friends forever`, or a commander that says "Choose a Background" plus a `Background` (`partner_issue`) |
 | Singleton | by name: basic lands and the hand-kept `ANY_NUMBER_CARD_NAMES` are exempt | by card: basic lands and cards whose text says "a deck can have any number of cards named" are exempt; copies are counted per Scryfall id, so both spellings of a double-faced card add up |
 | Commander eligibility | — | legendary creature on the front face, or "can be your commander" in its text |
 | Color identity | — | every card within the commander's identity |
 | Ban list of the format | — | Scryfall `legalities[<format legality_key>]` is `banned` or `not_legal` |
 
-The deck's stored `color_identity` is the union of its commanders' identities.
+The deck's stored `color_identity` is the union of its commanders' identities, and
+`Deck.commander` names both partners as `"A / B"`.
 
 ### Constructed formats
 
@@ -177,3 +178,31 @@ list.
    `rules/legality.py`.
 5. Add tests next to `tests/test_formats.py`, `tests/test_constructed.py` and
    `tests/test_matches_web.py`.
+
+## Metagame decks
+
+`decks/metagame/` imports the top decks of every format as shared, read-only
+opponents (`decks.MetagameDeck`, table `metagame_decks`):
+
+| Format | Source | How |
+|---|---|---|
+| `commander` | EDHTop16 | One GraphQL request: the most popular commanders of the last three months, their meta share, and the full list of their best-placed entry (partners included). |
+| constructed | MTGTop8 | The format page's archetypes and shares; the first deck listed for each archetype, through MTGTop8's MTGO export. |
+| `duel` | MTGTop8 | No metagame page: the best-placed deck of each recent event; the export's `Sideboard` (the commander) becomes `Commander`. |
+
+MTGGoldfish is not used: its `robots.txt` disallows `/deck/download*`.
+
+`manage.py sync_metagame [--format <key>] [--limit N]` (`decks/metagame/sync.py`):
+
+- reads the source first — a `SourceError` (network, HTTP error, a page whose layout
+  changed) leaves that format's previous snapshot untouched;
+- imports every list through `import_decklist`, the same path and rules as user
+  decks; a deck that fails is kept as `failed` with its error;
+- compiles each main deck with the judge and stores its coverage report;
+- replaces the format's decks in one transaction. Seats that played a replaced deck
+  keep its name (`Seat.metagame_deck` is `SET_NULL`).
+
+The new-match form lists the ready metagame decks of the chosen format as
+`archetype — share — coverage`, with ⚠ under `LOW_COVERAGE_PERCENT` (70); the
+`/metagame` page shows every format's snapshot. Source parsers are tested on pages
+recorded under `tests/fixtures/metagame/`.

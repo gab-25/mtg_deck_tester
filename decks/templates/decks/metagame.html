@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}Metagame — MTG Deck Tester{% endblock %}
+
+{% block content %}
+<div class="page" data-screen-label="Metagame">
+    <div class="mb-6">
+        <div class="kicker">Opponents</div>
+        <h1 class="font-cinzel font-semibold text-[34px] mt-[7px] mb-1.5 tracking-[.03em]">Metagame</h1>
+        <p class="m-0 text-txt2 font-light text-[14.5px]">
+            The top decks of each format, from EDHTop16 (Commander) and MTGTop8 (everything else).
+            Refreshed with <span class="font-mono2">manage.py sync_metagame</span>; pick them as opponents when you set up a match.
+            ⚠ marks a deck the playtest simulates at under 70%.
+        </p>
+    </div>
+
+    <div class="flex flex-col gap-5">
+        {% for section in sections %}
+        <div class="panel-card overflow-hidden">
+            <div class="flex items-center justify-between gap-[9px] py-4 px-[18px] border-b border-line2">
+                <span class="font-semibold text-[15px]">{{ section.label }}</span>
+                <span class="text-[12px] text-txt3">{% if section.synced %}Synced {{ section.synced|date:"j M Y, H:i" }}{% else %}Not synced yet{% endif %}</span>
+            </div>
+            {% if section.decks %}
+            <div class="flex flex-col">
+                {% for deck in section.decks %}
+                <div class="flex items-center justify-between gap-3 py-2 px-[18px] border-b border-line2 text-[13px]">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <span class="font-mono2 text-txt3 min-w-[19px]">{{ deck.rank }}</span>
+                        <span translate="no" class="{% if deck.status == 'failed' %}text-txt3{% else %}text-txt{% endif %}">{{ deck.archetype }}</span>
+                        {% if deck.source_url %}<a href="{{ deck.source_url }}" class="text-violet2 no-underline text-[12px]" rel="noopener" target="_blank">{{ deck.get_source_display }}</a>{% endif %}
+                    </div>
+                    <div class="flex items-center gap-3 flex-none font-mono2 text-[12px]">
+                        {% if deck.meta_share is not None %}<span class="text-txt2">{{ deck.meta_share|floatformat:"-1" }}%</span>{% endif %}
+                        {% if deck.status == 'failed' %}
+                        <span class="text-danger" title="{{ deck.error }}">failed: {{ deck.error|truncatechars:80 }}</span>
+                        {% elif deck.coverage_percent is not None %}
+                        <span class="{% if deck.low_coverage %}text-gold{% else %}text-teal{% endif %}">coverage {{ deck.coverage_percent }}%{% if deck.low_coverage %} ⚠{% endif %}</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="py-4 px-[18px] text-[13px] text-txt3">No decks yet.</div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

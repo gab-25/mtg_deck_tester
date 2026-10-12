@@ -35,8 +35,8 @@ only picks one of them.
 
 `Game(decks, agents, rules, *, seed, max_rounds=None, limits=None, on_event=None, clock=time.monotonic, check_invariants=False)`:
 
-1. **Setup** — each library is shuffled; a commander (Commander formats only) goes
-   to the command zone; the first player is drawn at random; every player draws a
+1. **Setup** — each library is shuffled; the commander, or both partners
+   (Commander formats only), go to the command zone; the first player is drawn at random; every player draws a
    deterministic London mulligan hand (keep 2–5 lands, at most two mulligans, the
    first free with three or more players). No agent decides any of this.
 2. **Rounds** `1..max_rounds`, one turn per living player in turn order.
@@ -73,7 +73,8 @@ declares `DECLARE_BLOCKER` / `UNDO_BLOCKER`, then `END_BLOCKERS`). Menace withho
 `END_BLOCKERS` while an attacker has exactly one blocker. Damage is assigned in
 blocker order with trample excess to the player, deathtouch makes 1 lethal,
 lifelink gains its controller life, and commander combat damage is tracked per
-commander owner.
+commander card (CR 903.10a), so two partners each need 21 on their own. Each
+commander also pays its own tax.
 
 ### Mana
 

@@ -11,7 +11,7 @@ from mtg_deck_tester.jobs import start_job
 from .cache import DbCardCache
 from .formats import DEFAULT_FORMAT, FORMATS, format_choices
 from .importer import decklist_errors, run_import
-from .models import Deck
+from .models import Deck, MetagameDeck
 from .presentation import card_groups, commander_cards, deck_pips, sideboard_group
 
 
@@ -124,3 +124,23 @@ def card_image_modal(request):
     if any(not url.startswith(SCRYFALL_IMAGE_PREFIX) for url in urls):
         return HttpResponse("Not a Scryfall image", status=400)
     return render(request, "partials/card_image_modal.html", {"image_urls": urls})
+
+
+@login_required
+@require_http_methods(["GET"])
+def metagame(request):
+    """Every format's metagame decks, as the last ``sync_metagame`` left them."""
+    by_format = {key: [] for key in FORMATS}
+    for deck in MetagameDeck.objects.all():
+        by_format.setdefault(deck.format, []).append(deck)
+    sections = [
+        {
+            "key": key,
+            "label": FORMATS[key].label,
+            "decks": decks,
+            "synced": max((d.fetched_at for d in decks), default=None),
+        }
+        for key, decks in by_format.items()
+        if key in FORMATS
+    ]
+    return render(request, "decks/metagame.html", {"sections": sections})

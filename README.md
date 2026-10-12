@@ -49,6 +49,12 @@ picks one of them.
   warnings for an unsupported commander and for dead spells, and the list of
   unsupported cards with their reasons. The deck page shows it too once every card is
   in the cache.
+- **Metagame decks**: `manage.py sync_metagame` imports the top decks of every format
+  (EDHTop16 for Commander, MTGTop8 for the rest) as shared opponents, shown on the
+  *Metagame* page and offered in the new-match form with their meta share and
+  coverage (⚠ under 70%).
+- **Partner commanders**: Partner, Partner with, Friends forever and Backgrounds;
+  each commander pays its own tax and deals its own commander damage.
 - **Benchmark decks**: bundled opponents (aggro, midrange, control) built to compile
   at 100% coverage: three 100-card decks for the Commander formats and three 60-card
   decks for the constructed ones.
@@ -236,6 +242,23 @@ current, e.g. from cron:
 ```cron
 30 4 * * * cd /path/to/mtg_deck_tester && uv run python manage.py load_oracle_cards --if-newer
 ```
+
+## Metagame decks
+
+Import the current top decks of each format as opponents:
+
+```bash
+uv run python manage.py sync_metagame                     # every format, 10 decks each
+uv run python manage.py sync_metagame --format modern --limit 5
+```
+
+Commander comes from [EDHTop16](https://edhtop16.com), Duel Commander and the
+constructed formats from [MTGTop8](https://www.mtgtop8.com). Each run replaces that
+format's decks (a source that fails keeps the previous ones), imports them with the
+same rules as your decks, and compiles them to measure their coverage — set
+`OPENROUTER_API_KEY` first, or cards that need the judge count as unsupported. Load the
+local card database first so the import needs few Scryfall calls. Run it weekly, e.g.
+from cron, after `load_oracle_cards`.
 
 ## Configuration
 

@@ -77,9 +77,10 @@ jobs can be told apart on the console.
 | `decks` | `decks.Deck` | UUID primary key. `cards` is a JSON list of `{"quantity", "is_commander", "board"?, "data"}` where `data` is the processed Scryfall card (see [Deck import](deck-import.md#stored-card-shape)) and `board` is `"side"` for a constructed sideboard card. |
 | `scryfall_cards` | `decks.ScryfallCard` | Raw Scryfall JSON keyed by `card_en_<slug>`, shared by every user. `{"error": "not_found"}` caches a miss. |
 | `scryfall_bulk_loads` | `decks.BulkDataLoad` | One row per `load_oracle_cards` run (for `--if-newer`). |
+| `metagame_decks` | `decks.MetagameDeck` | The top decks of each format, replaced by every `sync_metagame`; shared and read-only, with source, archetype, meta share, rank, cards and coverage. |
 | `card_rules` | `decks.CardRule` | Compiled card programs keyed by `oracle_id` + DSL version; opaque JSON to `decks`. |
 | `matches` | `playtest.Match` | UUID primary key, `seed`, `max_rounds`, status, winner (a `Seat`), end reason, `summary` (JSON). |
-| `seats` | `playtest.Seat` | Position, agent (`heuristic`/`jev`/`llm`/`random`), optional model id, `benchmark` key (empty for a user deck), `coverage` (JSON). `deck` is `SET_NULL` on delete; `deck_name` keeps the name. |
+| `seats` | `playtest.Seat` | Position, agent (`heuristic`/`jev`/`llm`/`random`), optional model id, the deck it plays — a user `deck`, a `benchmark` key or a `metagame_deck` — and `coverage` (JSON). `deck` is `SET_NULL` on delete; `deck_name` keeps the name. |
 | `match_events` | `playtest.MatchEvent` | The log: `seq`, `round`, `turn`, `step`, `seat_position`, `kind`, `text`, `payload` (Jev confidence and probabilities live here), `reasoning`. |
 
 **Ownership.** `Deck` and `Match` have an `owner`. Every view loads them through

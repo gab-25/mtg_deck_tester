@@ -233,3 +233,20 @@ def test_the_import_form_shows_the_rules_of_each_format(client):
 def test_home_names_the_competitive_formats(client):
     page = client.get("/").content.decode()
     assert "Modern" in page and "Pauper" in page
+
+
+@pytest.mark.django_db
+def test_the_metagame_page_lists_each_format(client):
+    from decks.models import MetagameDeck
+
+    MetagameDeck.objects.create(
+        format="modern", source="mtgtop8", archetype="UR Aggro", source_url="https://www.mtgtop8.com/archetype?a=1",
+        meta_share=8.0, rank=1, coverage={"percent": 46},
+    )
+    MetagameDeck.objects.create(format="modern", source="mtgtop8", archetype="Broken", rank=2, status="failed", error="Missing Card")
+    page = client.get("/metagame").content.decode()
+    assert "UR Aggro" in page and "8%" in page and "46%" in page
+    assert "Missing Card" in page
+    assert "Not synced yet" in page  # every other format
+    client.logout()
+    assert client.get("/metagame").status_code == 302
