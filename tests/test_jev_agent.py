@@ -186,3 +186,10 @@ def test_summary_reports_jev_confidence_and_fallbacks():
     assert agent["low_confidence_fallbacks"] == 0
     assert summary["caveats"]["commander_unsupported"] == [0, 1]
     assert summary["caveats"]["lowest_coverage"] == 90
+
+
+def test_the_instructions_name_the_format_of_the_match():
+    game, state = _attack_table()
+    jev = StubJev()
+    JevAgent(seed=1, ask=jev).choose(player_view(state, 0), legal_actions(state, 0))
+    assert "(Duel Commander)" in jev.requests[0][1]["action"]["instructions"]

@@ -6,7 +6,7 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-from decks.formats import DEFAULT_FORMAT, format_choices
+from decks.formats import DEFAULT_FORMAT, FORMATS, format_choices
 
 
 class Match(models.Model):
@@ -53,6 +53,10 @@ class Match(models.Model):
     @property
     def is_busy(self) -> bool:
         return self.status in {self.Status.PENDING, self.Status.RUNNING}
+
+    @property
+    def has_commander(self) -> bool:
+        return FORMATS[self.format].has_commander
 
 
 class Seat(models.Model):

@@ -23,7 +23,7 @@ def _primary_type(types) -> str:
     return next((t for t in SPELL_TYPES if t in types), "other")
 
 
-def summarize_match(events, coverage: list[dict], result) -> dict:
+def summarize_match(events, coverage: list[dict], result, *, has_commander: bool = True) -> dict:
     """The JSON-safe summary of a finished game.
 
     ``events`` are the game's recorded events, ``coverage`` each seat's coverage
@@ -124,6 +124,7 @@ def summarize_match(events, coverage: list[dict], result) -> dict:
         seat["final_life"] = final.get(seat["seat"], {}).get("life", life[seat["seat"]])
 
     return {
+        "has_commander": has_commander,
         "winner_seat": result.winner_seat,
         "end_reason": result.end_reason,
         "rounds": result.rounds,

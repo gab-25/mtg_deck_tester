@@ -89,9 +89,11 @@ itself (outerHTML swap); the finished render drops the trigger and polling stops
                 <div translate="no" class="font-cinzel font-semibold text-[15px] leading-[1.2] mb-2">{{ seat.deck_name }}</div>
                 <div class="flex flex-col gap-1.5 text-txt2">
                     <div class="flex justify-between gap-2"><span class="text-txt3">Final life</span><span class="font-mono2">{{ stats.final_life }}</span></div>
-                    <div class="flex justify-between gap-2"><span class="text-txt3">Damage dealt</span><span class="font-mono2">{{ stats.damage_dealt.combat }} combat · {{ stats.damage_dealt.commander }} commander · {{ stats.damage_dealt.effects }} effects</span></div>
+                    <div class="flex justify-between gap-2"><span class="text-txt3">Damage dealt</span><span class="font-mono2">{{ stats.damage_dealt.combat }} combat{% if match.has_commander %} · {{ stats.damage_dealt.commander }} commander{% endif %} · {{ stats.damage_dealt.effects }} effects</span></div>
                     <div class="flex justify-between gap-2"><span class="text-txt3">Spells cast</span><span class="font-mono2">{% for kind, count in stats.spells_cast.items %}{{ count }} {{ kind }}{% if not forloop.last %} · {% endif %}{% empty %}none{% endfor %}</span></div>
+                    {% if match.has_commander %}
                     <div class="flex justify-between gap-2"><span class="text-txt3">Commander</span><span class="font-mono2">{{ stats.commander_casts }} cast{{ stats.commander_casts|pluralize }}, {{ stats.commander_tax_paid }} tax</span></div>
+                    {% endif %}
                     <div class="flex justify-between gap-2"><span class="text-txt3">Lands played</span><span class="font-mono2">{{ stats.lands_played }}</span></div>
                     {% if stats.dead_spells_drawn or stats.unsupported_skipped %}
                     <div class="flex justify-between gap-2 text-gold"><span>Dead spells drawn</span><span class="font-mono2">{{ stats.dead_spells_drawn }} ({{ stats.unsupported_skipped }} could have been cast)</span></div>

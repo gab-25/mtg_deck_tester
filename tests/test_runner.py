@@ -121,3 +121,30 @@ def test_a_match_whose_deck_was_deleted_fails_cleanly(django_user_model):
     match.refresh_from_db()
     assert match.status == Match.Status.FAILED
     assert "deleted" in match.error
+
+
+@pytest.mark.django_db
+def test_a_constructed_match_plays_the_main_deck_only(django_user_model):
+    from .factories import make_constructed_deck
+
+    user = django_user_model.objects.create_user(username="u")
+    match = Match.objects.create(owner=user, format="modern", seed=5, max_rounds=30)
+    for position in range(2):
+        deck = make_constructed_deck(user, name=f"Goblins {position}")
+        Seat.objects.create(match=match, position=position, deck=deck, deck_name=deck.name, agent=Seat.Agent.HEURISTIC)
+    run_match(match.id)
+    match.refresh_from_db()
+    assert match.status == Match.Status.FINISHED, match.error
+    assert match.events.first().payload["starting_life"] == 20
+    assert not [e for e in match.events.filter(kind="cast") if e.payload.get("commander")]
+    for seat in match.seats.all():
+        assert seat.coverage["total"] == 60 and not seat.coverage["commander_unsupported"]
+    assert match.summary["has_commander"] is False
+
+
+def test_deck_spec_without_a_commander():
+    from .factories import constructed_cards
+
+    entries = _entries([c for c in constructed_cards() if c["board"] == "main"])
+    spec = deck_spec("Goblins", entries, has_commander=False)
+    assert spec.commander is None and len(spec.library) == 60

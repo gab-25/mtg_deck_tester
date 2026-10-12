@@ -25,7 +25,7 @@ from playtest.engine.zones import enter_battlefield
 from .factories import FOREST, bear, engine_deck
 
 COMMANDER = GameRules(starting_life=40, commander_damage_limit=21)
-DUEL = GameRules(starting_life=20, commander_damage_limit=None)
+DUEL = GameRules(starting_life=20, commander_damage_limit=None, format_name="Duel Commander")
 
 ISLAND = card("Island", "Basic Land", produces="U")
 SOL_RING = card("Sol Ring", "Artifact", "{1}", produces="C", amount=2)

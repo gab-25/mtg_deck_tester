@@ -43,18 +43,18 @@ def card_spec(entry: judge.DeckEntry) -> CardSpec:
     return CardSpec.from_facts(compiled.facts, program)
 
 
-def deck_spec(name: str, entries: list[judge.DeckEntry]) -> DeckSpec:
-    """Expands a compiled deck into its commander and its library."""
+def deck_spec(name: str, entries: list[judge.DeckEntry], *, has_commander: bool = True) -> DeckSpec:
+    """Expands a compiled deck into its library and, in Commander formats, its commander."""
     commander = None
     library = []
     for entry in entries:
         spec = card_spec(entry)
-        if entry.is_commander and commander is None:
+        if has_commander and entry.is_commander and commander is None:
             commander = spec
             library.extend([spec] * (entry.quantity - 1))
         else:
             library.extend([spec] * entry.quantity)
-    if commander is None:
+    if has_commander and commander is None:
         raise ValueError(f"The deck {name!r} has no commander.")
     return DeckSpec(name=name, commander=commander, library=tuple(library))
 
@@ -73,6 +73,7 @@ def game_rules(fmt: str) -> GameRules:
     return GameRules(
         starting_life=rules.starting_life,
         commander_damage_limit=rules.commander_damage_limit,
+        format_name=rules.label,
     )
 
 
@@ -94,7 +95,8 @@ def compile_seat(seat: Seat, cache) -> list[judge.DeckEntry]:
         return benchmarks.entries(seat.benchmark)
     if seat.deck is None:
         raise ValueError(f"The deck of seat {seat.position + 1} was deleted.")
-    return judge.compile_deck(seat.deck.cards, cache)
+    # The sideboard never plays.
+    return judge.compile_deck(seat.deck.main_cards, cache)
 
 
 def run_match(match_id) -> None:
@@ -124,13 +126,14 @@ def run_match(match_id) -> None:
 
         try:
             cache = DbCardCache()
+            has_commander = FORMATS[match.format].has_commander
             decks, coverages = [], []
             for seat, name in zip(seats, table_names(seats)):
                 entries = compile_seat(seat, cache)
                 report = coverage_report([entry.coverage() for entry in entries])
                 Seat.objects.filter(pk=seat.pk).update(coverage=report)
                 coverages.append(report)
-                decks.append(deck_spec(name, entries))
+                decks.append(deck_spec(name, entries, has_commander=has_commander))
             game = Game(
                 decks,
                 [build_agent(seat, match.seed) for seat in seats],
@@ -140,7 +143,7 @@ def run_match(match_id) -> None:
                 on_event=persist,
             )
             result = game.run()
-            summary = summarize_match(result.events, coverages, result)
+            summary = summarize_match(result.events, coverages, result, has_commander=has_commander)
         except Exception as exc:  # noqa: BLE001 - record any failure for the user.
             logger.exception("Match failed")
             Match.objects.filter(pk=match_id).update(

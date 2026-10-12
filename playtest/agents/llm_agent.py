@@ -12,8 +12,8 @@ from .random_agent import RandomAgent
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = f"""You are playing a simplified game of Magic: The Gathering \
-(Commander) against other players. Play to win: develop your mana, deploy \
+SYSTEM_PROMPT = f"""You are playing a game of Magic: The Gathering against \
+other players. Play to win: develop your mana, deploy \
 threats, and attack the opponent it pays most to attack.
 
 The engine enforces these rules:
@@ -28,7 +28,10 @@ _JSON_OBJECT = re.compile(r"\{.*?\}", re.S)
 
 def build_messages(view: dict, options: list[Action]) -> list[dict]:
     numbered = "\n".join(f"{i}. {action.label}" for i, action in enumerate(options, start=1))
-    user = f"Game state:\n{json.dumps(view, indent=1)}\n\nYour options:\n{numbered}"
+    user = (
+        f"Format: {view.get('format', 'Commander')}\n"
+        f"Game state:\n{json.dumps(view, indent=1)}\n\nYour options:\n{numbered}"
+    )
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user},

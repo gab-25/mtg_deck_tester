@@ -38,7 +38,7 @@ TOP_PROBABILITIES = 3
 
 # A condensed form of the rules text (engine/rules.py), limited to what matters for choosing.
 INSTRUCTIONS = (
-    "You play seat {seat} ({deck}) in a multiplayer game of Magic: The Gathering (Commander). "
+    "You play seat {seat} ({deck}) in a game of Magic: The Gathering ({format}). "
     "It is {active}'s turn, {step} step. Your goal is to win: reduce every opponent to 0 life "
     "while staying alive. The state lists life totals, your hand and every battlefield. "
     "Mana is paid automatically; creatures that arrived this turn cannot attack unless they have "
@@ -197,7 +197,13 @@ class JevAgent:
         criteria = {key: describe_option(view, by_key[key]) for key in shuffled}
         me = view["you"]
         active = "your" if view["active_seat"] == me["seat"] else f"seat {view['active_seat'] + 1}"
-        instructions = INSTRUCTIONS.format(seat=me["seat"] + 1, deck=me["deck"], active=active, step=view["step"].replace("_", " "))
+        instructions = INSTRUCTIONS.format(
+            seat=me["seat"] + 1,
+            deck=me["deck"],
+            format=view.get("format", "Commander"),
+            active=active,
+            step=view["step"].replace("_", " "),
+        )
         try:
             response = self.ask(jev_state(view), {"action": typesafe.choice(instructions, criteria)}, model=self.model)
             picked, confidence, probabilities = typesafe.read_choice(response["answers"].get("action"), by_key)
