@@ -46,7 +46,6 @@ def _form_context(user, post=None, **extra) -> dict:
         {
             "index": i,
             "deck": post.get(f"seat-{i}-deck", ""),
-            "model": post.get(f"seat-{i}-model", ""),
         }
         for i in range(SEAT_ROWS)
     ]
@@ -94,7 +93,6 @@ def create_match(request):
                 metagame_deck=choice.metagame_deck,
                 deck_name=choice.name,
                 agent=choice.agent,
-                model=choice.model,
             )
             for position, choice in enumerate(form.seats)
         )

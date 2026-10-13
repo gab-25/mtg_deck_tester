@@ -39,7 +39,7 @@ hands the decision back to Forge's AI.
   imported and checked, but a match is a single game played with the main deck.
 - **Jev on every seat**: Jev picks each of Forge's options through OpenRouter, and its
   confidence and runner-up options are logged. There is no agent to choose: both seats
-  are Jev (the model can be overridden per seat). Forge's own AI never plays a seat;
+  are Jev, with the model set on the server (`JEV_MODEL`). Forge's own AI never plays a seat;
   it only takes fallbacks and what the bridge does not expose. A seat that is unsure
   (below `JEV_MIN_CONFIDENCE`) or cannot reach Jev hands that decision to Forge's AI,
   with the reason logged, so a match never stalls on a model. The code also keeps a
@@ -204,7 +204,7 @@ local development; real environment variables win):
 | `FORGE_URL` | The Forge bridge (Compose sets `http://mtg-forge-engine:8080`) | `http://localhost:8080` |
 | `FORGE_WORKERS` | Threads answering Forge's decisions: the most model calls in flight; `0` lets each match's runner answer its own | `4` |
 | `OPENROUTER_API_KEY` | Jev's key: required to start a match | — |
-| `JEV_MODEL` | Jev model, unless a seat names another | `~typesafe/jev-latest` |
+| `JEV_MODEL` | Jev model for every seat (users cannot change it) | `~typesafe/jev-latest` |
 | `JEV_MIN_CONFIDENCE` | Below this confidence a Jev seat hands the decision to Forge's AI | `0.2` |
 | `MAX_AGENT_CALLS` | Model calls per seat; past it the seat delegates to Forge's AI | `400` |
 | `MAX_MATCH_SECONDS` | Match wall clock; past it model seats delegate to Forge's AI | `1800` |

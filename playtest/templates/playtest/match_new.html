@@ -65,8 +65,6 @@
                                 {% endif %}
                             </select>
                             <span class="chip"><span translate="no" class="ms text-[14px]">bolt</span>Jev</span>
-                            <input type="text" name="seat-{{ row.index }}-model" value="{{ row.model }}" class="field"
-                                placeholder="{{ jev_model }}" spellcheck="false" aria-label="Jev model" />
                         </div>
                         {% endfor %}
                     </div>
@@ -86,7 +84,7 @@
                     </div>
                     <div class="text-[12.5px] text-txt3 font-light leading-[1.55]">
                         Both seats are played by <span class="text-txt2">Jev</span>, TypeSafe's model (through OpenRouter): it picks each of Forge's options and logs how sure it was
-                        (leave the model empty for <span class="font-mono2">{{ jev_model }}</span>). When it is unsure or unreachable, Forge's AI takes that one decision.
+                        (<span class="font-mono2">{{ jev_model }}</span>, set on the server). When it is unsure or unreachable, Forge's AI takes that one decision.
                         {% if not jev_available %}<span class="text-gold">No OPENROUTER_API_KEY is set, so no match can start.</span>{% endif %}
                     </div>
                 </div>

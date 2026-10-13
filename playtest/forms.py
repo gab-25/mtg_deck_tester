@@ -11,7 +11,8 @@ from .models import Seat
 
 # A seat's deck picker value for a metagame deck.
 METAGAME_PREFIX = "metagame:"
-# Every seat of a new match is played by Jev: the user picks decks, not agents.
+# Every seat of a new match is played by Jev, with the server's model
+# (JEV_MODEL): the user picks decks, not agents or models.
 # The other Seat.Agent values only name the seats of older matches; Forge's AI
 # still takes fallbacks and the decisions the bridge does not expose.
 SEAT_AGENT = Seat.Agent.JEV
@@ -27,7 +28,6 @@ class SeatChoice:
     # A user's deck, or None for a metagame deck.
     deck: Deck | None
     agent: str
-    model: str
     metagame_deck: MetagameDeck | None = None
 
     @property
@@ -74,7 +74,6 @@ def parse_match_form(post, user) -> tuple[MatchForm | None, list[str]]:
         if not deck_id:
             continue
         agent = SEAT_AGENT
-        model = (post.get(f"seat-{row}-model") or "").strip()
         if deck_id.startswith(METAGAME_PREFIX):
             meta = MetagameDeck.objects.filter(pk=_int(deck_id.removeprefix(METAGAME_PREFIX))).first()
             if meta is None:
@@ -84,7 +83,7 @@ def parse_match_form(post, user) -> tuple[MatchForm | None, list[str]]:
             elif meta.status != MetagameDeck.Status.READY:
                 errors.append(f"Seat {row + 1}: {meta.archetype} could not be imported ({meta.error}).")
             else:
-                seats.append(SeatChoice(deck=None, agent=agent, model=model, metagame_deck=meta))
+                seats.append(SeatChoice(deck=None, agent=agent, metagame_deck=meta))
             continue
         deck = decks.get(deck_id)
         if deck is None:
@@ -92,7 +91,7 @@ def parse_match_form(post, user) -> tuple[MatchForm | None, list[str]]:
             continue
         if deck.format != fmt:
             errors.append(f"Seat {row + 1}: {deck.name} is not a {rules.label} deck.")
-        seats.append(SeatChoice(deck=deck, agent=agent, model=model))
+        seats.append(SeatChoice(deck=deck, agent=agent))
 
     if fmt in playable_formats() and not rules.min_seats <= len(seats) <= rules.max_seats:
         if rules.min_seats == rules.max_seats:

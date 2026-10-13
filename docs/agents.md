@@ -5,8 +5,8 @@ options of each decision (see [Forge engine](engine.md)), and the agent picks on
 them by index, or delegates the decision to Forge's AI.
 
 **Every seat of a new match is Jev** (`playtest.forms.SEAT_AGENT`): the new-match form
-offers decks, not agents, and ignores any posted agent; only the Jev model can be
-overridden per seat. The other agents stay in the code for tests and evaluation.
+offers decks, not agents or models, and ignores any posted agent or model: every seat
+uses the server's `JEV_MODEL`. The other agents stay in the code for tests and evaluation.
 
 | `Seat.Agent` | Class | Network | Notes |
 |---|---|---|---|
@@ -114,7 +114,7 @@ in #44.
 
 `playtest/agents/openrouter.py` — `chat(messages, model=None, key=None) -> str`
 against `/chat/completions`. Default model `OPENROUTER_MODEL`, else
-`google/gemini-2.5-flash`; per-seat `Seat.model`. Failures raise `ChatError`.
+`google/gemini-2.5-flash`. Failures raise `ChatError`.
 
 Without `OPENROUTER_API_KEY` the new-match form refuses Jev and LLM seats.
 
