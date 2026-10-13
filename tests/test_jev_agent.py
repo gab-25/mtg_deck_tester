@@ -125,10 +125,3 @@ def test_a_missing_key_delegates(monkeypatch):
 def test_an_answer_outside_the_options_delegates():
     decision = _choose(JevAgent(seed=1, ask=StubJev(prefer=lambda criteria: "o99")))
     assert decision.delegate and "not an option" in decision.fallback_reason
-
-
-def test_the_threshold_comes_from_the_environment(monkeypatch):
-    monkeypatch.setenv("JEV_MIN_CONFIDENCE", "0.6")
-    assert JevAgent(seed=1, ask=StubJev()).min_confidence == 0.6
-    monkeypatch.setenv("JEV_MIN_CONFIDENCE", "nope")
-    assert JevAgent(seed=1, ask=StubJev()).min_confidence == 0.2

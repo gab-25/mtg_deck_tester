@@ -41,7 +41,7 @@ hands the decision back to Forge's AI.
   confidence and runner-up options are logged. There is no agent to choose: both seats
   are Jev, always on `~typesafe/jev-latest`. Forge's own AI never plays a seat;
   it only takes fallbacks and what the bridge does not expose. A seat that is unsure
-  (below `JEV_MIN_CONFIDENCE`) or cannot reach Jev hands that decision to Forge's AI,
+  (confidence below 0.2) or cannot reach Jev hands that decision to Forge's AI,
   with the reason logged, so a match never stalls on a model.
 - **Coverage**: Forge either knows a card or the match is refused, naming the card.
   Each seat lists the cards Forge knows but cannot play fully. The deck page checks a
@@ -205,7 +205,6 @@ local development; real environment variables win):
 | `FORGE_URL` | The Forge bridge (Compose sets `http://forge:8080`) | `http://localhost:8080` |
 | `FORGE_WORKERS` | Threads answering Forge's decisions: the most model calls in flight; `0` lets each match's runner answer its own | `4` |
 | `OPENROUTER_API_KEY` | Jev's key: required to start a match | — |
-| `JEV_MIN_CONFIDENCE` | Below this confidence a Jev seat hands the decision to Forge's AI | `0.2` |
 | `MAX_AGENT_CALLS` | Model calls per seat; past it the seat delegates to Forge's AI | `400` |
 | `MAX_MATCH_SECONDS` | Match wall clock; past it model seats delegate to Forge's AI | `1800` |
 | `SECRET_KEY` / `DEBUG` | Django basics | dev key / on |

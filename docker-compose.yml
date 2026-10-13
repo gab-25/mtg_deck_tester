@@ -45,9 +45,6 @@ services:
       FORGE_WORKERS: ${FORGE_WORKERS:-4}
       # Provide your OpenRouter key to enable Jev seats:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      # Optional: the confidence under which a Jev seat lets Forge's AI decide
-      # (default 0.2).
-      JEV_MIN_CONFIDENCE: ${JEV_MIN_CONFIDENCE:-}
     ports:
       - "8000:8000"
 

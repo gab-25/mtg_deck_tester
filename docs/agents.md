@@ -67,7 +67,7 @@ One Jev request per decision:
   always "Pass" or "Done".
 
 `gate()` is the one place an uncertain decision is handed over: below
-`JEV_MIN_CONFIDENCE` (default 0.2) the agent delegates with `low_confidence`, keeping
+`MIN_CONFIDENCE` (0.2) the agent delegates with `low_confidence`, keeping
 Jev's confidence and top options in the fallback's meta. Jev's confidence measures
 how peaked its distribution is, not the chosen option's probability. Measured on
 Forge decisions (a Modern Burn seat against Forge's AI, 23 decisions, jev-1.13):

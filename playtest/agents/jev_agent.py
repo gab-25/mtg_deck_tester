@@ -10,14 +10,13 @@ leans toward the first option, and Forge's first option is always "Pass" or
 "Done".
 
 The answer's confidence and distribution travel with the decision to the
-bridge's event. Below ``JEV_MIN_CONFIDENCE``, or when Jev cannot be reached,
+bridge's event. Below ``MIN_CONFIDENCE``, or when Jev cannot be reached,
 the agent delegates: Forge's AI decides, and the fallback is logged with the
 reason.
 """
 
 import json
 import logging
-import os
 import random
 
 from . import typesafe
@@ -25,14 +24,13 @@ from .base import Decision, delegate
 
 logger = logging.getLogger(__name__)
 
-# Default confidence under which Forge's AI decides instead; override with
-# JEV_MIN_CONFIDENCE. Jev's confidence measures how peaked its distribution is,
+# Confidence under which Forge's AI decides instead. Jev's confidence measures how peaked its distribution is,
 # not the chosen option's probability. Measured on Forge's decisions (a Modern
 # Burn seat against Forge's AI, 23 decisions, jev-1.13, 2026-10-13): median
 # 0.38, quartiles 0.20 / 0.82; 0.2 hands over 17% of decisions (the near-ties
 # between two burn spells), 0.4 would hand over half. The Python kernel's
 # decisions measured the same (222, median ~0.4).
-DEFAULT_MIN_CONFIDENCE = 0.2
+MIN_CONFIDENCE = 0.2
 # How many of Jev's top options a decision keeps for the log.
 TOP_PROBABILITIES = 3
 
@@ -57,13 +55,6 @@ KIND_LINES = {
     "confirm": "Answer yes or no.",
     "mode": "Pick a mode of the spell or ability.",
 }
-
-
-def default_min_confidence() -> float:
-    try:
-        return float(os.environ.get("JEV_MIN_CONFIDENCE") or DEFAULT_MIN_CONFIDENCE)
-    except ValueError:
-        return DEFAULT_MIN_CONFIDENCE
 
 
 # -- the state Jev sees ----------------------------------------------------------
@@ -189,7 +180,7 @@ class JevAgent:
         self.model = model or typesafe.MODEL
         self.rng = random.Random(f"{seed}:jev")
         self.ask = ask or typesafe.system_one
-        self.min_confidence = default_min_confidence() if min_confidence is None else min_confidence
+        self.min_confidence = MIN_CONFIDENCE if min_confidence is None else min_confidence
 
     def choose(self, view: dict, options: list[dict], *, kind: str = "", prompt: str = "") -> Decision:
         if len(options) > typesafe.MAX_CHOICE_OPTIONS:
