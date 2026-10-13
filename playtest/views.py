@@ -14,7 +14,7 @@ from mtg_deck_tester.access import get_owned_or_404
 from mtg_deck_tester.jobs import start_job
 
 from . import forge
-from .agents import openrouter, typesafe
+from .agents import typesafe
 from .forms import DEFAULT_MATCH_FORMAT, MAX_OPPONENTS, METAGAME_PREFIX, SEAT_AGENT, parse_playtest_form
 from .models import Match, Playtest, Seat
 from .runner import run_match, start_game
@@ -85,7 +85,7 @@ def _form_context(user, post=None, **extra) -> dict:
             for meta in MetagameDeck.objects.filter(status=MetagameDeck.Status.READY).order_by("format", "rank")
         ],
         "jev_model": typesafe.default_model(),
-        "jev_available": openrouter.api_key() is not None,
+        "jev_available": typesafe.api_key() is not None,
         **extra,
     }
 
@@ -239,7 +239,6 @@ def _live_context(match) -> dict:
         "log": log_rows(events, {seat.position: seat.deck_name for seat in seats}),
         "summary": summary,
         "seat_stats": [(seat, by_seat.get(seat.position)) for seat in seats],
-        "default_model": openrouter.default_model(),
         "jev_model": typesafe.default_model(),
     }
 

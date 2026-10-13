@@ -49,7 +49,7 @@ docker compose exec web python manage.py createsuperuser
   build time, `DEBUG=0`, gunicorn on port 8000 as an unprivileged user.
   `docker-entrypoint.sh` runs `migrate` before starting the server. It waits for
   the bridge's health check and reaches it at `ENGINE_URL=http://engine:8080`.
-- `FORGE_WORKERS`, `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `JEV_MODEL` and
+- `FORGE_WORKERS`, `OPENROUTER_API_KEY`, `JEV_MODEL` and
   `JEV_MIN_CONFIDENCE` are passed through from your shell.
 
 CI (`.github/workflows/ci.yml`) runs on pushes to `main` only: `uv sync --frozen`,
@@ -74,8 +74,8 @@ The suite is **hermetic**:
   runner answers its own decisions.
 - **No network.** Tests never reach Scryfall, OpenRouter or the Forge bridge. They
   monkeypatch `decks.importer.fetch_card_data` / `decks.scryfall.fetch_card_raw`,
-  `requests.get` / `requests.post` on the module under test, `openrouter.chat` or
-  `typesafe.system_one`, or pass a fake `chat` / `ask`. `tests/conftest.py` makes any
+  `requests.get` / `requests.post` on the module under test or
+  `typesafe.system_one`, or pass a fake `ask`. `tests/conftest.py` makes any
   request that reaches the transport fail the test; only tests marked `forge` are
   let through, and they skip without `ENGINE_URL`.
 - **The fake bridge.** The `fake_forge` fixture routes every `playtest.forge.client()`

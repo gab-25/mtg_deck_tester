@@ -6,7 +6,7 @@ from django.views.decorators.http import require_http_methods
 
 from decks.models import Deck
 from decks.presentation import deck_pips
-from playtest.agents import openrouter
+from playtest.agents import typesafe
 from playtest.models import Playtest
 from playtest.views import session_view
 
@@ -29,6 +29,6 @@ def home(request):
             "decks": decks,
             "deck_count": Deck.objects.filter(owner=request.user).count(),
             "playtest_count": playtests.count(),
-            "jev_ready": openrouter.api_key() is not None,
+            "jev_ready": typesafe.api_key() is not None,
         },
     )

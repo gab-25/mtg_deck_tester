@@ -3,12 +3,11 @@
 Jev takes a ``state`` and a map of typed questions and returns typed answers
 (for a ``choice``: the picked option, a probability per option and a
 confidence), never free text. OpenRouter serves it at ``/api/v1/systemone`` in
-TypeSafe's native format, so the one ``OPENROUTER_API_KEY`` the LLM seats use
-covers Jev as well; OpenRouter only adds ``id``, ``provider`` and
-``usage.cost`` to the response.
+TypeSafe's native format, keyed by ``OPENROUTER_API_KEY``; OpenRouter only
+adds ``id``, ``provider`` and ``usage.cost`` to the response.
 
 No SDK: one endpoint does not justify a dependency, and plain ``requests.post``
-keeps the client testable with the same monkeypatch as :mod:`.openrouter`.
+keeps the client testable with a monkeypatch.
 """
 
 import logging
@@ -16,8 +15,6 @@ import os
 import time
 
 import requests
-
-from . import openrouter
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +35,17 @@ MAX_BACKOFF_SECONDS = 20.0
 # Jev's documented limit on the options of one choice question.
 MAX_CHOICE_OPTIONS = 255
 
+# Optional attribution headers, used by OpenRouter to credit the calling app.
+APP_URL = "https://github.com/gab-25/mtg_deck_tester"
+APP_TITLE = "mtg_deck_tester"
+
 
 class TypeSafeError(Exception):
     """Jev could not be reached or gave no usable answer."""
+
+
+def api_key() -> str | None:
+    return os.environ.get("OPENROUTER_API_KEY") or None
 
 
 def default_model() -> str:
@@ -79,7 +84,7 @@ def system_one(
     tests don't wait. Raises :class:`TypeSafeError` on a missing key, a network
     failure, a non-2xx answer, or a response without answers.
     """
-    key = key or openrouter.api_key()
+    key = key or api_key()
     if not key:
         raise TypeSafeError("no OpenRouter API key configured (set OPENROUTER_API_KEY)")
     model = model or default_model()
@@ -92,8 +97,8 @@ def system_one(
                 headers={
                     "Authorization": f"Bearer {key}",
                     "Content-Type": "application/json",
-                    "HTTP-Referer": openrouter.APP_URL,
-                    "X-Title": openrouter.APP_TITLE,
+                    "HTTP-Referer": APP_URL,
+                    "X-Title": APP_TITLE,
                 },
                 json={"model": model, "state": state, "questions": questions},
                 timeout=REQUEST_TIMEOUT,

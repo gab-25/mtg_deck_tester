@@ -119,7 +119,6 @@ class Seat(models.Model):
         FORGE_AI = "forge_ai", "Forge AI"
         RANDOM = "random", "Random"
         JEV = "jev", "Jev"
-        LLM = "llm", "LLM"
 
     match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name="seats")
     # 0-based place at the table.
@@ -135,7 +134,7 @@ class Seat(models.Model):
         "decks.MetagameDeck", null=True, blank=True, on_delete=models.SET_NULL, related_name="seats"
     )
     agent = models.CharField(max_length=16, choices=Agent.choices, default=Agent.JEV)
-    # OpenRouter model id for an LLM or Jev seat; empty means the default model.
+    # Jev model id of an older seat; empty means the server's JEV_MODEL.
     model = models.CharField(max_length=128, blank=True, default="")
     # What Forge made of the deck when the game was created:
     # ``{"unsupported_cards": [...]}``, cards it knows but cannot play fully.
@@ -161,12 +160,7 @@ class Seat(models.Model):
             self.Agent.FORGE_AI: "memory",
             self.Agent.RANDOM: "casino",
             self.Agent.JEV: "bolt",
-            self.Agent.LLM: "psychology",
         }.get(self.agent, "casino")
-
-    @property
-    def uses_model(self) -> bool:
-        return self.agent in (self.Agent.LLM, self.Agent.JEV)
 
     @property
     def controller(self) -> str:

@@ -29,6 +29,7 @@ def test_posts_the_native_format_to_openrouter(monkeypatch):
     result = typesafe.system_one("the state", QUESTIONS, key="k")
     assert sent["url"] == "https://openrouter.ai/api/v1/systemone"
     assert sent["headers"]["Authorization"] == "Bearer k"
+    assert sent["headers"]["X-Title"] == "mtg_deck_tester"
     assert sent["json"] == {"model": "~typesafe/jev-latest", "state": "the state", "questions": QUESTIONS}
     # The versioned model that answered, not the moving alias.
     assert result["model"] == "typesafe/jev-1.13"

@@ -40,7 +40,7 @@ The default `DATABASE_URL` is the Compose Postgres on localhost; set
   `MatchEvent` rows, stores the result and the summary (`playtest/summary.py`).
 - `playtest/workers.py` — the worker pool answering the bridge's decisions with each
   seat's agent → `docs/engine.md`.
-- `playtest/agents/` — Jev, LLM and random agents; Jev and OpenRouter clients →
+- `playtest/agents/` — Jev and random agents; the Jev client →
   `docs/agents.md`.
 - `theme/static/` — precompiled stylesheet, vendored fonts and icons.
 - Overall flow (request → background thread → stored result, HTMX polling) →
@@ -62,8 +62,8 @@ The default `DATABASE_URL` is the Compose Postgres on localhost; set
   do not grow `KNOWN_UNCOMPILED`.
 - Tests must never call Scryfall, OpenRouter or the Forge bridge (`tests/conftest.py`
   fails any that does): use the `fake_forge` fixture (`tests/fakeforge.py`),
-  monkeypatch `fetch_card_data` / `fetch_card_raw`, `requests`, `openrouter.chat` or
-  `typesafe.system_one`, or pass a fake `chat` / `ask`. Only tests marked `forge`
+  monkeypatch `fetch_card_data` / `fetch_card_raw`, `requests` or
+  `typesafe.system_one`, or pass a fake `ask`. Only tests marked `forge`
   reach a real bridge. Shared builders are in `tests/factories.py`.
 - Every deck/match view loads rows through `mtg_deck_tester.access.get_owned_or_404`.
 

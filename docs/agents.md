@@ -11,7 +11,6 @@ uses the server's `JEV_MODEL`. The other agents stay in the code for tests and e
 | `Seat.Agent` | Class | Network | Notes |
 |---|---|---|---|
 | `jev` | `JevAgent` | OpenRouter | Every new seat. One Jev `choice` per decision; logs its confidence. |
-| `llm` | `LLMAgent` | OpenRouter | Not selectable; kept for the evaluation in #44. One chat completion per decision; logs its reason. |
 | `random` | `RandomAgent` | none | Not selectable; the seeded baseline of the runner and replay tests. |
 | `forge_ai` | — | none | Older matches only. Such a seat is created with `controller: "forge_ai"` and never reaches a worker. |
 
@@ -23,7 +22,7 @@ uses the server's `JEV_MODEL`. The other agents stay in the code for tests and e
 @dataclass(frozen=True)
 class Decision:
     choice: int | None          # the picked option's index; None delegates to Forge's AI
-    reasoning: str = ""         # why, in the agent's own words (LLM)
+    reasoning: str = ""         # why, in the agent's own words
     fallback_reason: str = ""   # set when it delegates: why, in words
     fallback_kind: str = ""     # "low_confidence", "error" or "budget"
     confidence: float | None = None                    # Jev
@@ -79,7 +78,7 @@ Python kernel (222 decisions, median ~0.4). A missing key, a transport error, a 
 or one naming no offered option delegates with `error`.
 
 **Metering** happens in the worker (`playtest.workers.decide`) for agents marked
-`metered` (Jev and LLM): past `MAX_AGENT_CALLS` (400) for the seat or
+`metered` (Jev): past `MAX_AGENT_CALLS` (400) for the seat or
 `MAX_MATCH_SECONDS` (1800) for the match, the seat delegates without calling the
 model (`budget`).
 
@@ -91,7 +90,7 @@ against OpenRouter's `POST /api/v1/systemone`, which serves Jev in TypeSafe's na
 
 | | |
 |---|---|
-| API key | `OPENROUTER_API_KEY` (shared with the LLM client) |
+| API key | `OPENROUTER_API_KEY` (`api_key()`) |
 | Model | `JEV_MODEL`, else `~typesafe/jev-latest`; the response's versioned id is returned |
 | Retries | up to 4 attempts on `429` / `529`, honouring `retry-after`, exponential back-off |
 | Timeout | `REQUEST_TIMEOUT = 30` seconds per request |
@@ -99,22 +98,6 @@ against OpenRouter's `POST /api/v1/systemone`, which serves Jev in TypeSafe's na
 
 `read_choice(answer, options)` checks an answer names an offered option. Every
 failure is a `TypeSafeError`.
-
-## LLM agent
-
-`playtest/agents/llm_agent.py` — `LLMAgent(model=None, *, seed=None, chat=None)`.
-Each decision is one chat completion: a system message with a short brief and the
-reply format `{"choice": <number>, "reason": "<one short sentence>"}`; a user message
-with the format, the same state Jev sees, the decision kind, Forge's prompt and the
-numbered options with their facts. `parse_choice` reads the first `{...}` block. On a
-`ChatError` or an invalid reply it delegates (`error`). Whether it stays is decided
-in #44.
-
-## OpenRouter client
-
-`playtest/agents/openrouter.py` — `chat(messages, model=None, key=None) -> str`
-against `/chat/completions`. Default model `OPENROUTER_MODEL`, else
-`google/gemini-2.5-flash`. Failures raise `ChatError`.
 
 Without `OPENROUTER_API_KEY` the new-playtest form refuses to start: Jev plays every seat.
 
@@ -128,6 +111,6 @@ Without `OPENROUTER_API_KEY` the new-playtest form refuses to start: Jev plays e
 3. Build it in `playtest.workers.build_agent` from the `Seat` and the match seed.
 4. To let new matches use it, change `SEAT_AGENT` in `playtest/forms.py` (today every
    seat is Jev and the form offers no choice).
-5. Test it without network: pass a fake `ask` / `chat`, or monkeypatch
+5. Test it without network: pass a fake `ask`, or monkeypatch
    `typesafe.system_one` / `requests.post`, and play it against the `fake_forge`
    fixture (`tests/test_jev_agent.py`, `tests/test_runner.py`).

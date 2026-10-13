@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from decks.formats import FORMATS, playable_formats
 from decks.models import Deck, MetagameDeck
 
-from .agents import openrouter
+from .agents import typesafe
 from .models import Seat
 
 # An opponent picker value for a metagame deck.
@@ -103,7 +103,7 @@ def parse_playtest_form(post, user) -> tuple[PlaytestForm | None, list[str]]:
         errors.append(f"Pick at most {MAX_OPPONENTS} opponents; {len(values)} chosen.")
     opponents = [o for o in (_opponent(v, decks, fmt, errors) for v in values[:MAX_OPPONENTS]) if o]
 
-    if not openrouter.api_key():
+    if not typesafe.api_key():
         errors.append("Jev plays every seat and needs an OpenRouter API key: set OPENROUTER_API_KEY.")
 
     if errors:

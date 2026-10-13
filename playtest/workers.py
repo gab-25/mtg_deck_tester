@@ -25,7 +25,6 @@ from . import forge
 from .agents import typesafe
 from .agents.base import Decision, delegate
 from .agents.jev_agent import JevAgent
-from .agents.llm_agent import LLMAgent
 from .agents.random_agent import RandomAgent
 from .models import Match, Seat
 
@@ -67,8 +66,6 @@ def build_agent(seat: Seat, seed: int):
     agent_seed = seed + seat.position
     if seat.agent == Seat.Agent.JEV:
         return JevAgent(seat.model or typesafe.default_model(), seed=agent_seed)
-    if seat.agent == Seat.Agent.LLM:
-        return LLMAgent(seat.model or None, seed=agent_seed)
     if seat.agent == Seat.Agent.RANDOM:
         return RandomAgent(agent_seed)
     # forge_ai seats never reach a worker; anything else is Forge's AI too.

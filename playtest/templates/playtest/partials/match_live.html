@@ -27,7 +27,6 @@ itself (outerHTML swap); the finished render drops the trigger and polling stops
             </div>
             <div translate="no" class="font-cinzel font-semibold text-[16px] leading-[1.2] mb-1.5">{{ seat.deck_name }}</div>
             {% if seat.metagame_deck %}<div class="text-[11px] text-txt3 mb-2">Metagame · {{ seat.metagame_deck.get_source_display }} · {{ seat.metagame_deck.fetched_at|date:"j M Y" }}</div>{% endif %}
-            {% if seat.agent == 'llm' %}<div class="font-mono2 text-[11px] text-txt3 mb-2">{{ seat.model|default:default_model }}</div>{% endif %}
             {% if seat.agent == 'jev' %}<div class="font-mono2 text-[11px] text-txt3 mb-2">{{ seat.model|default:jev_model }}</div>{% endif %}
             <div class="flex items-center gap-2 mt-2 text-[13px]">
                 {% if match.winner_id == seat.id %}
