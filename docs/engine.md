@@ -24,7 +24,8 @@ Forge's AI.
 | `POST` | `/decisions/{id}` | `{"choice": i}` or `{"delegate": true}`, with an optional `meta` stored on the event; 409 when the decision is no longer pending |
 
 A seat's `controller` is `external` (a worker answers its decisions) or `forge_ai`
-(Forge's AI plays it and it never reaches a worker).
+(Forge's AI plays it and it never reaches a worker). New matches seat agents only, so
+every seat is `external`; `forge_ai` remains for older matches.
 
 **Decisions.** A decision has a `kind` — `mulligan`, `bottom`, `priority`, `target`,
 `attack`, `block`, `choose_cards`, `confirm`, `mode` — Forge's `prompt`, the seat's
@@ -120,8 +121,8 @@ match's runner answers its own decisions between reads of the log.
 
 ## Reproducibility
 
-The bridge replays a game from its seed when the answers are the same, so random and
-Forge-AI seats replay exactly — every event but Forge's wall-clock line
+The bridge replays a game from its seed when the answers are the same, so random seats
+replay exactly — every event but Forge's wall-clock line
 ("Match Duration …"). Jev seats are as reproducible as Jev.
 
 ## The summary

@@ -12,8 +12,8 @@ rules engine with nearly every card scripted, plays every game from its own cont
 ([`mtg_forge_engine`](https://github.com/gab-25/mtg_forge_engine), the *bridge*) and asks
 each seat one decision at a time. The seats are played by
 [Jev](https://docs.typesafe.ai/introduction), TypeSafe AI's System One model, which picks
-among Forge's options and says how sure it is, by a language model, at random, or by
-Forge's own AI. No model is ever the rules engine: Forge lists the legal options; an
+among Forge's options and says how sure it is, by a language model, or at random. A
+deck is always tested against another agent, never against Forge's own AI. No model is ever the rules engine: Forge lists the legal options; an
 agent only picks one of them, or hands the decision back to Forge's AI.
 
 ## Features
@@ -36,10 +36,11 @@ agent only picks one of them, or hands the decision back to Forge's AI.
 
   A constructed deck lists its sideboard under a `Sideboard` header; the sideboard is
   imported and checked, but a match is a single game played with the main deck.
-- **Agents**: each seat gets its own agent — `forge_ai` (Forge's own computer player,
-  no network), `jev` (Jev picks each of Forge's options through OpenRouter; its
+- **Agents**: each seat gets its own agent — `jev` (the default: Jev picks each of Forge's options through OpenRouter; its
   confidence and runner-up options are logged), `llm` (a language model of your choice
-  through OpenRouter, with its written reason), or `random` (a free baseline). A Jev
+  through OpenRouter, with its written reason), or `random` (a free baseline). The
+  opponent of the deck under test is an agent too, Jev by default: Forge's own AI
+  never plays a seat (it only takes fallbacks and what the bridge does not expose). A Jev
   seat that is unsure (below `JEV_MIN_CONFIDENCE`) or unreachable hands the decision to
   Forge's AI, with the reason logged, so a match never stalls on a model.
 - **Coverage**: Forge either knows a card or the match is refused, naming the card.
@@ -57,7 +58,7 @@ agent only picks one of them, or hands the decision back to Forge's AI.
   seat: result, life over time, turns, spells cast, lands played, the agent's decisions
   against Forge AI's, confidence and fallbacks by reason. A running match can be
   stopped.
-- **Reproducible**: a match has a seed. The same seed with random or Forge-AI seats
+- **Reproducible**: a match has a seed. The same seed with random seats
   replays the same game; Jev seats are as reproducible as Jev.
 - **Scryfall cache in the database**: card JSON is cached in Postgres
   (`scryfall_cards`) and shared by every deck. Card images are not stored: the

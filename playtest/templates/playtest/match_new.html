@@ -79,7 +79,7 @@
                 <div>
                     <label class="field-label mb-2">Seed</label>
                     <input type="text" name="seed" value="{{ form_seed }}" placeholder="random" class="field" inputmode="numeric" />
-                    <div class="text-[12px] text-txt3 mt-2 font-light">The same seed and the same answers replay the same game: random and Forge AI seats replay exactly.</div>
+                    <div class="text-[12px] text-txt3 mt-2 font-light">The same seed and the same answers replay the same game: random seats replay exactly.</div>
                 </div>
             </div>
 
@@ -89,12 +89,12 @@
                         <span translate="no" class="ms text-[18px]">smart_toy</span>AGENTS
                     </div>
                     <div class="text-[12.5px] text-txt3 font-light leading-[1.55]">
-                        <span class="text-txt2">Forge AI</span> is Forge's own computer player: every decision, no network.
                         <span class="text-txt2">Jev</span> asks TypeSafe's Jev model (through OpenRouter) to pick each of Forge's options, and logs how sure it was
                         (leave the model empty for <span class="font-mono2">{{ jev_model }}</span>); when it is unsure or unreachable Forge's AI decides.
                         <span class="text-txt2">LLM</span> asks a language model on OpenRouter
                         (<span class="font-mono2">{{ default_model }}</span> by default).
                         <span class="text-txt2">Random</span> picks any option Forge offers: a free baseline.
+                        A deck is always tested against an agent, Jev by default, never against Forge's own AI.
                         {% if not llm_available %}<span class="text-gold">No OPENROUTER_API_KEY is set, so Jev and LLM seats are unavailable.</span>{% endif %}
                     </div>
                 </div>

@@ -76,6 +76,7 @@ class Match(models.Model):
 
 class Seat(models.Model):
     class Agent(models.TextChoices):
+        # Older matches only: new seats are always played by an agent.
         FORGE_AI = "forge_ai", "Forge AI"
         RANDOM = "random", "Random"
         JEV = "jev", "Jev"
@@ -94,7 +95,7 @@ class Seat(models.Model):
     metagame_deck = models.ForeignKey(
         "decks.MetagameDeck", null=True, blank=True, on_delete=models.SET_NULL, related_name="seats"
     )
-    agent = models.CharField(max_length=16, choices=Agent.choices, default=Agent.FORGE_AI)
+    agent = models.CharField(max_length=16, choices=Agent.choices, default=Agent.JEV)
     # OpenRouter model id for an LLM or Jev seat; empty means the default model.
     model = models.CharField(max_length=128, blank=True, default="")
     # What Forge made of the deck when the game was created:

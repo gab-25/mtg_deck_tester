@@ -6,10 +6,10 @@ them by index, or delegates the decision to Forge's AI.
 
 | `Seat.Agent` | Class | Network | Notes |
 |---|---|---|---|
-| `forge_ai` (default) | — | none | Forge's own computer player: the seat is created with `controller: "forge_ai"` and never reaches a worker. |
-| `jev` | `JevAgent` | OpenRouter | One Jev `choice` per decision; logs its confidence. |
+| `jev` (default) | `JevAgent` | OpenRouter | One Jev `choice` per decision; logs its confidence. |
 | `llm` | `LLMAgent` | OpenRouter | One chat completion per decision; logs its reason. |
 | `random` | `RandomAgent` | none | The free baseline, seeded per seat. |
+| `forge_ai` | — | none | Older matches only: the new-match form never offers it, since a deck is tested against an agent (Jev by default), not Forge's own AI. Such a seat is created with `controller: "forge_ai"` and never reaches a worker. |
 
 ## The interface
 

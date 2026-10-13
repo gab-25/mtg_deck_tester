@@ -199,11 +199,22 @@ def test_deleting_a_running_match_aborts_its_game(client, user, fake_forge):
 
 
 @pytest.mark.django_db
-def test_the_form_offers_the_forge_agents(client):
+def test_the_form_offers_agents_with_jev_by_default_and_never_forges_ai(client):
     content = client.get("/matches/new").content.decode()
-    for agent in ("forge_ai", "jev", "llm", "random"):
+    for agent in ("jev", "llm", "random"):
         assert f'value="{agent}"' in content
-    assert 'value="heuristic"' not in content
+    for agent in ("forge_ai", "heuristic"):
+        assert f'value="{agent}"' not in content
+    assert 'value="jev" selected' in content
+
+
+@pytest.mark.django_db
+def test_a_deck_cannot_be_tested_against_forges_ai(client, user):
+    decks = [make_deck(user, name=f"Deck {i}", fmt="duel") for i in range(2)]
+    response = client.post("/matches/create", _form("duel", decks, agent="forge_ai"))
+    assert response.status_code == 422
+    assert b"unknown agent" in response.content
+    assert not Match.objects.exists()
 
 
 def _finished(user, **seat_fields):
@@ -267,15 +278,20 @@ def test_a_finished_match_shows_its_summary(client, user, fake_forge):
 
 
 @pytest.mark.django_db
-def test_a_constructed_match_between_two_decks(client, user, fake_forge):
-    from .factories import make_constructed_deck
+def test_a_constructed_match_between_two_jev_agents(client, user, fake_forge, monkeypatch):
+    from playtest.agents import typesafe
 
+    from .factories import make_constructed_deck
+    from .test_jev_agent import StubJev
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(typesafe, "system_one", StubJev())
     decks = [make_constructed_deck(user, name=f"Goblins {i}") for i in range(2)]
-    client.post("/matches/create", _form("modern", decks, agent="forge_ai"))
+    client.post("/matches/create", _form("modern", decks, agent="jev"))
     match = Match.objects.get(owner=user)
     assert match.status == Match.Status.FINISHED, match.error
-    assert [s["controller"] for s in fake_forge.created[0]["seats"]] == ["forge_ai", "forge_ai"]
-    assert "all Forge AI" in client.get(f"/matches/{match.id}").content.decode()
+    assert [s["controller"] for s in fake_forge.created[0]["seats"]] == ["external", "external"]
+    assert set(match.events.filter(kind="decision").values_list("seat_position", flat=True)) == {0, 1}
 
 
 @pytest.mark.django_db
@@ -322,7 +338,7 @@ def test_a_match_against_a_metagame_deck(client, user, fake_forge):
     mine = make_constructed_deck(user)
     meta = _metagame()
     data = {"format": "modern", "seed": "2", "seat-0-deck": str(mine.id), "seat-0-agent": "random",
-            "seat-1-deck": f"metagame:{meta.id}", "seat-1-agent": "forge_ai"}
+            "seat-1-deck": f"metagame:{meta.id}", "seat-1-agent": "random"}
     assert client.post("/matches/create", data).status_code == 302
     match = Match.objects.get(owner=user)
     assert match.status == Match.Status.FINISHED, match.error

@@ -13,8 +13,11 @@ from .models import Seat
 METAGAME_PREFIX = "metagame:"
 # Seats that ask a model through OpenRouter.
 MODEL_AGENTS = {Seat.Agent.LLM, Seat.Agent.JEV}
-# The agents a new match may seat, in the order the form lists them.
-PLAYABLE_AGENTS = [Seat.Agent.FORGE_AI, Seat.Agent.JEV, Seat.Agent.RANDOM, Seat.Agent.LLM]
+# The agents a new match may seat, in the order the form lists them. A deck is
+# tested against agents, never against Forge's own AI: forge_ai only names the
+# seats of older matches (Forge's AI still takes fallbacks and the decisions
+# the bridge does not expose).
+PLAYABLE_AGENTS = [Seat.Agent.JEV, Seat.Agent.RANDOM, Seat.Agent.LLM]
 
 # Rows the form shows; the format decides how many of them may be filled.
 SEAT_ROWS = max(fmt.max_seats for fmt in playable_formats().values())
@@ -78,7 +81,7 @@ def parse_match_form(post, user) -> tuple[MatchForm | None, list[str]]:
         deck_id = post.get(f"seat-{row}-deck") or ""
         if not deck_id:
             continue
-        agent = post.get(f"seat-{row}-agent") or Seat.Agent.FORGE_AI
+        agent = post.get(f"seat-{row}-agent") or Seat.Agent.JEV
         if agent not in agents:
             errors.append(f"Seat {row + 1}: unknown agent {agent!r}.")
         model = (post.get(f"seat-{row}-model") or "").strip()

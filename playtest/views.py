@@ -46,7 +46,7 @@ def _form_context(user, post=None, **extra) -> dict:
         {
             "index": i,
             "deck": post.get(f"seat-{i}-deck", ""),
-            "agent": post.get(f"seat-{i}-agent", Seat.Agent.FORGE_AI),
+            "agent": post.get(f"seat-{i}-agent", Seat.Agent.JEV),
             "model": post.get(f"seat-{i}-model", ""),
         }
         for i in range(SEAT_ROWS)
