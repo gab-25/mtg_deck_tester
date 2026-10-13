@@ -20,8 +20,9 @@ logger = logging.getLogger(__name__)
 
 API_URL = "https://openrouter.ai/api/v1/systemone"
 
-# The alias follows Jev releases; the response names the exact version.
-DEFAULT_MODEL = "~typesafe/jev-latest"
+# Every Jev seat uses this alias, which follows Jev releases; the response
+# names the exact version.
+MODEL = "~typesafe/jev-latest"
 
 # A match runs in a background thread: never wait forever on one request.
 REQUEST_TIMEOUT = 30
@@ -46,10 +47,6 @@ class TypeSafeError(Exception):
 
 def api_key() -> str | None:
     return os.environ.get("OPENROUTER_API_KEY") or None
-
-
-def default_model() -> str:
-    return os.environ.get("JEV_MODEL") or DEFAULT_MODEL
 
 
 def choice(instructions, criteria: dict) -> dict:
@@ -87,7 +84,7 @@ def system_one(
     key = key or api_key()
     if not key:
         raise TypeSafeError("no OpenRouter API key configured (set OPENROUTER_API_KEY)")
-    model = model or default_model()
+    model = model or MODEL
 
     response = None
     for attempt in range(MAX_ATTEMPTS):

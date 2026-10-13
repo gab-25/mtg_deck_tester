@@ -49,8 +49,8 @@ docker compose exec web python manage.py createsuperuser
   build time, `DEBUG=0`, gunicorn on port 8000 as an unprivileged user.
   `docker-entrypoint.sh` runs `migrate` before starting the server. It waits for
   the bridge's health check and reaches it at `FORGE_URL=http://forge:8080`.
-- `FORGE_WORKERS`, `OPENROUTER_API_KEY`, `JEV_MODEL` and
-  `JEV_MIN_CONFIDENCE` are passed through from your shell.
+- `FORGE_WORKERS`, `OPENROUTER_API_KEY` and `JEV_MIN_CONFIDENCE` are passed
+  through from your shell.
 
 CI (`.github/workflows/ci.yml`) runs on pushes to `main` only: `uv sync --frozen`,
 `uv run pytest`, then builds and pushes a multi-arch image to

@@ -25,7 +25,6 @@ def test_posts_the_native_format_to_openrouter(monkeypatch):
         return Response(payload={"model": "typesafe/jev-1.13", "answers": ANSWER, "usage": {"cost": 0.0001}})
 
     monkeypatch.setattr(requests, "post", fake_post)
-    monkeypatch.delenv("JEV_MODEL", raising=False)
     result = typesafe.system_one("the state", QUESTIONS, key="k")
     assert sent["url"] == "https://openrouter.ai/api/v1/systemone"
     assert sent["headers"]["Authorization"] == "Bearer k"
@@ -34,11 +33,6 @@ def test_posts_the_native_format_to_openrouter(monkeypatch):
     # The versioned model that answered, not the moving alias.
     assert result["model"] == "typesafe/jev-1.13"
     assert result["answers"] == ANSWER
-
-
-def test_jev_model_setting(monkeypatch):
-    monkeypatch.setenv("JEV_MODEL", "~typesafe/jev-1.13")
-    assert typesafe.default_model() == "~typesafe/jev-1.13"
 
 
 def test_retries_rate_limits_honouring_retry_after(monkeypatch):

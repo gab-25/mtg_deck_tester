@@ -90,7 +90,7 @@
                     </div>
                     <div class="text-[12.5px] text-txt3 font-light leading-[1.55]">
                         Your deck and each opponent are played by <span class="text-txt2">Jev</span>, TypeSafe's model (through OpenRouter): it picks each of Forge's options and logs how sure it was
-                        (<span class="font-mono2">{{ jev_model }}</span>, set on the server). When it is unsure or unreachable, Forge's AI takes that one decision.
+                        (<span class="font-mono2">{{ jev_model }}</span>). When it is unsure or unreachable, Forge's AI takes that one decision.
                         {% if not jev_available %}<span class="text-gold">No OPENROUTER_API_KEY is set, so no playtest can start.</span>{% endif %}
                     </div>
                 </div>

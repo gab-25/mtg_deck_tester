@@ -186,7 +186,7 @@ class JevAgent:
     metered = True
 
     def __init__(self, model: str | None = None, *, seed: int | None = None, ask=None, min_confidence: float | None = None):
-        self.model = model or typesafe.default_model()
+        self.model = model or typesafe.MODEL
         self.rng = random.Random(f"{seed}:jev")
         self.ask = ask or typesafe.system_one
         self.min_confidence = default_min_confidence() if min_confidence is None else min_confidence

@@ -133,7 +133,7 @@ class Seat(models.Model):
         "decks.MetagameDeck", null=True, blank=True, on_delete=models.SET_NULL, related_name="seats"
     )
     agent = models.CharField(max_length=16, choices=Agent.choices, default=Agent.JEV)
-    # Jev model id of an older seat; empty means the server's JEV_MODEL.
+    # Jev model id of an older seat; empty means typesafe.MODEL.
     model = models.CharField(max_length=128, blank=True, default="")
     # What Forge made of the deck when the game was created:
     # ``{"unsupported_cards": [...]}``, cards it knows but cannot play fully.

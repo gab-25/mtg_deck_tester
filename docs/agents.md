@@ -6,7 +6,7 @@ them by index, or delegates the decision to Forge's AI.
 
 **Every seat of a new match is Jev** (`playtest.forms.SEAT_AGENT`): the new-playtest form
 offers decks, not agents or models, and ignores any posted agent or model: every seat
-uses the server's `JEV_MODEL`. Jev is the only agent; `forge_ai` survives for older seats.
+uses `~typesafe/jev-latest` (`typesafe.MODEL`). Jev is the only agent; `forge_ai` survives for older seats.
 
 | `Seat.Agent` | Class | Network | Notes |
 |---|---|---|---|
@@ -90,7 +90,7 @@ against OpenRouter's `POST /api/v1/systemone`, which serves Jev in TypeSafe's na
 | | |
 |---|---|
 | API key | `OPENROUTER_API_KEY` (`api_key()`) |
-| Model | `JEV_MODEL`, else `~typesafe/jev-latest`; the response's versioned id is returned |
+| Model | always `~typesafe/jev-latest`; the response's versioned id is returned |
 | Retries | up to 4 attempts on `429` / `529`, honouring `retry-after`, exponential back-off |
 | Timeout | `REQUEST_TIMEOUT = 30` seconds per request |
 | Limits | `choice()` refuses more than 255 options |

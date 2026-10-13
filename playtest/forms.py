@@ -11,8 +11,8 @@ from .models import Seat
 
 # An opponent picker value for a metagame deck.
 METAGAME_PREFIX = "metagame:"
-# Every seat of a new match is played by Jev, with the server's model
-# (JEV_MODEL): the user picks decks, not agents or models. The other
+# Every seat of a new match is played by Jev, with ~typesafe/jev-latest
+# (typesafe.MODEL): the user picks decks, not agents or models. The other
 # Seat.Agent values only name the seats of older matches; Forge's AI still
 # takes fallbacks and the decisions the bridge does not expose.
 SEAT_AGENT = Seat.Agent.JEV

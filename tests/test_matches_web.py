@@ -446,8 +446,7 @@ def test_an_unreadable_bridge_answer_leaves_no_match(client, user, monkeypatch):
 
 
 @pytest.mark.django_db
-def test_the_jev_model_cannot_be_set_from_the_form(client, user, fake_forge, jev, monkeypatch):
-    monkeypatch.delenv("JEV_MODEL", raising=False)
+def test_the_jev_model_cannot_be_set_from_the_form(client, user, fake_forge, jev):
     assert 'name="seat-0-model"' not in client.get("/matches/new").content.decode()
     decks = [make_deck(user, name=f"Deck {i}", fmt="duel") for i in range(2)]
     client.post("/matches/create", _form("duel", decks, **{"seat-0-model": "openai/gpt-5"}))

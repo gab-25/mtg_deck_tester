@@ -84,7 +84,7 @@ def _form_context(user, post=None, **extra) -> dict:
             (f"{METAGAME_PREFIX}{meta.id}", meta)
             for meta in MetagameDeck.objects.filter(status=MetagameDeck.Status.READY).order_by("format", "rank")
         ],
-        "jev_model": typesafe.default_model(),
+        "jev_model": typesafe.MODEL,
         "jev_available": typesafe.api_key() is not None,
         **extra,
     }
@@ -239,7 +239,7 @@ def _live_context(match) -> dict:
         "log": log_rows(events, {seat.position: seat.deck_name for seat in seats}),
         "summary": summary,
         "seat_stats": [(seat, by_seat.get(seat.position)) for seat in seats],
-        "jev_model": typesafe.default_model(),
+        "jev_model": typesafe.MODEL,
     }
 
 
