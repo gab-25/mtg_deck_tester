@@ -275,6 +275,10 @@ def _activate(state: GameState, seat: int, action: Action) -> list[Event]:
             player.hand.remove(card)
             put_card(state, card, Zone.GRAVEYARD)
             events.append(Event(EventKind.DISCARD, seat, f"{player.name} discards {card.name}.", {"card": card.name}))
+    if cost.sacrifice:
+        victim = state.permanent(action.paid_with[0])
+        events.append(Event(EventKind.EFFECT, seat, f"{state.player(seat).name} sacrifices {victim.name}.", {"effect": "sacrifice", "card": victim.name}))
+        events += leave_battlefield(state, victim, Zone.GRAVEYARD)
     if cost.sacrifice_self:
         events += leave_battlefield(state, perm, Zone.GRAVEYARD)
     item = StackItem(

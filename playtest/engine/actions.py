@@ -405,16 +405,41 @@ def _activations(state: GameState, seat: int, limits: Limits) -> list[Action]:
             combos = _target_combos(state, seat, (ability,), limits)
             if combos == []:
                 continue
-            for targets in combos if combos is not None else [()]:
-                ward = sum(ward_cost(state, ref, seat) for _, ref in targets)
-                if not can_pay(srcs, mana.plus_generic(ward)):
-                    continue
-                label = f"Activate {perm.name}: {describe_ability(ability)}"
-                label += _targets_label(state, targets) if combos is not None else " (targets chosen next)"
-                actions.append(
-                    Action(ActionKind.ACTIVATE, permanent=perm.id, ability=index, targets=targets, label=label, name=perm.name)
-                )
+            victims = [None]
+            if cost.sacrifice:
+                victims = [v for v in _distinct(state, state.controlled(seat)) if _fits_cost(v, perm, cost.sacrifice)]
+            for victim in victims:
+                for targets in combos if combos is not None else [()]:
+                    ward = sum(ward_cost(state, ref, seat) for _, ref in targets)
+                    if not can_pay(srcs, mana.plus_generic(ward)):
+                        continue
+                    label = f"Activate {perm.name}: {describe_ability(ability)}"
+                    if victim is not None:
+                        label += f", sacrificing {victim.name}"
+                    label += _targets_label(state, targets) if combos is not None else " (targets chosen next)"
+                    actions.append(
+                        Action(
+                            ActionKind.ACTIVATE,
+                            permanent=perm.id,
+                            ability=index,
+                            targets=targets,
+                            paid_with=(victim.id,) if victim is not None else (),
+                            label=label,
+                            name=perm.name,
+                        )
+                    )
     return actions
+
+
+def _fits_cost(victim: Permanent, source: Permanent, what: str) -> bool:
+    """Whether ``victim`` can be sacrificed for ``source``'s "sacrifice a <what>" cost."""
+    if what.startswith("another "):
+        if victim.id == source.id:
+            return False
+        what = what.removeprefix("another ")
+    if what == "creature or artifact":
+        what = "artifact or creature"
+    return _fits_sacrifice(victim, what)
 
 
 def _attacker_actions(state: GameState, seat: int) -> list[Action]:

@@ -468,7 +468,12 @@ class HeuristicAgent:
             if fetch:
                 return fetch
         if instant_window and (view["step"] == "main2" or not my_turn):
-            activation = _best(by_kind(ActionKind.ACTIVATE), lambda o: action_value(view, o) - 0.5)
+            perms = permanents(view)
+            # A permanent sacrificed to pay for it is worth what removing it would be.
+            activation = _best(
+                by_kind(ActionKind.ACTIVATE),
+                lambda o: action_value(view, o) - 0.5 - sum(removal_value(perms[i]) for i in o.paid_with if i in perms),
+            )
             if activation:
                 return activation
         if instant_window:

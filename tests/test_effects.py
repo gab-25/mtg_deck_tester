@@ -838,7 +838,7 @@ def test_leaves_gain_life_and_opponent_draw_triggers():
     game, state = _table()
     leaver = _put(state, compiled_spec("Leaver", "Creature — Spirit", "{1}", "When this creature leaves the battlefield, draw a card.", "1", "1"))
     cleric = _put(state, compiled_spec("Cleric", "Creature — Cleric", "{1}", "Whenever you gain life, each opponent loses 1 life.", "1", "1"))
-    sheoldred = _put(state, compiled_spec("Sheol", "Creature — Phyrexian", "{1}", "Whenever an opponent draws a card, they lose 2 life.", "4", "5"), seat=1)
+    sheoldred = _put(state, compiled_spec("Sheol", "Creature — Phyrexian", "{1}", "Whenever you draw a card, you gain 2 life.\nWhenever an opponent draws a card, they lose 2 life.", "4", "5"), seat=1)
     from playtest.engine.zones import Zone, leave_battlefield
 
     leave_battlefield(state, leaver, Zone.EXILE)
@@ -848,6 +848,9 @@ def test_leaves_gain_life_and_opponent_draw_triggers():
 
     gain_life(state, 0, 2, "test")
     assert _queued(state) == ["Cleric"]
+    state.triggers.clear()
+    draw_cards(state, 1, 1)
+    assert _queued(state) == ["Sheol"]
     state.triggers.clear()
     draw_cards(state, 0, 2)
     # One trigger per card drawn; "they" is the player who drew.
@@ -1168,3 +1171,19 @@ def test_if_you_do_needs_an_earlier_optional_op():
     }
     with pytest.raises(dsl.DslError, match="if_done"):
         dsl.validate_program(payload, facts)
+
+
+def test_a_sacrifice_cost_lets_the_player_pick_the_permanent():
+    game, state = _table()
+    outlet = _put(state, compiled_spec("Bombardment", "Enchantment", "{2}", "Sacrifice a creature: This enchantment deals 1 damage to any target."))
+    token = _put(state, card("Goblin", "Creature", "", 1, 1))
+    big = _put(state, card("Big", "Creature", "{5}", 5, 5))
+    actions = [a for a in legal_actions(state, 0) if a.kind == ActionKind.ACTIVATE and dict(a.targets).get("0:t1") == "p1"]
+    assert sorted(a.paid_with for a in actions) == sorted([(token.id,), (big.id,)])
+    apply(state, 0, next(a for a in actions if a.paid_with == (token.id,)))
+    resolve_top(state)
+    assert token not in state.battlefield and big in state.battlefield and state.player(1).life == 19
+    other = compiled_spec("Shaman", "Creature — Goblin", "{1}", "Sacrifice another creature: You gain 1 life.", "1", "1")
+    shaman = _put(state, other)
+    assert all(a.paid_with != (shaman.id,) for a in legal_actions(state, 0) if a.permanent == shaman.id)
+    assert outlet in state.battlefield

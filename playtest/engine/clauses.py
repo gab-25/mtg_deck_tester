@@ -16,7 +16,7 @@ import re
 from dataclasses import dataclass
 
 from .cardrules import CardFacts, number_value
-from .dsl import OPS, Cost, Trigger, parse_clause, selector_phrase_regex
+from .dsl import OPS, SACRIFICE_COSTS, Cost, Trigger, parse_clause, selector_phrase_regex
 from .manacost import ManaCostError, parse_mana_cost
 
 MAX_CLAUSES_PER_ABILITY = 4
@@ -61,6 +61,7 @@ _TRIGGERS = (
     (r"^when(?:ever)? this \w+ leaves the battlefield, (?P<effect>.+)$", ((Trigger.LEAVES, ""),)),
     (r"^whenever you gain life, (?P<effect>.+)$", ((Trigger.GAIN_LIFE, ""),)),
     (r"^whenever an opponent draws a card, (?P<effect>.+)$", ((Trigger.OPPONENT_DRAWS, ""),)),
+    (r"^whenever you draw a card, (?P<effect>.+)$", ((Trigger.YOU_DRAW, ""),)),
 )
 _TRIGGERS = tuple((re.compile(pattern), triggers) for pattern, triggers in _TRIGGERS)
 # An ability word ("landfall —") has no rules meaning (CR 207.2c).
@@ -153,6 +154,7 @@ def _parse_cost(text: str, line: str) -> Cost:
     mana = ""
     tap = sacrifice = False
     life = discard = 0
+    other = ""
     for part in (p.strip() for p in text.split(",")):
         if part == "{t}":
             tap = True
@@ -162,6 +164,8 @@ def _parse_cost(text: str, line: str) -> Cost:
             life = int(part.split()[1])
         elif re.fullmatch(r"sacrifice this (?:creature|artifact|enchantment|land|permanent)", part):
             sacrifice = True
+        elif re.fullmatch(r"sacrifice an? (?:" + "|".join(SACRIFICE_COSTS) + ")", part) and not other:
+            other = re.sub(r"^sacrifice an? ", "", part)
         elif re.fullmatch(r"(?:\{[^}]+\})+", part) and not mana:
             try:
                 parse_mana_cost(part)
@@ -170,7 +174,7 @@ def _parse_cost(text: str, line: str) -> Cost:
             mana = part.upper()
         else:
             raise SplitError(line, f"unsupported cost “{part}”")
-    return Cost(mana=mana, tap=tap, sacrifice_self=sacrifice, life=life, discard=discard)
+    return Cost(mana=mana, tap=tap, sacrifice_self=sacrifice, life=life, discard=discard, sacrifice=other)
 
 
 def reads_whole(text: str) -> bool:

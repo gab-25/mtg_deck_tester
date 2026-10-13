@@ -26,7 +26,7 @@ from .manacost import ManaCostError, parse_mana_cost, parse_mana_symbols
 
 # Bump only when the accepted vocabulary or a program's meaning changes: it is
 # part of the compiled-rules cache key.
-DSL_VERSION = "7"
+DSL_VERSION = "8"
 
 
 class DslError(ValueError):
@@ -59,6 +59,7 @@ class Trigger:
     LEAVES = "LEAVES"
     GAIN_LIFE = "GAIN_LIFE"
     OPPONENT_DRAWS = "OPPONENT_DRAWS"
+    YOU_DRAW = "YOU_DRAW"
 
 
 TRIGGERS = {
@@ -78,6 +79,7 @@ TRIGGERS = {
     Trigger.LEAVES: "when this permanent leaves the battlefield, whatever the zone",
     Trigger.GAIN_LIFE: "whenever its controller gains life",
     Trigger.OPPONENT_DRAWS: "whenever an opponent of its controller draws a card",
+    Trigger.YOU_DRAW: "whenever its controller draws a card",
 }
 
 TRIGGERED = (
@@ -94,6 +96,7 @@ TRIGGERED = (
     Trigger.LEAVES,
     Trigger.GAIN_LIFE,
     Trigger.OPPONENT_DRAWS,
+    Trigger.YOU_DRAW,
 )
 # What ``Ability.when`` may say for the event triggers that take a filter:
 # CAST is "<who>:<spell kind>", ENTERS the kind of permanent.
@@ -791,10 +794,13 @@ class Cost:
     life: int = 0
     # Cards discarded from hand (the least valuable, like mana, paid automatically).
     discard: int = 0
+    # Another permanent of a kind sacrificed ("creature", "another creature"…):
+    # the activating player picks which (one action per candidate).
+    sacrifice: str = ""
 
     @property
     def empty(self) -> bool:
-        return not (self.mana or self.tap or self.sacrifice_self or self.life or self.discard)
+        return not (self.mana or self.tap or self.sacrifice_self or self.life or self.discard or self.sacrifice)
 
 
 @dataclass(frozen=True, slots=True)
@@ -833,7 +839,18 @@ _PROGRAM_KEYS = {"version", "abilities"}
 _ABILITY_KEYS = {"trigger", "ops", "targets", "cost", "mode_group", "text", "when"}
 _TARGET_KEYS = {"selector", "restriction", "of"}
 _RESTRICTION_KEYS = {"kind", "value"}
-_COST_KEYS = {"mana", "tap", "sacrifice_self", "life", "discard"}
+_COST_KEYS = {"mana", "tap", "sacrifice_self", "life", "discard", "sacrifice"}
+# What an activation cost may sacrifice besides the permanent itself.
+SACRIFICE_COSTS = (
+    "creature",
+    "another creature",
+    "artifact",
+    "another artifact",
+    "land",
+    "artifact or creature",
+    "another creature or artifact",
+    "permanent",
+)
 _OP_FIELDS = {
     "op",
     "target",
@@ -930,7 +947,10 @@ def _validate_ability(data, path: str, facts, grounded: set[int], has_x: bool) -
             sacrifice_self=raw_cost.get("sacrifice_self") is True,
             life=_int(raw_cost.get("life", 0), f"{path}.cost.life", 0, AMOUNT_MAX),
             discard=_int(raw_cost.get("discard", 0), f"{path}.cost.discard", 0, MAX_DISCARD_COST),
+            sacrifice=raw_cost.get("sacrifice") or "",
         )
+        if cost.sacrifice and cost.sacrifice not in SACRIFICE_COSTS:
+            raise DslError(f"{path}.cost.sacrifice", f"unknown sacrifice {cost.sacrifice!r}")
         if cost.discard and cost.discard not in grounded:
             raise DslError(f"{path}.cost.discard", f"{cost.discard} does not appear in the card's text")
         if cost.life and cost.life not in grounded:
@@ -1267,6 +1287,7 @@ def to_json(program: CardProgram) -> dict:
                 "sacrifice_self": ability.cost.sacrifice_self,
                 "life": ability.cost.life,
                 "discard": ability.cost.discard,
+                "sacrifice": ability.cost.sacrifice,
             }
         if ability.mode_group is not None:
             data["mode_group"] = ability.mode_group
@@ -1306,6 +1327,7 @@ _TRIGGER_TEXT = {
     Trigger.LEAVES: "When it leaves the battlefield: ",
     Trigger.GAIN_LIFE: "When you gain life: ",
     Trigger.OPPONENT_DRAWS: "When an opponent draws a card: ",
+    Trigger.YOU_DRAW: "When you draw a card: ",
 }
 
 
@@ -1401,6 +1423,8 @@ def describe_ability(ability: Ability) -> str:
             parts.append(f"pay {ability.cost.life} life")
         if ability.cost.discard:
             parts.append(f"discard {ability.cost.discard}")
+        if ability.cost.sacrifice:
+            parts.append(f"sacrifice a{'n' if ability.cost.sacrifice[0] in 'aeiou' else ''} {ability.cost.sacrifice}")
         if ability.cost.sacrifice_self:
             parts.append("sacrifice it")
         return f"{', '.join(parts)}: {body}"

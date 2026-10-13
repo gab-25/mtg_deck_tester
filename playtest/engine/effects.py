@@ -343,6 +343,7 @@ def draw_cards(state: GameState, seat: int, count: int) -> list[Event]:
         player.hand.append(card)
         drawn += 1
         queue_event_triggers(state, Trigger.OPPONENT_DRAWS, lambda perm, ability: perm.controller != seat, seat)
+        queue_event_triggers(state, Trigger.YOU_DRAW, lambda perm, ability: perm.controller == seat)
         if card.spec.is_spell_only and not card.spec.supported:
             player.dead_drawn += 1
     events = []

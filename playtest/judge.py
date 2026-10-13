@@ -230,6 +230,7 @@ def assemble(abilities: list[ClauseSet], answers: dict) -> dict:
                 "sacrifice_self": ability.cost.sacrifice_self,
                 "life": ability.cost.life,
                 "discard": ability.cost.discard,
+                "sacrifice": ability.cost.sacrifice,
             }
         if ability.mode_group is not None:
             data["mode_group"] = ability.mode_group
