@@ -87,8 +87,9 @@ class AgentCache:
 
     Agents hold their seeded RNG: the same agent answering the game's
     decisions in order is what makes a random seat replay from its seed.
-    A game's decisions come one at a time, so one entry is never used by two
-    workers at once.
+    A game's decisions come one at a time, so one entry is used by one worker
+    at a time — unless an agent outlives the bridge's DECISION_TIMEOUT, when
+    the next decision may arrive meanwhile and that game stops replaying exactly.
     """
 
     entries: dict = field(default_factory=dict)
@@ -133,6 +134,9 @@ def decide(decision: dict, *, cache: AgentCache = agents, grace: float = UNKNOWN
     match = _find_match(decision["game_id"], grace)
     if match is None:
         return delegate("error", "no match for this game")
+    if not match.is_busy:
+        # A failed or stopped match whose game still runs: nobody plays it.
+        return delegate("error", f"the match is {match.status}")
     seat = match.seats.filter(position=decision["seat"]).first()
     if seat is None:
         return delegate("error", f"no seat {decision['seat']} in this match")

@@ -32,8 +32,9 @@ logger = logging.getLogger(__name__)
 POLL_SECONDS = 1.0
 # How long the runner answers its own decisions before reading the log again.
 SELF_SERVE_WAIT = 0.5
-# Transient bridge errors tolerated in a row while following a game.
-MAX_POLL_ERRORS = 5
+# How long the bridge may stay unreachable while a game is followed (a
+# restart of the web container, a network blip) before the match fails.
+MAX_OUTAGE_SECONDS = 60
 # A game the bridge never ends is aborted after this long (the bridge's own
 # turn cap and timeouts normally end it much sooner).
 DEFAULT_MATCH_TIMEOUT = 3 * 3600
@@ -114,7 +115,7 @@ def follow(match: Match, client) -> dict:
     last = match.events.order_by("-seq").values_list("seq", flat=True).first()
     since = 0 if last is None else last + 1
     deadline = time.monotonic() + _match_timeout()
-    errors = 0
+    outage_since = None
     while True:
         try:
             if not workers.running():
@@ -122,23 +123,25 @@ def follow(match: Match, client) -> dict:
                 if decision is not None:
                     workers.serve(client, decision, grace=0)
             batch = client.events(match.forge_game_id, since)
+            outage_since = None
             if batch["events"]:
                 _store(match, batch["events"])
                 since = batch["next"]
-                errors = 0
                 continue
             game = client.game(match.forge_game_id)
-            errors = 0
         except forge.ForgeError:
-            errors += 1
-            if errors >= MAX_POLL_ERRORS:
+            outage_since = outage_since or time.monotonic()
+            if time.monotonic() - outage_since > MAX_OUTAGE_SECONDS:
                 raise
             time.sleep(POLL_SECONDS)
             continue
         if game["status"] in forge.ENDED:
-            # The last events may have landed after the read above.
-            batch = client.events(match.forge_game_id, since)
-            _store(match, batch["events"])
+            # The last events may have landed after the read above; a game
+            # that ended is recorded even if that read fails.
+            try:
+                _store(match, client.events(match.forge_game_id, since)["events"])
+            except forge.ForgeError as exc:
+                logger.warning("Could not read the last events: %s", exc)
             return game
         if not Match.objects.filter(pk=match.pk).exists():
             client.abort(match.forge_game_id)
@@ -150,8 +153,14 @@ def follow(match: Match, client) -> dict:
             time.sleep(POLL_SECONDS)
 
 
-def _fail(match_id, error: str) -> None:
+def _fail(match_id, error: str, client=None, game_id: str = "") -> None:
+    """Marks the match failed and ends its game, so no agent keeps playing it."""
     Match.objects.filter(pk=match_id).update(status=Match.Status.FAILED, error=error, finished_at=timezone.now())
+    if client is not None and game_id:
+        try:
+            client.abort(game_id)
+        except forge.ForgeError as exc:
+            logger.warning("Could not abort game %s: %s", game_id, exc)
 
 
 def _finish(match: Match, game: dict) -> None:
@@ -190,7 +199,9 @@ def _finish(match: Match, game: dict) -> None:
 def run_match(match_id) -> None:
     """Background job: follows ``match_id``'s game on the bridge to its end."""
     with job_log_context("match", match_id):
-        match = Match.objects.get(pk=match_id)
+        match = Match.objects.filter(pk=match_id).first()
+        if match is None:
+            return  # deleted before the job started
         client = forge.client()
         if getattr(settings, "RUN_JOBS_IN_BACKGROUND", True):
             workers.ensure_started()
@@ -204,9 +215,9 @@ def run_match(match_id) -> None:
                 _finish(match, game)
         except forge.ForgeError as exc:
             logger.warning("Match failed: %s", exc)
-            _fail(match_id, str(exc))
+            _fail(match_id, str(exc), client, match.forge_game_id)
         except Exception as exc:  # noqa: BLE001 - record any failure for the user.
             logger.exception("Match failed")
-            _fail(match_id, str(exc))
+            _fail(match_id, str(exc), client, match.forge_game_id)
         finally:
             workers.agents.forget(match.pk)

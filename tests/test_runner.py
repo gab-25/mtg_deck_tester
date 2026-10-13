@@ -230,3 +230,57 @@ def test_ten_matches_started_together_finish_with_two_workers(user, fake_forge, 
     statuses = list(Match.objects.values_list("status", flat=True))
     assert statuses == [Match.Status.FINISHED] * 10, list(Match.objects.values_list("error", flat=True))
     assert MatchEvent.objects.filter(kind="game_over").count() == 10
+
+
+# -- failures end the game on the bridge -----------------------------------------------------
+
+
+def test_a_failed_match_aborts_its_game_so_no_agent_keeps_playing(user, fake_forge, monkeypatch):
+    from playtest import forge
+
+    monkeypatch.setattr(runner, "MAX_OUTAGE_SECONDS", 0)
+    monkeypatch.setattr(runner, "POLL_SECONDS", 0)
+    match = _match(user)
+    runner.start_game(match)
+
+    def down(*args, **kwargs):
+        raise forge.ForgeError("bridge gone")
+
+    monkeypatch.setattr(fake_forge, "events", down)
+    match = _play(match)
+    assert match.status == Match.Status.FAILED and "bridge gone" in match.error
+    assert fake_forge.games[match.forge_game_id].status == "aborted"
+
+
+def test_a_decision_for_a_match_that_no_longer_runs_is_delegated(user, fake_forge):
+    match = _match(user)
+    runner.start_game(match)
+    Match.objects.filter(pk=match.pk).update(status=Match.Status.FAILED)
+    decision = fake_forge.lease(0, match.forge_game_id)
+    answer = workers.decide(decision, grace=0)
+    assert answer.delegate and answer.fallback_reason == "the match is failed"
+
+
+def test_a_game_that_ended_is_recorded_even_if_the_last_read_fails(user, fake_forge, monkeypatch):
+    from playtest import forge
+
+    match = _match(user)
+    original, calls = fake_forge.events, []
+
+    def flaky(game_id, since=0):
+        if fake_forge.games[game_id].status != "running":
+            calls.append(since)
+            if len(calls) == 2:
+                raise forge.ForgeError("blip")
+        return original(game_id, since)
+
+    monkeypatch.setattr(fake_forge, "events", flaky)
+    match = _play(match)
+    assert match.status == Match.Status.FINISHED, match.error
+
+
+def test_a_match_deleted_before_its_job_starts_is_ignored(user, fake_forge):
+    match = _match(user)
+    match_id = match.id
+    match.delete()
+    runner.run_match(match_id)  # no error

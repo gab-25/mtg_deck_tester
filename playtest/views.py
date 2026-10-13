@@ -5,6 +5,7 @@ import logging
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.shortcuts import redirect, render
+from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from decks.formats import playable_formats
@@ -111,7 +112,10 @@ def create_match(request):
             for name, cards in exc.unresolved.items()
         ]
         return render(request, "playtest/match_new.html", _form_context(request.user, request.POST, errors=errors), status=422)
-    except forge.ForgeError as exc:
+    except Exception as exc:  # noqa: BLE001 - a bridge error, or an answer we cannot read
+        if not isinstance(exc, forge.ForgeError):
+            logger.exception("Could not start the game")
+        _abort(match)
         match.delete()
         errors = [f"The match could not start: {exc}"]
         return render(request, "playtest/match_new.html", _form_context(request.user, request.POST, errors=errors), status=503)
@@ -195,7 +199,7 @@ def match_live(request, match_id):
 
 def _abort(match) -> None:
     """Ends the match's game on the bridge; a bridge that is gone has nothing to end."""
-    if not match.forge_game_id or not match.is_busy:
+    if not match.forge_game_id:
         return
     try:
         forge.client().abort(match.forge_game_id)
@@ -209,6 +213,13 @@ def stop_match(request, match_id):
     """Stops a running match: the bridge aborts the game and the runner records it."""
     match = get_owned_or_404(Match, request.user, match_id)
     _abort(match)
+    if match.is_busy:
+        # The runner records the end when it follows the game; if none does
+        # any more (the process restarted), this keeps the match from
+        # polling forever.
+        Match.objects.filter(pk=match.pk, status__in=[Match.Status.PENDING, Match.Status.RUNNING]).update(
+            status=Match.Status.STOPPED, end_reason="aborted", finished_at=timezone.now()
+        )
     return redirect("match_detail", match_id=match.id)
 
 

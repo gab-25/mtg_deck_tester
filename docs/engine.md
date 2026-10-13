@@ -83,14 +83,17 @@ them on the match page.
    Forge cannot play never becomes a match.
 2. **The job follows it.** `runner.run_match` (a background job) marks the match
    running and copies the bridge's events into `MatchEvent` rows as they arrive,
-   keeping `Match.turn` current. Transient bridge errors are retried (5 in a row);
-   a deleted match or a game past `MATCH_TIMEOUT` (3 hours) is aborted.
+   keeping `Match.turn` current. The bridge may be unreachable for up to a minute
+   (`MAX_OUTAGE_SECONDS`) before the match fails; a deleted match or a game past
+   `MATCH_TIMEOUT` (3 hours) is aborted. A match that fails for any reason aborts its
+   game, and workers delegate every decision of a match that no longer runs.
 3. **When the game ends** it stores the winner, Forge's end reason, each seat's final
    life and the summary. Status: `finished`; `stopped` when aborted by the user;
    `failed` when Forge failed or the game was `orphaned`.
 
 A running match can be stopped from its page (`matches/<id>/stop`) and deleting one
-aborts its game first.
+aborts its game first. Stopping also marks the match `stopped` itself, so a match
+whose runner died with its process (there is no recovery at startup) stops polling.
 
 ## The worker pool
 

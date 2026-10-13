@@ -389,3 +389,22 @@ def test_a_jev_match_on_the_fake_bridge_shows_confidence_and_low_confidence_fall
     unsure = Match.objects.exclude(pk=match.pk).get()
     page = client.get(f"/matches/{unsure.id}").content.decode()
     assert "decided by Forge AI (delegate)" in page and "low_confidence" in page and "Jev leaned to:" in page
+
+
+@pytest.mark.django_db
+def test_stopping_a_match_nobody_follows_any_more_ends_it(client, user, fake_forge):
+    game = fake_forge.create_game("duel", 1, [{"name": "A", "decklist": "1 Forest"}, {"name": "B", "decklist": "1 Forest"}])
+    match = Match.objects.create(owner=user, seed=1, status=Match.Status.RUNNING, forge_game_id=game["id"])
+    client.post(f"/matches/{match.id}/stop")
+    match.refresh_from_db()
+    assert match.status == Match.Status.STOPPED and b"hx-trigger" not in client.get(f"/matches/{match.id}/live").content
+
+
+@pytest.mark.django_db
+def test_an_unreadable_bridge_answer_leaves_no_match(client, user, monkeypatch):
+    from playtest import forge
+
+    monkeypatch.setattr(forge.ForgeClient, "create_game", lambda *a, **k: {"status": "running"})
+    decks = [make_deck(user, name=f"Deck {i}", fmt="duel") for i in range(2)]
+    response = client.post("/matches/create", _form("duel", decks))
+    assert response.status_code == 503 and not Match.objects.exists()

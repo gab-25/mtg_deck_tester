@@ -115,7 +115,10 @@ def summarize_match(events, seats: list, fmt: str, game: dict) -> dict:
     for index, (turn, kind, seat, text, payload) in enumerate(rows):
         if index in executions:
             continue
-        if turn > current_turn:
+        # Turns advance on Forge's log lines only: the bridge reads its log
+        # lazily, so a decision may carry the next turn before the last lines
+        # of this one arrive.
+        if kind == "log" and turn > current_turn:
             close_turns(turn - 1)
             current_turn = turn
         if kind == "log":
