@@ -12,7 +12,7 @@ class SeatInline(admin.TabularInline):
 
 @admin.register(Match)
 class MatchAdmin(admin.ModelAdmin):
-    list_display = ("id", "owner", "format", "status", "round", "end_reason", "created_at")
+    list_display = ("id", "owner", "format", "status", "turn", "end_reason", "forge_game_id", "created_at")
     list_filter = ("status", "format", "end_reason")
     readonly_fields = ("created_at", "finished_at")
     inlines = [SeatInline]
@@ -20,6 +20,6 @@ class MatchAdmin(admin.ModelAdmin):
 
 @admin.register(MatchEvent)
 class MatchEventAdmin(admin.ModelAdmin):
-    list_display = ("match", "seq", "round", "seat_position", "kind", "text")
+    list_display = ("match", "seq", "turn", "seat_position", "kind", "text")
     list_filter = ("kind",)
     search_fields = ("text", "reasoning")

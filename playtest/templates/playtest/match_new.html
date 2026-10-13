@@ -76,15 +76,10 @@
                     </div>
                 </div>
 
-                <div class="flex gap-5 flex-wrap">
-                    <div class="flex-1">
-                        <label class="field-label mb-2">Round limit</label>
-                        <input type="number" name="max_rounds" value="{{ form_max_rounds }}" min="1" max="100" class="field" />
-                    </div>
-                    <div class="flex-1">
-                        <label class="field-label mb-2">Seed</label>
-                        <input type="text" name="seed" value="{{ form_seed }}" placeholder="random" class="field" inputmode="numeric" />
-                    </div>
+                <div>
+                    <label class="field-label mb-2">Seed</label>
+                    <input type="text" name="seed" value="{{ form_seed }}" placeholder="random" class="field" inputmode="numeric" />
+                    <div class="text-[12px] text-txt3 mt-2 font-light">The same seed and the same answers replay the same game: random and Forge AI seats replay exactly.</div>
                 </div>
             </div>
 
@@ -94,12 +89,12 @@
                         <span translate="no" class="ms text-[18px]">smart_toy</span>AGENTS
                     </div>
                     <div class="text-[12.5px] text-txt3 font-light leading-[1.55]">
-                        <span class="text-txt2">Heuristic</span> plays by fixed rules: lands, threats, removal, safe attacks and good blocks. No network.
-                        <span class="text-txt2">Jev</span> asks TypeSafe's Jev model (through OpenRouter) to pick each action, and logs how sure it was
-                        (leave the model empty for <span class="font-mono2">{{ jev_model }}</span>); when it is unsure or unreachable the heuristic plays.
+                        <span class="text-txt2">Forge AI</span> is Forge's own computer player: every decision, no network.
+                        <span class="text-txt2">Jev</span> asks TypeSafe's Jev model (through OpenRouter) to pick each of Forge's options, and logs how sure it was
+                        (leave the model empty for <span class="font-mono2">{{ jev_model }}</span>); when it is unsure or unreachable Forge's AI decides.
                         <span class="text-txt2">LLM</span> asks a language model on OpenRouter
                         (<span class="font-mono2">{{ default_model }}</span> by default).
-                        <span class="text-txt2">Random</span> picks any legal action: a free baseline.
+                        <span class="text-txt2">Random</span> picks any option Forge offers: a free baseline.
                         {% if not llm_available %}<span class="text-gold">No OPENROUTER_API_KEY is set, so Jev and LLM seats are unavailable.</span>{% endif %}
                     </div>
                 </div>
@@ -109,12 +104,12 @@
                         <span translate="no" class="ms text-[18px]">gavel</span>RULES
                     </div>
                     <ul class="text-[12.5px] text-txt3 font-light leading-[1.6]" style="margin:0;padding-left:18px;list-style:disc">
-                        <li>The stack, priority, colored mana, blockers, first strike, trample and the usual keywords.</li>
-                        <li>Commander formats: commander tax and commander damage apply.</li>
-                        <li>Constructed formats: 20 life, two players, no commander; the sideboard stays out of the game.</li>
-                        <li>Cards do what their compiled rules say; a card the compiler cannot read plays as a blank.</li>
-                        <li>Mana is paid automatically, and opening hands use a fixed mulligan rule.</li>
-                        <li>Metagame decks are the top decks of each format (<span class="font-mono2">manage.py sync_metagame</span>); ⚠ marks a deck under 70% coverage.</li>
+                        <li>The Forge engine plays the full rules and every card's own script: the stack, priority, combat, layers, replacement effects.</li>
+                        <li>Two players: Duel Commander and the constructed formats. The sideboard stays out of the game.</li>
+                        <li>A deck with a card Forge does not know is refused, naming the card.</li>
+                        <li>Mana payment, combat damage assignment and a few other choices are always Forge's AI.</li>
+                        <li>The game is a draw at the bridge's turn cap (<span class="font-mono2">MAX_TURNS</span>).</li>
+                        <li>Metagame decks are the top decks of each format (<span class="font-mono2">manage.py sync_metagame</span>); ⚠ marks a deck with cards Forge does not know.</li>
                     </ul>
                 </div>
 

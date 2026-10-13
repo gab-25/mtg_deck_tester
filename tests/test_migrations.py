@@ -66,4 +66,7 @@ def test_saved_decks_get_their_image_urls_from_the_cached_card_json(django_user_
         ]
         assert all("image_paths" not in card for card in cards)
     finally:
-        _migrate(("decks", "0003_delete_scryfallimage"))
+        # Back to the latest schema of every app: unapplying decks unapplied
+        # the playtest migrations that depend on it too.
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())

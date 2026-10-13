@@ -8,6 +8,18 @@ from django.utils import timezone
 
 from decks.formats import DEFAULT_FORMAT, FORMATS, format_choices
 
+# Forge's reasons for a game's end (its GameEndReason, plus the bridge's own),
+# as the match page names them.
+END_REASONS = {
+    "AllOpponentsLost": "All opponents lost",
+    "Draw": "Draw",
+    "Conceded": "Conceded",
+    "WinsGameSpellEffect": "Won by a card's effect",
+    "turn_limit": "Turn limit reached",
+    "aborted": "Stopped",
+    "orphaned": "No worker answered",
+}
+
 
 class Match(models.Model):
     class Status(models.TextChoices):
@@ -15,10 +27,7 @@ class Match(models.Model):
         RUNNING = "running", "Running"
         FINISHED = "finished", "Finished"
         FAILED = "failed", "Failed"
-
-    class EndReason(models.TextChoices):
-        LAST_STANDING = "last_standing", "Last player standing"
-        TURN_LIMIT = "turn_limit", "Round limit reached"
+        STOPPED = "stopped", "Stopped"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner = models.ForeignKey(
@@ -26,23 +35,26 @@ class Match(models.Model):
     )
     format = models.CharField(max_length=16, choices=format_choices(), default=DEFAULT_FORMAT)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
-    # Seeds the shuffles and the random agents: the same seed and agents replay
-    # the same game.
+    # Seeds Forge's shuffles and the random agents: the same seed and the same
+    # answers replay the same game.
     seed = models.BigIntegerField()
-    max_rounds = models.PositiveIntegerField(default=20)
-    # The round in progress, updated while the match runs.
-    round = models.PositiveIntegerField(default=0)
+    # The game on the Forge bridge, set once the bridge accepted the decks.
+    forge_game_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    # The game turn in progress (both players' turns count), updated as the log arrives.
+    turn = models.PositiveIntegerField(default=0)
 
     winner = models.ForeignKey(
         "Seat", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
-    end_reason = models.CharField(max_length=16, choices=EndReason.choices, blank=True, default="")
+    # Forge's reason (see END_REASONS), kept verbatim.
+    end_reason = models.CharField(max_length=32, blank=True, default="")
     error = models.TextField(blank=True, default="")
     # The deterministic match summary (playtest.summary.summarize_match),
     # written when the game ends; empty until then.
     summary = models.JSONField(default=dict, blank=True)
 
     created_at = models.DateTimeField(default=timezone.now)
+    started_at = models.DateTimeField(null=True, blank=True)
     finished_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
@@ -58,9 +70,13 @@ class Match(models.Model):
     def has_commander(self) -> bool:
         return FORMATS[self.format].has_commander
 
+    def get_end_reason_display(self) -> str:
+        return END_REASONS.get(self.end_reason, self.end_reason)
+
 
 class Seat(models.Model):
     class Agent(models.TextChoices):
+        FORGE_AI = "forge_ai", "Forge AI"
         RANDOM = "random", "Random"
         HEURISTIC = "heuristic", "Heuristic"
         JEV = "jev", "Jev"
@@ -79,16 +95,15 @@ class Seat(models.Model):
     metagame_deck = models.ForeignKey(
         "decks.MetagameDeck", null=True, blank=True, on_delete=models.SET_NULL, related_name="seats"
     )
-    agent = models.CharField(max_length=16, choices=Agent.choices, default=Agent.HEURISTIC)
+    agent = models.CharField(max_length=16, choices=Agent.choices, default=Agent.FORGE_AI)
     # OpenRouter model id for an LLM or Jev seat; empty means the default model.
     model = models.CharField(max_length=128, blank=True, default="")
-    # The deck's coverage report (playtest.engine.coverage), computed when the
-    # match starts: how much of the deck the simulation could play.
+    # What Forge made of the deck when the game was created:
+    # ``{"unsupported_cards": [...]}``, cards it knows but cannot play fully.
     coverage = models.JSONField(default=dict, blank=True)
 
     # Filled in when the match ends.
     life = models.IntegerField(null=True, blank=True)
-    eliminated_round = models.PositiveIntegerField(null=True, blank=True)
 
     class Meta:
         db_table = "seats"
@@ -104,6 +119,7 @@ class Seat(models.Model):
     def agent_icon(self) -> str:
         """The icon-font ligature for this seat's agent."""
         return {
+            self.Agent.FORGE_AI: "memory",
             self.Agent.RANDOM: "casino",
             self.Agent.HEURISTIC: "rule",
             self.Agent.JEV: "bolt",
@@ -114,18 +130,26 @@ class Seat(models.Model):
     def uses_model(self) -> bool:
         return self.agent in (self.Agent.LLM, self.Agent.JEV)
 
+    @property
+    def controller(self) -> str:
+        """How the bridge seats it: Forge's AI plays it, or a worker answers for it."""
+        return "forge_ai" if self.agent == self.Agent.FORGE_AI else "external"
+
 
 class MatchEvent(models.Model):
-    """One entry of a match log, as the engine reported it."""
+    """One entry of a match log, as the Forge bridge reported it.
+
+    ``kind`` is the bridge's: ``log`` (Forge's game log; ``payload.type`` is
+    its category), ``decision``, ``fallback``, ``forge_ai`` or ``game_over``.
+    """
 
     match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name="events")
     seq = models.PositiveIntegerField()
-    round = models.PositiveIntegerField()
     turn = models.PositiveIntegerField()
     # The seat the event is about, or None for table-wide events.
     seat_position = models.PositiveSmallIntegerField(null=True, blank=True)
     kind = models.CharField(max_length=32)
-    # The step of the turn it happened in (untap, main1, declare_attackers…).
+    # Forge's phase it happened in (MAIN1, COMBAT_DECLARE_ATTACKERS…), when known.
     step = models.CharField(max_length=32, blank=True, default="")
     text = models.TextField()
     payload = models.JSONField(default=dict)

@@ -1,17 +1,18 @@
-"""An agent that asks Jev which legal action to take.
+"""An agent that asks Jev which of Forge's options to take.
 
-One Jev request per decision: the ``state`` is the seat's view filtered to
+One Jev request per decision: the ``state`` is the bridge's view filtered to
 what a decision needs, and the single ``choice`` question's options *are* the
-legal actions — keyed by a stable id, described by their label plus facts
-computed in code with the heuristic agent's helpers ("lethal if unblocked",
-"dies to: X", "kills Y"), because Jev does not do arithmetic. The options are
-shuffled with the agent's seeded RNG before every request and mapped back by
-key: Jev leans toward the first option, and the first legal action is always
-``Pass``.
+bridge's options — keyed by their index, described by their label plus the
+facts Forge's AI helpers computed for them ("lethal if unblocked", "dies if
+blocked by: …"), because Jev does not do arithmetic. The options are shuffled
+with the agent's seeded RNG before every request and mapped back by key: Jev
+leans toward the first option, and Forge's first option is always "Pass" or
+"Done".
 
-The answer's confidence and distribution are kept on the decision and shown in
-the log in place of a written reason. Below ``JEV_MIN_CONFIDENCE``, or when
-Jev cannot be reached, the heuristic agent decides instead — never at random.
+The answer's confidence and distribution travel with the decision to the
+bridge's event. Below ``JEV_MIN_CONFIDENCE``, or when Jev cannot be reached,
+the agent delegates: Forge's AI decides, and the fallback is logged with the
+reason.
 """
 
 import json
@@ -19,32 +20,41 @@ import logging
 import os
 import random
 
-from ..engine.actions import Action, ActionKind
-from . import heuristic, typesafe
-from .base import Decision
-from .heuristic import HeuristicAgent
+from . import typesafe
+from .base import Decision, delegate
 
 logger = logging.getLogger(__name__)
 
-# Default confidence under which the heuristic agent decides instead; override
-# with JEV_MIN_CONFIDENCE. Jev's confidence measures how peaked its distribution
-# is, not the chosen option's probability. Measured on 4 benchmark games (222
-# decisions, jev-1.13, 2026-10-12): median confidence ~0.4, and below 0.2 the
-# top options are near-ties; 0.2 hands over ~20% of decisions, 0.5 would hand
-# over almost half.
+# Default confidence under which Forge's AI decides instead; override with
+# JEV_MIN_CONFIDENCE. Jev's confidence measures how peaked its distribution is,
+# not the chosen option's probability. Measured on the Python kernel's
+# decisions (222, jev-1.13, 2026-10-12): median ~0.4, near-ties below 0.2.
+# Forge's menus are similar in shape (one action per option, "Pass" first).
 DEFAULT_MIN_CONFIDENCE = 0.2
-# How many of Jev's top actions a decision keeps for the log.
+# How many of Jev's top options a decision keeps for the log.
 TOP_PROBABILITIES = 3
 
-# A condensed form of the rules text (engine/rules.py), limited to what matters for choosing.
 INSTRUCTIONS = (
-    "You play seat {seat} ({deck}) in a game of Magic: The Gathering ({format}). "
-    "It is {active}'s turn, {step} step. Your goal is to win: reduce every opponent to 0 life "
-    "while staying alive. The state lists life totals, your hand and every battlefield. "
-    "Mana is paid automatically; creatures that arrived this turn cannot attack unless they have "
-    "haste; attackers and blockers are declared one at a time. Each option is a legal action, "
-    "with facts already computed for it. Which action is best right now?"
+    "You play {you} in a game of Magic: The Gathering ({format}), played under the full rules by the "
+    "Forge engine. It is turn {turn}, {active} turn, {phase}. Your goal is to win: reduce your opponent "
+    "to 0 life while staying alive. The state lists life totals, your hand with card text, every "
+    "battlefield and the stack. Mana is paid automatically and combat damage is assigned for you. "
+    "Each option is legal, with facts already computed for it. {kind_line} Forge asks: \"{prompt}\". "
+    "Which option is best right now?"
 )
+
+# One line per decision kind: what picking an option means.
+KIND_LINES = {
+    "mulligan": "Keep the opening hand, or mulligan to a new one with one card fewer.",
+    "bottom": "After a mulligan, pick a card to put on the bottom of your library.",
+    "priority": "You have priority: play a land, cast a spell, activate an ability, or pass.",
+    "target": "Pick a target for the spell or ability you are putting on the stack.",
+    "attack": "Declare attackers one at a time; \"Done\" ends the declaration.",
+    "block": "Declare blockers one at a time; \"Done\" ends the declaration.",
+    "choose_cards": "Pick cards one at a time; \"Done\" ends the selection once enough are picked.",
+    "confirm": "Answer yes or no.",
+    "mode": "Pick a mode of the spell or ability.",
+}
 
 
 def default_min_confidence() -> float:
@@ -57,135 +67,120 @@ def default_min_confidence() -> float:
 # -- the state Jev sees ----------------------------------------------------------
 
 
-def _slim_card(card: dict) -> dict:
-    keep = {k: card[k] for k in ("name", "types", "cost", "power", "toughness", "keywords", "commander") if k in card}
-    if card.get("effects"):
-        keep["does"] = [e["text"] for e in card["effects"]]
-    if card.get("unsupported"):
-        keep["does"] = ["nothing (unsupported card)"]
+def _card(card: dict) -> dict:
+    keep = {k: card[k] for k in ("name", "mana_cost", "types", "text", "power", "toughness") if card.get(k) not in (None, "")}
+    if "tax" in card:
+        keep["commander_tax"] = card["tax"]
     return keep
 
 
-def _slim_permanent(perm: dict) -> dict:
-    keep = {
-        k: perm[k]
-        for k in ("name", "types", "power", "toughness", "keywords", "tapped", "summoning_sick", "damage", "counters", "token", "commander")
-        if k in perm
-    }
-    if "attacking" in perm:
-        keep["attacking_seat"] = perm["attacking"] + 1
-    if perm.get("effects"):
-        keep["does"] = [e["text"] for e in perm["effects"]]
+def _permanent(perm: dict, names: dict[int, str]) -> dict:
+    keep = {k: perm[k] for k in ("name", "types", "text", "power", "toughness") if perm.get(k) not in (None, "")}
+    for flag in ("tapped", "summoning_sick"):
+        if perm.get(flag):
+            keep[flag] = True
+    if perm.get("damage"):
+        keep["damage"] = perm["damage"]
+    if perm.get("counters"):
+        keep["counters"] = perm["counters"]
+    if perm.get("attached_to") is not None:
+        keep["attached_to"] = names.get(perm["attached_to"], "a permanent")
     return keep
 
 
-def jev_state(view: dict) -> str:
-    """The seat's view filtered to what a decision needs: no ids, no history."""
+def _zone(cards: list, full: bool):
+    return [_card(c) for c in cards] if full else len(cards)
+
+
+def jev_state(view: dict, *, kind: str = "", prompt: str = "") -> str:
+    """The bridge's view filtered to what a decision needs: no ids, no history.
+
+    Graveyards and exile are counts, unless the decision is about them.
+    """
+    about_graveyard = kind in ("choose_cards", "target") and any(
+        word in prompt.lower() for word in ("graveyard", "exile")
+    )
     you = view["you"]
+    seats = {you["seat"]: "you"} | {o["seat"]: o["name"] for o in view.get("opponents", [])}
+    names = {p["id"]: p["name"] for perms in view.get("battlefield", {}).values() for p in perms}
     state = {
+        "turn": view.get("turn"),
+        "phase": view.get("phase"),
+        "active_player": seats.get(view.get("active_seat"), ""),
         "you": {
-            "seat": you["seat"] + 1,
             "life": you["life"],
-            "mana_available": you["mana_available"],
-            "hand": [_slim_card(c) for c in you["hand"]],
-            "battlefield": [_slim_permanent(p) for p in you["battlefield"]],
-            "commanders_in_command_zone": [c["name"] for c in you["command_zone"]],
-            "commander_damage_taken": you["commander_damage_taken"],
+            "hand": [_card(c) for c in you.get("hand", [])],
+            "library": you.get("library"),
+            "graveyard": _zone(you.get("graveyard", []), about_graveyard),
+            "exile": _zone(you.get("exile", []), about_graveyard),
+            "mana_available": you.get("mana_available"),
+            "lands_played_this_turn": you.get("lands_played"),
+            "commanders": [_card(c) for c in you.get("commanders", [])],
+            "battlefield": [_permanent(p, names) for p in view.get("battlefield", {}).get(str(you["seat"]), [])],
         },
         "opponents": [
             {
-                "seat": o["seat"] + 1,
+                "name": o["name"],
                 "life": o["life"],
-                "cards_in_hand": o["hand_count"],
-                "battlefield": [_slim_permanent(p) for p in o["battlefield"]],
+                "cards_in_hand": o.get("hand"),
+                "library": o.get("library"),
+                "graveyard": _zone(o.get("graveyard", []), about_graveyard),
+                "exile": _zone(o.get("exile", []), about_graveyard),
+                "commanders": [_card(c) for c in o.get("commanders", [])],
+                "battlefield": [_permanent(p, names) for p in view.get("battlefield", {}).get(str(o["seat"]), [])],
             }
-            for o in view["opponents"]
+            for o in view.get("opponents", [])
         ],
-        "stack": [{"name": s["name"], "seat": s["controller"] + 1, "targets": s["targets"]} for s in view["stack"]],
+        "stack": [
+            {"text": item.get("text"), "source": item.get("source"), "controller": seats.get(item.get("controller"), "")}
+            for item in view.get("stack", [])
+        ],
     }
-    if view.get("choice"):
-        # An effect is asking: what it asks is the decision.
-        state["choosing"] = view["choice"]["prompt"]
-    return json.dumps(state, separators=(",", ":"))
+    if view.get("combat"):
+        state["combat"] = [
+            {"attacker": a["name"], "attacking": a.get("defender"), "blocked_by": [names.get(b, "a creature") for b in a.get("blocked_by", [])]}
+            for a in view["combat"].get("attackers", [])
+        ]
+    if not state["you"]["commanders"]:
+        del state["you"]["commanders"]
+        for o in state["opponents"]:
+            if not o["commanders"]:
+                del o["commanders"]
+    return json.dumps(state, separators=(",", ":"), ensure_ascii=False)
 
 
-# -- what each option means, computed in code ------------------------------------
+def describe_option(option: dict) -> str:
+    facts = option.get("facts") or []
+    return option["label"] + (" — " + "; ".join(facts) if facts else "")
 
 
-def option_facts(view: dict, action: Action) -> list[str]:
-    """Facts about an action that Jev could not compute itself."""
-    perms = heuristic.permanents(view)
-    facts: list[str] = []
-    if action.kind == ActionKind.CHOOSE:
-        # The kernel's own estimate of each answer (never binding).
-        scores = {o["key"]: o["score"] for o in (view.get("choice") or {}).get("options", [])}
-        if action.ref in scores:
-            facts.append(f"estimated value {scores[action.ref]}")
-    if action.kind == ActionKind.DECLARE_ATTACKER:
-        attacker = perms.get(action.permanent, {})
-        info = heuristic.attack_facts(view, attacker, action.defender)
-        if info["power"] >= info["defender_life"]:
-            facts.append("lethal if unblocked")
-        facts.append(f"can be blocked by: {', '.join(info['blockers'])}" if info["blockers"] else "no creature can block it")
-        if info["killed_by"]:
-            facts.append(f"dies to: {', '.join(info['killed_by'])}")
-        if info["trades_with"]:
-            facts.append(f"trades with: {', '.join(info['trades_with'])}")
-        if info["kills_blockers"]:
-            facts.append(f"kills any of: {', '.join(info['kills_blockers'])} if blocked")
-        untapped = [p for p in heuristic.possible_attackers(view) if p["id"] != action.permanent and "vigilance" not in p.get("keywords", ())]
-        facts.append(f"leaves you with {len(untapped)} untapped creature(s)")
-    elif action.kind == ActionKind.DECLARE_BLOCKER:
-        attacker, blocker = perms.get(action.attacker, {}), perms.get(action.permanent, {})
-        outcome = heuristic.block_facts(attacker, blocker)
-        facts.append("your blocker dies" if outcome["blocker_dies"] else "your blocker survives")
-        facts.append("kills the attacker" if outcome["attacker_dies"] else "the attacker survives")
-        incoming = heuristic.incoming_damage(view) - attacker.get("power", 0)
-        facts.append(f"you would then take {max(incoming, 0)} combat damage (life {view['you']['life']})")
-    elif action.kind == ActionKind.END_BLOCKERS:
-        incoming = heuristic.incoming_damage(view)
-        life = view["you"]["life"]
-        facts.append(f"you take {incoming} combat damage (life {life} -> {life - incoming})")
-        if incoming >= life:
-            facts.append("this is lethal for you")
-    elif action.kind == ActionKind.END_ATTACKERS:
-        attacking = [p for p in heuristic.creatures_of(view, view["you"]["seat"]) if "attacking" in p]
-        facts.append(f"{len(attacking)} creature(s) attacking")
-    elif action.kind in (ActionKind.CAST, ActionKind.CAST_COMMANDER, ActionKind.ACTIVATE):
-        for ability in heuristic.action_abilities(view, action):
-            facts.append(f"does: {ability['text']}")
-        for _, ref in action.targets:
-            if ref[0] == "o":
-                perm = perms.get(int(ref[1:]))
-                if perm is None:
-                    continue
-                value = heuristic.action_value(view, action)
-                if value >= heuristic.removal_value(perm) and perm["controller"] != view["you"]["seat"]:
-                    facts.append(f"kills {perm['name']}")
-            elif ref[0] == "p":
-                seat = int(ref[1:])
-                facts.append(f"aimed at seat {seat + 1} ({heuristic.life_of(view, seat)} life)")
-    elif action.kind == ActionKind.PASS:
-        facts.append(f"keep {view['you']['mana_available']} mana untapped")
-    elif action.kind == ActionKind.CHOOSE_TARGET and action.ref and action.ref[0] == "o":
-        perm = perms.get(int(action.ref[1:]))
-        if perm is not None:
-            facts.append("yours" if perm["controller"] == view["you"]["seat"] else "an opponent's")
-    return facts
-
-
-def describe_option(view: dict, action: Action) -> str:
-    facts = option_facts(view, action)
-    return action.label + (" — " + "; ".join(facts) if facts else "")
+def instructions(view: dict, kind: str, prompt: str) -> str:
+    you = view["you"]
+    active = view.get("active_seat")
+    if active is None:
+        whose = "before the first"
+    elif active == you["seat"]:
+        whose = "your"
+    else:
+        whose = "your opponent's"
+    return INSTRUCTIONS.format(
+        you=you.get("name") or f"seat {you['seat'] + 1}",
+        format=view.get("format", ""),
+        turn=view.get("turn", 0),
+        active=whose,
+        phase=(view.get("phase") or "game start").replace("_", " ").lower(),
+        kind_line=KIND_LINES.get(kind, ""),
+        prompt=prompt,
+    )
 
 
 # -- the agent -------------------------------------------------------------------
 
 
 class JevAgent:
-    """Plays through Jev; never blocks the game and never falls back to random."""
+    """Plays through Jev; never blocks the game: when unsure or unreachable it delegates."""
 
-    # Model-backed: the game meters its calls and wall clock (see Limits).
+    # Model-backed: the worker pool meters its calls and the match's wall clock.
     metered = True
 
     def __init__(self, model: str | None = None, *, seed: int | None = None, ask=None, min_confidence: float | None = None):
@@ -193,52 +188,37 @@ class JevAgent:
         self.rng = random.Random(f"{seed}:jev")
         self.ask = ask or typesafe.system_one
         self.min_confidence = default_min_confidence() if min_confidence is None else min_confidence
-        self.fallback = HeuristicAgent(seed)
 
-    def choose(self, view: dict, options: list[Action]) -> Decision:
+    def choose(self, view: dict, options: list[dict], *, kind: str = "", prompt: str = "") -> Decision:
         if len(options) > typesafe.MAX_CHOICE_OPTIONS:
-            raise ValueError(f"{len(options)} options: the kernel caps a decision at {typesafe.MAX_CHOICE_OPTIONS}")
-        keys = [f"a{index}" for index in range(len(options))]
+            return delegate("error", f"{len(options)} options: Jev takes at most {typesafe.MAX_CHOICE_OPTIONS}")
+        keys = [f"o{option['index']}" for option in options]
         by_key = dict(zip(keys, options))
         shuffled = list(keys)
         self.rng.shuffle(shuffled)
-        criteria = {key: describe_option(view, by_key[key]) for key in shuffled}
-        me = view["you"]
-        active = "your" if view["active_seat"] == me["seat"] else f"seat {view['active_seat'] + 1}"
-        instructions = INSTRUCTIONS.format(
-            seat=me["seat"] + 1,
-            deck=me["deck"],
-            format=view.get("format", "Commander"),
-            active=active,
-            step=view["step"].replace("_", " "),
-        )
+        criteria = {key: describe_option(by_key[key]) for key in shuffled}
+        question = typesafe.choice(instructions(view, kind, prompt), criteria)
         try:
-            response = self.ask(jev_state(view), {"action": typesafe.choice(instructions, criteria)}, model=self.model)
+            response = self.ask(jev_state(view, kind=kind, prompt=prompt), {"action": question}, model=self.model)
             picked, confidence, probabilities = typesafe.read_choice(response["answers"].get("action"), by_key)
-        except (typesafe.TypeSafeError, KeyError, TypeError) as exc:
-            logger.warning("Jev agent (%s) fell back to the heuristic agent: %s", self.model, exc)
-            return self._fallback(view, options, f"Jev unavailable: {exc}", "error")
+        except (typesafe.TypeSafeError, KeyError, TypeError, AttributeError) as exc:
+            logger.warning("Jev agent (%s) delegated to Forge's AI: %s", self.model, exc)
+            return delegate("error", f"Jev unavailable: {exc}", model=self.model)
         top = tuple(
-            (by_key[key].label, p)
+            (by_key[key]["label"], p)
             for key, p in sorted(probabilities.items(), key=lambda kv: (-kv[1], kv[0]))[:TOP_PROBABILITIES]
             if key in by_key
         )
-        return self.gate(view, options, by_key[picked], confidence, top, response.get("model", self.model))
+        return self.gate(by_key[picked]["index"], confidence, top, response.get("model", self.model))
 
-    def gate(self, view, options, action: Action, confidence: float, top, model: str) -> Decision:
+    def gate(self, choice: int, confidence: float, top, model: str) -> Decision:
         """The confidence gate: the one place an uncertain decision is handed over (#44)."""
         if confidence < self.min_confidence:
-            return self._fallback(
-                view,
-                options,
-                f"low confidence {confidence:.2f} (below {self.min_confidence:.2f})",
+            return delegate(
                 "low_confidence",
+                f"low confidence {confidence:.2f} (below {self.min_confidence:.2f})",
                 confidence=confidence,
                 probabilities=top,
                 model=model,
             )
-        return Decision(action, confidence=confidence, probabilities=top, model=model)
-
-    def _fallback(self, view, options, reason: str, kind: str, **extra) -> Decision:
-        action = self.fallback.choose(view, options).action
-        return Decision(action, fallback_reason=reason, fallback_agent="heuristic", fallback_kind=kind, **extra)
+        return Decision(choice, confidence=confidence, probabilities=top, model=model)

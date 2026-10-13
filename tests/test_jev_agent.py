@@ -1,20 +1,13 @@
-"""Tests for the Jev agent, the agent budgets and the match summary (no network)."""
+"""Tests for the Jev agent on Forge's decisions (no network)."""
+
+import json
 
 import pytest
 
 from playtest.agents import typesafe
-from playtest.agents.heuristic import HeuristicAgent
-from playtest.agents.jev_agent import JevAgent, describe_option
-from playtest.engine.actions import ActionKind, legal_actions
-from playtest.engine.events import EventKind
-from playtest.engine.game import Game
-from playtest.engine.limits import Limits
-from playtest.engine.state import Combat, Step
-from playtest.engine.view import player_view
-from playtest.summary import summarize_match
+from playtest.agents.jev_agent import JevAgent, describe_option, jev_state
 
-from .factories import bear, engine_deck
-from .test_engine import COMMANDER, DUEL, _put, _table
+from .fakeforge import sample_decision
 
 
 class StubJev:
@@ -40,54 +33,71 @@ class StubJev:
         }
 
 
-def _attack_table():
-    game, state = _table()
-    state.step = Step.DECLARE_ATTACKERS
-    state.combat = Combat("attackers")
-    _put(state, bear(1, power=3))
-    _put(state, bear(2), seat=1)
-    return game, state
+def _choose(agent, decision=None):
+    decision = decision or sample_decision()
+    return agent.choose(decision["view"], decision["options"], kind=decision["kind"], prompt=decision["prompt"])
 
 
-def test_the_options_are_exactly_the_legal_actions_shuffled_and_mapped_back():
-    game, state = _attack_table()
-    options = legal_actions(state, 0)
-    view = player_view(state, 0)
-    attack = next(o for o in options if o.kind == ActionKind.DECLARE_ATTACKER)
-    jev = StubJev(prefer=lambda criteria: next(k for k, v in criteria.items() if v.startswith("Attack")))
-    agent = JevAgent("~typesafe/jev-latest", seed=3, ask=jev)
-    decision = agent.choose(view, options)
-    assert decision.action == attack
+def test_the_options_are_exactly_the_bridges_shuffled_and_mapped_back():
+    decision = sample_decision()
+    jev = StubJev(prefer=lambda criteria: next(k for k, v in criteria.items() if v.startswith("Attack with Bear")))
+    picked = _choose(JevAgent("~typesafe/jev-latest", seed=3, ask=jev), decision)
+    assert picked.choice == 1
     [(_, questions, model)] = jev.requests
     criteria = questions["action"]["criteria"]
     assert model == "~typesafe/jev-latest"
-    assert sorted(criteria) == [f"a{i}" for i in range(len(options))]
-    # The order Jev sees is a seeded shuffle, not the legal order (Pass first).
+    assert sorted(criteria) == ["o0", "o1", "o2"]
+    # The order Jev sees is a seeded shuffle, not Forge's order ("Done" first)…
     orders = set()
-    for seed in range(6):
+    for seed in range(8):
         stub = StubJev()
-        JevAgent(seed=seed, ask=stub).choose(view, options)
+        _choose(JevAgent(seed=seed, ask=stub))
         orders.add(tuple(stub.requests[0][1]["action"]["criteria"]))
     assert len(orders) > 1
+    # …and the same seed shuffles the same way.
+    again = [StubJev(), StubJev()]
+    for stub in again:
+        _choose(JevAgent(seed=5, ask=stub))
+    assert list(again[0].requests[0][1]["action"]["criteria"]) == list(again[1].requests[0][1]["action"]["criteria"])
 
 
-def test_an_option_description_carries_computed_facts():
-    game, state = _attack_table()
-    view = player_view(state, 0)
-    attack = next(o for o in legal_actions(state, 0) if o.kind == ActionKind.DECLARE_ATTACKER)
-    text = describe_option(view, attack)
-    assert text.startswith(attack.label)
-    assert "can be blocked by: Bear 2" in text
-    assert "kills any of: Bear 2 if blocked" in text
+def test_an_option_is_described_by_its_label_and_forges_facts():
+    option = sample_decision()["options"][1]
+    assert describe_option(option) == "Attack with Bear #3 (3/3) -> Green — deals 3 damage if unblocked"
+    assert describe_option({"index": 0, "label": "Pass priority", "facts": []}) == "Pass priority"
+
+
+def test_the_instructions_name_the_format_the_turn_the_kind_and_forges_prompt():
+    jev = StubJev()
+    _choose(JevAgent(seed=1, ask=jev))
+    text = jev.requests[0][1]["action"]["instructions"]
+    assert "(Modern)" in text and "turn 3, your turn" in text
+    assert "Declare attackers one at a time" in text
+    assert 'Forge asks: "Declare attackers"' in text
+
+
+def test_the_state_is_the_view_filtered_to_the_decision():
+    decision = sample_decision()
+    state = json.loads(jev_state(decision["view"], kind="attack", prompt="Declare attackers"))
+    assert state["you"]["life"] == 20 and state["opponents"][0]["life"] == 20
+    assert state["you"]["hand"][0] == {"name": "Shock", "mana_cost": "{R}", "types": "Instant", "text": "Shock deals 2 damage to any target."}
+    wall, rancor = state["opponents"][0]["battlefield"]
+    assert wall["summoning_sick"] and wall["counters"] == {"P1P1": 1} and "tapped" not in wall
+    assert rancor["attached_to"] == "Wall"
+    # Graveyards are counts unless the decision is about them; no ids anywhere.
+    assert state["you"]["graveyard"] == 1
+    assert '"id"' not in jev_state(decision["view"])
+    about = json.loads(jev_state(decision["view"], kind="choose_cards", prompt="Return a card from your graveyard"))
+    assert about["you"]["graveyard"][0]["name"] == "Lightning Bolt"
 
 
 def test_the_decision_carries_confidence_probabilities_and_model():
-    game, state = _attack_table()
-    decision = JevAgent(seed=1, ask=StubJev(confidence=0.82)).choose(player_view(state, 0), legal_actions(state, 0))
-    assert decision.confidence == 0.82
-    assert decision.model == "typesafe/jev-1.13"
-    assert decision.probabilities[0][1] == 0.82
-    assert not decision.reasoning and not decision.fallback_reason
+    decision = _choose(JevAgent(seed=1, ask=StubJev(confidence=0.82)))
+    assert decision.confidence == 0.82 and decision.model == "typesafe/jev-1.13"
+    meta = decision.meta()
+    assert meta["confidence"] == 0.82 and meta["probabilities"][0]["p"] == 0.82
+    assert meta["probabilities"][0]["label"] in [o["label"] for o in sample_decision()["options"]]
+    assert not decision.delegate
 
 
 @pytest.mark.parametrize(
@@ -97,113 +107,28 @@ def test_the_decision_carries_confidence_probabilities_and_model():
         (StubJev(fail="HTTP 503"), "error"),
     ],
 )
-def test_doubt_or_failure_hands_the_decision_to_the_heuristic_agent(jev, kind):
-    game, state = _attack_table()
-    view, options = player_view(state, 0), legal_actions(state, 0)
-    decision = JevAgent(seed=1, ask=jev, min_confidence=0.5).choose(view, options)
-    assert decision.fallback_kind == kind and decision.fallback_agent == "heuristic"
-    assert decision.action == HeuristicAgent().choose(view, options).action
+def test_doubt_or_failure_delegates_to_forges_ai(jev, kind):
+    decision = _choose(JevAgent(seed=1, ask=jev, min_confidence=0.5))
+    assert decision.delegate and decision.fallback_kind == kind
+    if kind == "low_confidence":
+        # Jev's distribution travels with the fallback.
+        assert decision.meta()["confidence"] == 0.3 and decision.meta()["probabilities"]
 
 
-def test_a_missing_key_falls_back(monkeypatch):
+def test_a_missing_key_delegates(monkeypatch):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    game, state = _attack_table()
-    decision = JevAgent(seed=1).choose(player_view(state, 0), legal_actions(state, 0))
-    assert decision.fallback_kind == "error"
+    decision = _choose(JevAgent(seed=1))
+    assert decision.delegate and decision.fallback_kind == "error"
     assert "OPENROUTER_API_KEY" in decision.fallback_reason
 
 
-def _jev_game(jev, *, limits=None, clock=None, players=2):
-    decks = [engine_deck(c) for c in "ABCD"[:players]]
-    agents = [JevAgent(seed=i, ask=jev) for i in range(players)]
-    kwargs = {"clock": clock} if clock else {}
-    return Game(decks, agents, COMMANDER if players > 2 else DUEL, seed=4, limits=limits or Limits(max_rounds=30), **kwargs)
+def test_an_answer_outside_the_options_delegates():
+    decision = _choose(JevAgent(seed=1, ask=StubJev(prefer=lambda criteria: "o99")))
+    assert decision.delegate and "not an option" in decision.fallback_reason
 
 
-def test_a_stubbed_jev_agent_plays_a_full_game():
-    result = _jev_game(StubJev()).run()
-    decisions = [e for e in result.events if e.event.kind in (EventKind.DECISION, EventKind.PASS)]
-    assert decisions
-    payload = decisions[0].event.payload
-    assert payload["confidence"] == 0.9 and payload["model"] == "typesafe/jev-1.13"
-    assert payload["probabilities"][0]["p"] == 0.9
-
-
-@pytest.mark.parametrize("jev", [StubJev(confidence=0.1), StubJev(fail="network down")])
-def test_games_complete_through_fallbacks(jev):
-    result = _jev_game(jev).run()
-    assert result.events[-1].event.kind == EventKind.GAME_OVER
-    fallbacks = [e for e in result.events if e.event.kind == EventKind.AGENT_FALLBACK]
-    assert fallbacks and "heuristic" in fallbacks[0].event.text
-
-
-def test_the_call_budget_hands_the_rest_of_the_game_to_the_heuristic_agent():
-    jev = StubJev()
-    result = _jev_game(jev, limits=Limits(max_rounds=30, max_agent_calls=5)).run()
-    warnings = [e for e in result.events if e.event.kind == EventKind.WARNING]
-    assert {e.event.seat for e in warnings} == {0, 1}
-    assert len(jev.requests) == 10
-
-
-def test_the_wall_clock_budget_hands_every_jev_seat_over_at_once():
-    ticks = iter(range(0, 10_000, 30))
-    jev = StubJev()
-    result = _jev_game(jev, limits=Limits(max_rounds=30, max_wall_clock_seconds=300), clock=lambda: next(ticks), players=3).run()
-    warnings = [e for e in result.events if e.event.kind == EventKind.WARNING]
-    assert len(warnings) == 3 and len({e.seq for e in warnings}) == 3
-    assert all("time budget" in e.event.text for e in warnings)
-    assert result.events[-1].event.kind == EventKind.GAME_OVER
-
-
-# -- the summary -----------------------------------------------------------------------
-
-
-def test_summary_is_deterministic_and_counts_what_happened():
-    def golden():
-        decks = [engine_deck("A"), engine_deck("B")]
-        return Game(decks, [HeuristicAgent(0), HeuristicAgent(1)], DUEL, seed=3, max_rounds=40).run()
-
-    coverage = [{"percent": 100, "commander_unsupported": False, "dead_spells": 0}] * 2
-    first, second = golden(), golden()
-    summary = summarize_match(first.events, coverage, first)
-    assert summary == summarize_match(second.events, coverage, second)
-    assert summary["winner_seat"] == first.winner_seat
-    winner = summary["seats"][first.winner_seat]
-    loser = summary["seats"][1 - first.winner_seat]
-    assert winner["damage_dealt"]["combat"] >= 20
-    assert winner["lands_played"] > 0 and winner["spells_cast"]["creature"] > 0
-    assert len(winner["life_by_round"]) == first.rounds
-    assert loser["final_life"] <= 0
-    assert summary["caveats"]["mana_paid_automatically"] is True
-
-
-def test_summary_reports_jev_confidence_and_fallbacks():
-    result = _jev_game(StubJev(confidence=0.9)).run()
-    coverage = [{"percent": 90, "commander_unsupported": True, "dead_spells": 2}] * 2
-    summary = summarize_match(result.events, coverage, result)
-    agent = summary["seats"][0]["agent"]
-    assert agent["mean_confidence"] == 0.9 and agent["rated_decisions"] > 0
-    assert agent["low_confidence_fallbacks"] == 0
-    assert summary["caveats"]["commander_unsupported"] == [0, 1]
-    assert summary["caveats"]["lowest_coverage"] == 90
-
-
-def test_the_instructions_name_the_format_of_the_match():
-    game, state = _attack_table()
-    jev = StubJev()
-    JevAgent(seed=1, ask=jev).choose(player_view(state, 0), legal_actions(state, 0))
-    assert "(Duel Commander)" in jev.requests[0][1]["action"]["instructions"]
-
-
-def test_an_effect_choice_reaches_jev_with_its_prompt_and_estimates():
-    from playtest.agents.jev_agent import jev_state
-    from playtest.engine.state import ChoiceOption, PendingChoice
-
-    game, state = _table()
-    state.pending_choice = PendingChoice(
-        0, "search", "Fetch: search your library", [ChoiceOption("c00", "Find Island", 7, 1), ChoiceOption("c01", "Find nothing", -1)]
-    )
-    view = player_view(state, 0)
-    options = legal_actions(state, 0)
-    assert '"choosing":"Fetch: search your library"' in jev_state(view)
-    assert describe_option(view, options[0]) == "Find Island — estimated value 7"
+def test_the_threshold_comes_from_the_environment(monkeypatch):
+    monkeypatch.setenv("JEV_MIN_CONFIDENCE", "0.6")
+    assert JevAgent(seed=1, ask=StubJev()).min_confidence == 0.6
+    monkeypatch.setenv("JEV_MIN_CONFIDENCE", "nope")
+    assert JevAgent(seed=1, ask=StubJev()).min_confidence == 0.2

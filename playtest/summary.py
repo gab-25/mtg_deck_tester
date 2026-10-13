@@ -1,137 +1,161 @@
-"""The match summary: numbers computed from the events, never written by a model.
+"""The match summary: numbers computed from the stored events, never written by a model.
 
 :func:`summarize_match` is pure and deterministic — the same events give the
-same dict, every run — and its caveats are data: each seat's coverage, an
-unsupported commander, and the fact that mana is paid automatically, so
-nobody credits an agent with decisions it never made.
+same dict, every run. It reads Forge's game log (``Turn 3 (Red)``, ``Red cast
+Lightning Bolt …``, ``Life: Green 20 > 17``, ``Red played Mountain (31)``) by
+the names the seats played under, and the bridge's decision events, so it can
+say how much of a seat's game its agent actually played: every decision the
+bridge does not expose (mana payment, damage assignment, scry…) and every
+fallback is Forge's AI.
 """
 
-from .engine.events import EventKind
+import re
+import statistics
 
-SPELL_TYPES = ("creature", "instant", "sorcery", "artifact", "enchantment", "planeswalker", "battle")
+from decks.formats import FORMATS
 
-
-def _event(recorded):
-    """Accepts engine ``RecordedEvent``s and stored ``MatchEvent`` rows alike."""
-    if hasattr(recorded, "event"):
-        e = recorded.event
-        return recorded.round, e.kind, e.seat, e.payload
-    return recorded.round, recorded.kind, recorded.seat_position, recorded.payload
+LIFE_CHANGE = re.compile(r" (-?\d+) > (-?\d+)$")
+TURN_LINE = re.compile(r"^Turn (\d+) \((.+)\)$")
 
 
-def _primary_type(types) -> str:
-    return next((t for t in SPELL_TYPES if t in types), "other")
+def table_names(seats: list) -> list[str]:
+    """The name each seat plays under: its deck's, plus the seat when a deck sits twice."""
+    names = [seat.deck_name for seat in seats]
+    return [
+        f"{name} (seat {seat.position + 1})" if names.count(name) > 1 else name
+        for name, seat in zip(names, seats)
+    ]
 
 
-def summarize_match(events, coverage: list[dict], result, *, has_commander: bool = True) -> dict:
-    """The JSON-safe summary of a finished game.
+def _row(event):
+    """Accepts stored ``MatchEvent`` rows and bridge event dicts alike."""
+    if isinstance(event, dict):
+        return event.get("turn") or 0, event["kind"], event.get("seat"), event.get("text") or "", event.get("payload") or {}
+    return event.turn, event.kind, event.seat_position, event.text, event.payload or {}
 
-    ``events`` are the game's recorded events, ``coverage`` each seat's coverage
-    report (in seat order), ``result`` the :class:`~.engine.game.GameResult`.
+
+def _by_prefix(text: str, names: list[tuple[str, int]], prefix: str = "") -> tuple[int, str] | None:
+    """``(seat, rest)`` when ``text`` is ``prefix + name + " " + rest``; longest names first."""
+    for name, seat in names:
+        head = f"{prefix}{name} "
+        if text.startswith(head):
+            return seat, text[len(head):]
+    return None
+
+
+def fallback_reason(payload: dict) -> str:
+    """Why Forge's AI took a decision: the agent's reason when it delegated, else the bridge's."""
+    reason = payload.get("reason") or "delegate"
+    if reason == "delegate":
+        return payload.get("fallback_kind") or "delegate"
+    return reason
+
+
+def summarize_match(events, seats: list, fmt: str, game: dict) -> dict:
+    """The JSON-safe summary of a game.
+
+    ``events`` are the match's events in order, ``seats`` its ``Seat`` rows,
+    ``fmt`` the format key and ``game`` the bridge's final game
+    (``status``, ``winner``, ``end_reason``, ``turn``).
     """
-    rows = [_event(e) for e in events]
-    setup = next((p for _, kind, _, p in rows if kind == EventKind.SETUP), {})
-    over = next((p for _, kind, _, p in reversed(rows) if kind == EventKind.GAME_OVER), {})
-    names = setup.get("decks") or [f"Seat {i + 1}" for i in range(len(result.seats))]
-    starting = setup.get("starting_life", 0)
-    final = {s["seat"]: s for s in over.get("seats", [])}
+    rows = [_row(e) for e in events]
+    names = table_names(seats)
+    by_length = sorted(((name, seat.position) for name, seat in zip(names, seats)), key=lambda x: -len(x[0]))
+    starting = FORMATS[fmt].starting_life
+    winner = game.get("winner")
+    turns = max([game.get("turn") or 0] + [turn for turn, *_ in rows])
 
-    seats = []
-    for seat, name in enumerate(names):
-        seats.append(
-            {
-                "seat": seat,
-                "name": name,
-                "life_by_round": [],
-                "damage_dealt": {"combat": 0, "commander": 0, "effects": 0},
-                "spells_cast": {},
-                "commander_casts": 0,
-                "commander_tax_paid": 0,
-                "lands_played": 0,
-                "dead_spells_drawn": final.get(seat, {}).get("dead_spells_drawn", 0),
-                "unsupported_skipped": 0,
-                "agent": {
-                    "decisions": final.get(seat, {}).get("decisions", 0),
-                    "rated_decisions": 0,
-                    "mean_confidence": None,
-                    "low_confidence_fallbacks": 0,
-                    "error_fallbacks": 0,
-                },
-                "coverage": {
-                    "percent": (coverage[seat] if seat < len(coverage) else {}).get("percent"),
-                    "commander_unsupported": (coverage[seat] if seat < len(coverage) else {}).get("commander_unsupported", False),
-                    "dead_spells": (coverage[seat] if seat < len(coverage) else {}).get("dead_spells", 0),
-                },
-                "eliminated_round": None,
-            }
-        )
+    stats = {
+        seat.position: {
+            "seat": seat.position,
+            "name": name,
+            "agent": seat.agent,
+            "result": "draw" if winner is None else ("won" if winner == seat.position else "lost"),
+            "final_life": starting,
+            "life_by_turn": [],
+            "turns_taken": 0,
+            "spells_cast": 0,
+            "lands_played": 0,
+            "unsupported_cards": len((seat.coverage or {}).get("unsupported_cards") or []),
+            "decisions": {"agent": 0, "forge_ai": 0, "agent_share": None},
+            "confidence": {"rated": 0, "median": None, "low": 0},
+            "fallbacks": {},
+        }
+        for seat, name in zip(seats, names)
+    }
+    life = {position: starting for position in stats}
+    confidences: dict[int, list[float]] = {position: [] for position in stats}
+    automatic: dict[str, int] = {}
+    current_turn = 0
 
-    life = {seat: starting for seat in range(len(names))}
-    confidences: dict[int, list[float]] = {seat: [] for seat in range(len(names))}
-    current_round = 0
+    def close_turns(upto: int) -> None:
+        for seat in stats.values():
+            while len(seat["life_by_turn"]) < upto:
+                seat["life_by_turn"].append(life[seat["seat"]])
 
-    def close_rounds(upto: int) -> None:
-        for _ in range(len(seats[0]["life_by_round"]) + 1, upto + 1):
-            for seat in seats:
-                seat["life_by_round"].append(life[seat["seat"]])
+    for turn, kind, seat, text, payload in rows:
+        if turn > current_turn:
+            close_turns(turn - 1)
+            current_turn = turn
+        if kind == "log":
+            category = payload.get("type")
+            if category == "LIFE":
+                found = _by_prefix(text, by_length, "Life: ")
+                change = LIFE_CHANGE.search(text)
+                if found and change:
+                    life[found[0]] = int(change.group(2))
+            elif category == "TURN":
+                line = TURN_LINE.match(text)
+                active = next((s for n, s in by_length if line and n == line.group(2)), None)
+                if active is not None:
+                    stats[active]["turns_taken"] += 1
+            elif category == "STACK_ADD":
+                found = _by_prefix(text, by_length)
+                if found and found[1].startswith("cast "):
+                    stats[found[0]]["spells_cast"] += 1
+            elif category == "LAND":
+                found = _by_prefix(text, by_length)
+                if found and found[1].startswith("played "):
+                    stats[found[0]]["lands_played"] += 1
+        elif seat not in stats:
+            continue
+        elif kind == "decision":
+            stats[seat]["decisions"]["agent"] += 1
+            if payload.get("confidence") is not None:
+                confidences[seat].append(payload["confidence"])
+        elif kind == "fallback":
+            stats[seat]["decisions"]["forge_ai"] += 1
+            reason = fallback_reason(payload)
+            stats[seat]["fallbacks"][reason] = stats[seat]["fallbacks"].get(reason, 0) + 1
+            if reason == "low_confidence":
+                stats[seat]["confidence"]["low"] += 1
+            if payload.get("confidence") is not None:
+                confidences[seat].append(payload["confidence"])
+        elif kind == "forge_ai":
+            stats[seat]["decisions"]["forge_ai"] += 1
+            method = payload.get("method") or "other"
+            automatic[method] = automatic.get(method, 0) + 1
+    close_turns(turns)
 
-    for round_no, kind, seat, payload in rows:
-        if round_no > current_round:
-            close_rounds(round_no - 1)
-            current_round = round_no
-        if kind == EventKind.DAMAGE and "target_seat" in payload:
-            target, source = payload["target_seat"], payload.get("source_seat")
-            life[target] = payload.get("life", life[target] - payload["amount"])
-            if source is not None and source != target:
-                bucket = "commander" if payload.get("commander") else "combat" if payload.get("combat") else "effects"
-                seats[source]["damage_dealt"][bucket] += payload["amount"]
-        elif kind == EventKind.EFFECT and payload.get("effect") in ("lose_life", "gain_life"):
-            life[seat] = payload.get("life", life[seat])
-            source = payload.get("source_seat")
-            if payload["effect"] == "lose_life" and source is not None and source != seat:
-                seats[source]["damage_dealt"]["effects"] += payload.get("amount", 0)
-        elif kind == EventKind.CAST:
-            spell = _primary_type(payload.get("types", ()))
-            cast = seats[seat]["spells_cast"]
-            cast[spell] = cast.get(spell, 0) + 1
-            if payload.get("commander"):
-                seats[seat]["commander_casts"] += 1
-                seats[seat]["commander_tax_paid"] += payload.get("tax", 0)
-        elif kind == EventKind.PLAY_LAND:
-            seats[seat]["lands_played"] += 1
-        elif kind == EventKind.UNSUPPORTED_SKIPPED:
-            seats[seat]["unsupported_skipped"] += 1
-        elif kind == EventKind.ELIMINATED:
-            seats[seat]["eliminated_round"] = round_no
-        elif kind in (EventKind.DECISION, EventKind.PASS) and payload.get("confidence") is not None:
-            confidences[seat].append(payload["confidence"])
-        elif kind == EventKind.AGENT_FALLBACK:
-            agent = seats[seat]["agent"]
-            if payload.get("fallback_kind") == "low_confidence":
-                agent["low_confidence_fallbacks"] += 1
-                if payload.get("confidence") is not None:
-                    confidences[seat].append(payload["confidence"])
-            else:
-                agent["error_fallbacks"] += 1
-    close_rounds(result.rounds)
-
-    for seat in seats:
-        rated = confidences[seat["seat"]]
-        seat["agent"]["rated_decisions"] = len(rated)
+    for seat in stats.values():
+        position = seat["seat"]
+        seat["final_life"] = life[position]
+        decisions = seat["decisions"]
+        total = decisions["agent"] + decisions["forge_ai"]
+        if total:
+            decisions["agent_share"] = round(100 * decisions["agent"] / total)
+        rated = confidences[position]
+        seat["confidence"]["rated"] = len(rated)
         if rated:
-            seat["agent"]["mean_confidence"] = round(sum(rated) / len(rated), 3)
-        seat["spells_cast"] = dict(sorted(seat["spells_cast"].items()))
-        seat["final_life"] = final.get(seat["seat"], {}).get("life", life[seat["seat"]])
+            seat["confidence"]["median"] = round(statistics.median(rated), 3)
+        seat["fallbacks"] = dict(sorted(seat["fallbacks"].items()))
 
     return {
-        "has_commander": has_commander,
-        "winner_seat": result.winner_seat,
-        "end_reason": result.end_reason,
-        "rounds": result.rounds,
-        "seats": seats,
-        "caveats": {
-            "mana_paid_automatically": True,
-            "commander_unsupported": [s["seat"] for s in seats if s["coverage"]["commander_unsupported"]],
-            "lowest_coverage": min((s["coverage"]["percent"] for s in seats if s["coverage"]["percent"] is not None), default=None),
-        },
+        "winner_seat": winner,
+        "end_reason": game.get("end_reason") or "",
+        "turns": turns,
+        "starting_life": starting,
+        "seats": [stats[seat.position] for seat in seats],
+        # What Forge's AI decided because the bridge does not expose it, by Forge method.
+        "automatic": dict(sorted(automatic.items())),
     }

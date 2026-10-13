@@ -34,6 +34,9 @@ class Format:
     exact_size: bool = True
     sideboard_size: int = 0
     max_copies: int = 1
+    # The format's name on the Forge bridge (mtg_forge_engine), or None when
+    # the bridge cannot play it (it seats two players).
+    forge_format: str | None = None
 
     @property
     def has_commander(self) -> bool:
@@ -53,6 +56,7 @@ def _constructed(label: str, key: str) -> Format:
         exact_size=False,
         sideboard_size=15,
         max_copies=4,
+        forge_format=key,
     )
 
 
@@ -74,11 +78,17 @@ FORMATS: dict[str, Format] = {
         min_seats=2,
         max_seats=2,
         commander_damage_limit=None,
+        forge_format="duel_commander",
     ),
     **{key: _constructed(key.capitalize(), key) for key in CONSTRUCTED_FORMATS},
 }
 
 DEFAULT_FORMAT = "commander"
+
+
+def playable_formats() -> dict[str, Format]:
+    """The formats a match can be played in: those the Forge bridge knows."""
+    return {key: fmt for key, fmt in FORMATS.items() if fmt.forge_format}
 
 
 def format_choices() -> list[tuple[str, str]]:

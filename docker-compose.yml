@@ -15,19 +15,41 @@ services:
       timeout: 5s
       retries: 5
 
+  # The rules engine: Forge behind an HTTP decision protocol
+  # (https://github.com/gab-25/mtg_forge_engine). The first build compiles
+  # Forge and takes several minutes; the card database then loads in about a
+  # minute before /health answers. No authentication: keep it off the internet.
+  mtg-forge-engine:
+    build: https://github.com/gab-25/mtg_forge_engine.git#main
+    image: mtg-forge-engine
+    environment:
+      # Decisions left unanswered this long go to Forge's AI; keep it above a
+      # Jev request with its retries.
+      DECISION_TIMEOUT: ${DECISION_TIMEOUT:-120}
+      # The turn cap: past it the game is a draw.
+      MAX_TURNS: ${MAX_TURNS:-50}
+      MAX_CONCURRENT_GAMES: ${MAX_CONCURRENT_GAMES:-16}
+    ports:
+      - "127.0.0.1:8080:8080"
+
   web:
     build: .
     depends_on:
       db:
         condition: service_healthy
+      mtg-forge-engine:
+        condition: service_healthy
     environment:
       DATABASE_URL: postgresql://mtg:mtg@db:5432/mtg_tester
-      # Provide your OpenRouter key to enable Jev (card judge and Jev seats) and LLM seats:
+      FORGE_URL: http://mtg-forge-engine:8080
+      # Threads answering Forge's decisions: the most model calls in flight.
+      FORGE_WORKERS: ${FORGE_WORKERS:-4}
+      # Provide your OpenRouter key to enable Jev and LLM seats:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       # Optional: the default model id for LLM seats (https://openrouter.ai/models).
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
       # Optional: the Jev model (default ~typesafe/jev-latest) and the confidence
-      # under which a Jev seat lets the heuristic agent decide (default 0.2).
+      # under which a Jev seat lets Forge's AI decide (default 0.2).
       JEV_MODEL: ${JEV_MODEL:-}
       JEV_MIN_CONFIDENCE: ${JEV_MIN_CONFIDENCE:-}
     ports:

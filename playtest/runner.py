@@ -1,178 +1,212 @@
-"""Runs a stored match through the engine and stores what happened.
+"""Plays a stored match on the Forge bridge and stores what happened.
 
-Before the game, every seat's deck is compiled (the judge, through the
-compiled-rules cache) and its coverage report is stored on the seat: during
-the game there are zero judge calls, so a game with non-model agents replays
-from its seed. The compiler never raises — a card it cannot reach or read is
-unsupported — so a compile problem degrades a card, never the match.
+:func:`start_game` sends the seats' decklists to the bridge, which refuses a
+deck with a card Forge does not know (:class:`~.forge.ForgeDeckError`) before
+any game starts; the new-match view calls it, so a refused match is never
+created. :func:`run_match`, the background job, then copies the bridge's
+events into ``MatchEvent`` rows as they arrive and, when the game is over,
+stores the winner, the end reason and the summary.
+
+Decisions are answered by the worker pool (:mod:`.workers`). When no pool runs
+in this process (``FORGE_WORKERS=0``, and in tests) the runner answers its own
+match's decisions in between reading the log.
 """
 
 import logging
+import time
 
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
-from decks.cache import DbCardCache
 from decks.formats import FORMATS
 from mtg_deck_tester.logging_context import job_log_context
 
-from . import judge
-from .agents import typesafe
-from .agents.heuristic import HeuristicAgent
-from .agents.jev_agent import JevAgent
-from .agents.llm_agent import LLMAgent
-from .agents.random_agent import RandomAgent
-from .engine.cards import CardSpec, DeckSpec
-from .engine.coverage import coverage_report
-from .engine.game import Game
-from .engine.limits import Limits
-from .engine.state import GameRules
+from . import forge, workers
 from .models import Match, MatchEvent, Seat
-from .summary import summarize_match
+from .summary import summarize_match, table_names
 
 logger = logging.getLogger(__name__)
 
-
-def card_spec(entry: judge.DeckEntry) -> CardSpec:
-    """The engine's card for one compiled deck entry (vanilla when unsupported)."""
-    compiled = entry.card
-    if compiled.facts is None:
-        # Unreadable card data: a blank that can never be cast.
-        return CardSpec(compiled.name, ("sorcery",), program=None)
-    program = compiled.card_program() if compiled.supported else None
-    return CardSpec.from_facts(compiled.facts, program)
-
-
-def deck_spec(name: str, entries: list[judge.DeckEntry], *, has_commander: bool = True) -> DeckSpec:
-    """Expands a compiled deck into its library and, in Commander formats, its
-    commander (and partner)."""
-    commanders = []
-    library = []
-    for entry in entries:
-        spec = card_spec(entry)
-        if has_commander and entry.is_commander and len(commanders) < 2:
-            commanders.append(spec)
-            library.extend([spec] * (entry.quantity - 1))
-        else:
-            library.extend([spec] * entry.quantity)
-    if has_commander and not commanders:
-        raise ValueError(f"The deck {name!r} has no commander.")
-    commander, partner = (commanders + [None, None])[:2]
-    return DeckSpec(name=name, commander=commander, partner=partner, library=tuple(library))
+# Pause between two reads of the log when nothing happened.
+POLL_SECONDS = 1.0
+# How long the runner answers its own decisions before reading the log again.
+SELF_SERVE_WAIT = 0.5
+# Transient bridge errors tolerated in a row while following a game.
+MAX_POLL_ERRORS = 5
+# A game the bridge never ends is aborted after this long (the bridge's own
+# turn cap and timeouts normally end it much sooner).
+DEFAULT_MATCH_TIMEOUT = 3 * 3600
 
 
-def table_names(seats: list) -> list[str]:
-    """The name each seat plays under: its deck's, plus the seat when a deck sits twice."""
-    names = [seat.deck_name for seat in seats]
-    return [
-        f"{name} (seat {seat.position + 1})" if names.count(name) > 1 else name
-        for name, seat in zip(names, seats)
-    ]
-
-
-def game_rules(fmt: str) -> GameRules:
-    rules = FORMATS[fmt]
-    return GameRules(
-        starting_life=rules.starting_life,
-        commander_damage_limit=rules.commander_damage_limit,
-        format_name=rules.label,
-    )
-
-
-def build_agent(seat: Seat, seed: int):
-    # Offset the seed per seat, so two seats of one kind don't mirror each other.
-    agent_seed = seed + seat.position
-    if seat.agent == Seat.Agent.LLM:
-        return LLMAgent(seat.model or None, seed=agent_seed)
-    if seat.agent == Seat.Agent.JEV:
-        return JevAgent(seat.model or typesafe.default_model(), seed=agent_seed)
-    if seat.agent == Seat.Agent.RANDOM:
-        return RandomAgent(agent_seed)
-    return HeuristicAgent(agent_seed)
-
-
-def compile_seat(seat: Seat, cache) -> list[judge.DeckEntry]:
-    """The compiled cards of a seat's deck: a metagame deck, or the user's deck."""
+def seat_cards(seat: Seat) -> list:
+    """The stored cards a seat plays: a metagame deck, or the user's deck."""
     if seat.metagame_deck_id is not None:
         if seat.metagame_deck is None:
-            raise ValueError(f"The metagame deck of seat {seat.position + 1} was replaced by a newer sync.")
-        return judge.compile_deck(seat.metagame_deck.main_cards, cache)
+            raise forge.ForgeError(f"The metagame deck of seat {seat.position + 1} was replaced by a newer sync.")
+        return seat.metagame_deck.cards
     if seat.deck is None:
-        raise ValueError(f"The deck of seat {seat.position + 1} was deleted.")
-    # The sideboard never plays.
-    return judge.compile_deck(seat.deck.main_cards, cache)
+        raise forge.ForgeError(f"The deck of seat {seat.position + 1} was deleted.")
+    return seat.deck.cards
+
+
+def start_game(match: Match, client=None) -> dict:
+    """Creates the match's game on the bridge; stores its id and each seat's coverage.
+
+    Raises :class:`~.forge.ForgeDeckError` (unknown cards, named per seat) or
+    :class:`~.forge.ForgeError`; then nothing is stored.
+    """
+    client = client or forge.client()
+    seats = list(match.seats.select_related("deck", "metagame_deck"))
+    has_commander = FORMATS[match.format].has_commander
+    names = table_names(seats)
+    game = client.create_game(
+        match.format,
+        match.seed,
+        [
+            {
+                "name": name,
+                "decklist": forge.decklist_text(seat_cards(seat), has_commander=has_commander),
+                "controller": seat.controller,
+            }
+            for seat, name in zip(seats, names)
+        ],
+    )
+    with transaction.atomic():
+        for seat, bridge_seat in zip(seats, game.get("seats", [])):
+            seat.coverage = {"unsupported_cards": list(bridge_seat.get("unsupported_cards") or [])}
+            seat.save(update_fields=["coverage"])
+        match.forge_game_id = game["id"]
+        match.save(update_fields=["forge_game_id"])
+    return game
+
+
+def _store(match: Match, events: list[dict]) -> None:
+    MatchEvent.objects.bulk_create(
+        [
+            MatchEvent(
+                match_id=match.pk,
+                seq=event["seq"],
+                turn=event.get("turn") or 0,
+                step=(event.get("phase") or "")[:32],
+                seat_position=event.get("seat"),
+                kind=event["kind"][:32],
+                text=event.get("text") or "",
+                payload=event.get("payload") or {},
+                reasoning=(event.get("payload") or {}).get("reason", "") if event["kind"] == "decision" else "",
+            )
+            for event in events
+        ],
+        ignore_conflicts=True,
+    )
+    turn = max((event.get("turn") or 0 for event in events), default=0)
+    if turn > match.turn:
+        match.turn = turn
+        Match.objects.filter(pk=match.pk).update(turn=turn)
+
+
+def _match_timeout() -> float:
+    return float(getattr(settings, "MATCH_TIMEOUT", DEFAULT_MATCH_TIMEOUT))
+
+
+def follow(match: Match, client) -> dict:
+    """Copies the game's events until the bridge ends it; returns the final game."""
+    last = match.events.order_by("-seq").values_list("seq", flat=True).first()
+    since = 0 if last is None else last + 1
+    deadline = time.monotonic() + _match_timeout()
+    errors = 0
+    while True:
+        try:
+            if not workers.running():
+                decision = client.lease(SELF_SERVE_WAIT, match.forge_game_id)
+                if decision is not None:
+                    workers.serve(client, decision, grace=0)
+            batch = client.events(match.forge_game_id, since)
+            if batch["events"]:
+                _store(match, batch["events"])
+                since = batch["next"]
+                errors = 0
+                continue
+            game = client.game(match.forge_game_id)
+            errors = 0
+        except forge.ForgeError:
+            errors += 1
+            if errors >= MAX_POLL_ERRORS:
+                raise
+            time.sleep(POLL_SECONDS)
+            continue
+        if game["status"] in forge.ENDED:
+            # The last events may have landed after the read above.
+            batch = client.events(match.forge_game_id, since)
+            _store(match, batch["events"])
+            return game
+        if not Match.objects.filter(pk=match.pk).exists():
+            client.abort(match.forge_game_id)
+            raise forge.ForgeError("The match was deleted while it ran.")
+        if time.monotonic() > deadline:
+            client.abort(match.forge_game_id)
+            raise forge.ForgeError(f"The game did not end within {_match_timeout():.0f} seconds; it was aborted.")
+        if workers.running():
+            time.sleep(POLL_SECONDS)
+
+
+def _fail(match_id, error: str) -> None:
+    Match.objects.filter(pk=match_id).update(status=Match.Status.FAILED, error=error, finished_at=timezone.now())
+
+
+def _finish(match: Match, game: dict) -> None:
+    seats = list(match.seats.all())
+    events = list(match.events.all())
+    summary = summarize_match(events, seats, match.format, game)
+    status = game["status"]
+    error = ""
+    if status == "failed":
+        result, error = Match.Status.FAILED, f"Forge failed: {game.get('error') or 'unknown error'}"
+    elif status == "aborted" and game.get("end_reason") == "orphaned":
+        result, error = Match.Status.FAILED, "No worker answered the game's decisions: the bridge abandoned it."
+    elif status == "aborted":
+        result = Match.Status.STOPPED
+    else:
+        result = Match.Status.FINISHED
+    by_position = {seat.position: seat for seat in seats}
+    with transaction.atomic():
+        for stats in summary["seats"]:
+            seat = by_position.get(stats["seat"])
+            if seat is not None:
+                seat.life = stats["final_life"]
+                seat.save(update_fields=["life"])
+        Match.objects.filter(pk=match.pk).update(
+            status=result,
+            error=error,
+            turn=max(game.get("turn") or 0, match.turn),
+            winner=by_position.get(game.get("winner")),
+            end_reason=(game.get("end_reason") or "")[:32],
+            summary=summary,
+            finished_at=timezone.now(),
+        )
+    logger.info("Match %s: %s, %s", result, game.get("end_reason"), game.get("winner"))
 
 
 def run_match(match_id) -> None:
-    """Background job: plays ``match_id`` and records every event as it happens."""
+    """Background job: follows ``match_id``'s game on the bridge to its end."""
     with job_log_context("match", match_id):
         match = Match.objects.get(pk=match_id)
-        seats = list(match.seats.select_related("deck", "metagame_deck"))
-        Match.objects.filter(pk=match_id).update(status=Match.Status.RUNNING)
-
-        def persist(recorded):
-            event = recorded.event
-            MatchEvent.objects.create(
-                match_id=match_id,
-                seq=recorded.seq,
-                round=recorded.round,
-                turn=recorded.turn,
-                step=recorded.step,
-                seat_position=event.seat,
-                kind=event.kind,
-                text=event.text,
-                payload=event.payload,
-                reasoning=event.reasoning,
-            )
-            if recorded.round != match.round:
-                match.round = recorded.round
-                Match.objects.filter(pk=match_id).update(round=recorded.round)
-
+        client = forge.client()
+        if getattr(settings, "RUN_JOBS_IN_BACKGROUND", True):
+            workers.ensure_started()
         try:
-            cache = DbCardCache()
-            has_commander = FORMATS[match.format].has_commander
-            decks, coverages = [], []
-            for seat, name in zip(seats, table_names(seats)):
-                entries = compile_seat(seat, cache)
-                report = coverage_report([entry.coverage() for entry in entries])
-                Seat.objects.filter(pk=seat.pk).update(coverage=report)
-                coverages.append(report)
-                decks.append(deck_spec(name, entries, has_commander=has_commander))
-            game = Game(
-                decks,
-                [build_agent(seat, match.seed) for seat in seats],
-                game_rules(match.format),
-                seed=match.seed,
-                limits=Limits(max_rounds=match.max_rounds),
-                on_event=persist,
-            )
-            result = game.run()
-            summary = summarize_match(result.events, coverages, result, has_commander=has_commander)
+            if not match.forge_game_id:
+                start_game(match, client)
+            match.started_at = match.started_at or timezone.now()
+            Match.objects.filter(pk=match_id).update(status=Match.Status.RUNNING, started_at=match.started_at)
+            game = follow(match, client)
+            if Match.objects.filter(pk=match_id).exists():
+                _finish(match, game)
+        except forge.ForgeError as exc:
+            logger.warning("Match failed: %s", exc)
+            _fail(match_id, str(exc))
         except Exception as exc:  # noqa: BLE001 - record any failure for the user.
             logger.exception("Match failed")
-            Match.objects.filter(pk=match_id).update(
-                status=Match.Status.FAILED, error=str(exc), finished_at=timezone.now()
-            )
-            return
-
-        with transaction.atomic():
-            by_position = {seat.position: seat for seat in seats}
-            for outcome in result.seats:
-                seat = by_position[outcome.seat]
-                seat.life = outcome.life
-                seat.eliminated_round = outcome.eliminated_round
-                seat.save(update_fields=["life", "eliminated_round"])
-            winner = by_position.get(result.winner_seat)
-            Match.objects.filter(pk=match_id).update(
-                status=Match.Status.FINISHED,
-                round=result.rounds,
-                winner=winner,
-                end_reason=result.end_reason,
-                summary=summary,
-                finished_at=timezone.now(),
-            )
-        logger.info(
-            "Match finished after %s rounds: %s",
-            result.rounds,
-            winner.deck_name if winner else "draw",
-        )
+            _fail(match_id, str(exc))
+        finally:
+            workers.agents.forget(match.pk)

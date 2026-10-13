@@ -6,8 +6,10 @@ Status pill for a match. Include with the match in scope:
 <span class="status status-ready"><span translate="no" class="ms text-[13px]">flag</span>Finished</span>
 {% elif match.status == 'failed' %}
 <span class="status status-failed"><span translate="no" class="ms text-[13px]">error</span>Failed</span>
+{% elif match.status == 'stopped' %}
+<span class="status status-failed"><span translate="no" class="ms text-[13px]">stop_circle</span>Stopped</span>
 {% elif match.status == 'running' %}
-<span class="status status-pending"><span class="spinner"></span>Round {{ match.round }}</span>
+<span class="status status-pending"><span class="spinner"></span>Turn {{ match.turn }}</span>
 {% else %}
 <span class="status status-pending"><span class="spinner"></span>Shuffling</span>
 {% endif %}
