@@ -198,12 +198,12 @@ def alt_cost_usable(state: GameState, seat: int, alt) -> bool:
     return state.player(seat).life >= alt.life
 
 
-def _payments(state: GameState, seat: int, card: Card, base: ManaCost, via: str | None) -> list[tuple]:
+def _payments(state: GameState, seat: int, card: Card, base: ManaCost, via: str | None, alternatives: bool = True) -> list[tuple]:
     """The ways to pay for ``card``: ``(via, paid_with, mana cost, label)``."""
     spec = card.spec
     player = state.player(seat)
     ways = [(via, (), base, " for its flashback cost" if via == "flashback" else "")]
-    if via is None:
+    if via is None and alternatives:
         for index, alt in enumerate(spec.alt_costs):
             if not alt_cost_usable(state, seat, alt):
                 continue
@@ -256,14 +256,17 @@ def _spell_actions(
         mode_label = ""
         if mode is not None:
             mode_label = f" — mode: {describe_ability(spec.program.abilities[mode])}"
-        for way, paid_with, way_cost, way_label in _payments(state, seat, card, base, via):
+        # A commander is cast for its own cost plus tax, never an alternative one.
+        for way, paid_with, way_cost, way_label in _payments(state, seat, card, base, via, kind != ActionKind.CAST_COMMANDER):
+            # What the cost uses up (a pitched card, a sacrificed Treasure) cannot also pay mana.
+            way_srcs = [s for s in srcs if s.permanent_id not in paid_with] if paid_with else srcs
             # An alternative cost replaces the whole mana cost, X included (X is 0).
             xs = range(0, max(0, min(total - way_cost.total(), limits.max_x)) + 1) if way_cost.x else [None]
             for x in xs:
                 cost = way_cost.with_x(x or 0)
                 for targets in combos if combos is not None else [()]:
                     ward = sum(ward_cost(state, ref, seat) for _, ref in targets)
-                    if not can_pay(srcs, cost.plus_generic(ward)):
+                    if not can_pay(way_srcs, cost.plus_generic(ward)):
                         continue
                     verb = "Cast your commander" if kind == ActionKind.CAST_COMMANDER else "Cast"
                     label = f"{verb} {spec.name} ({cost.plus_generic(ward)}){way_label}"
@@ -400,7 +403,7 @@ def _activations(state: GameState, seat: int, limits: Limits) -> list[Action]:
             if cost.life and state.player(seat).life < cost.life:
                 # CR 119.4: a player can pay life only if their life total is at least that much.
                 continue
-            srcs = [s for s in sources(state, seat) if not (cost.tap and s.permanent_id == perm.id)]
+            srcs = [s for s in sources(state, seat) if not ((cost.tap or cost.sacrifice_self) and s.permanent_id == perm.id)]
             mana = parse_mana_cost(cost.mana)
             combos = _target_combos(state, seat, (ability,), limits)
             if combos == []:
@@ -409,9 +412,10 @@ def _activations(state: GameState, seat: int, limits: Limits) -> list[Action]:
             if cost.sacrifice:
                 victims = [v for v in _distinct(state, state.controlled(seat)) if _fits_cost(v, perm, cost.sacrifice)]
             for victim in victims:
+                victim_srcs = [s for s in srcs if victim is None or s.permanent_id != victim.id]
                 for targets in combos if combos is not None else [()]:
                     ward = sum(ward_cost(state, ref, seat) for _, ref in targets)
-                    if not can_pay(srcs, mana.plus_generic(ward)):
+                    if not can_pay(victim_srcs, mana.plus_generic(ward)):
                         continue
                     label = f"Activate {perm.name}: {describe_ability(ability)}"
                     if victim is not None:

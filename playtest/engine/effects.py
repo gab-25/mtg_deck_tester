@@ -308,11 +308,21 @@ class EffectContext:
 _STATS = {"POWER_OF_IT": "power", "TOUGHNESS_OF_IT": "toughness", "MV_OF_IT": "mv"}
 
 
-def _amount(op: Op, ctx: EffectContext, index: int = 0) -> int:
+def _referent(state: GameState, ctx: EffectContext, slot: str) -> dict:
+    """An earlier target as it is now, or as it last existed once it has left."""
+    ref = ctx.targets.get(slot)
+    if ref is not None and ref[0] == "o" and state.permanent(parse_ref(ref)[1]) is not None:
+        return last_known(state, ref)
+    if ref is not None and ref[0] == "s" and state.stack_item(parse_ref(ref)[1]) is not None:
+        return last_known(state, ref)
+    return ctx.lki.get(slot, {})
+
+
+def _amount(state: GameState, op: Op, ctx: EffectContext, index: int = 0) -> int:
     if op.amount == "X":
         return ctx.x
     if op.amount in _STATS:
-        return max(0, ctx.lki.get(f"{index}:{op.of}", {}).get(_STATS[op.amount], 0))
+        return max(0, _referent(state, ctx, f"{index}:{op.of}").get(_STATS[op.amount], 0))
     return int(op.amount or 0)
 
 
@@ -324,7 +334,7 @@ def _refs(state: GameState, ability: Ability, op: Op, ctx: EffectContext, index:
         ref = ctx.targets.get(f"{index}:{target.key}")
         return [ref] if ref is not None else []
     if target.selector == "CONTROLLER_OF_IT":
-        info = ctx.lki.get(f"{index}:{target.of}")
+        info = _referent(state, ctx, f"{index}:{target.of}")
         return [player_ref(info["controller"])] if info and state.player(info["controller"]).alive else []
     if target.selector == "THAT_PLAYER":
         seat = ctx.event_player
@@ -475,7 +485,7 @@ def apply_op(state: GameState, ability: Ability, op: Op, ctx: EffectContext, ind
     """Carries out one operation of the ``index``-th ability; returns what happened."""
     events: list[Event] = []
     refs = _refs(state, ability, op, ctx, index)
-    amount = _amount(op, ctx, index)
+    amount = _amount(state, op, ctx, index)
     name = ctx.source_name
 
     match op.op:
@@ -624,6 +634,9 @@ def apply_op(state: GameState, ability: Ability, op: Op, ctx: EffectContext, ind
             from .manacost import parse_mana_cost
 
             events += pay(state, ctx.controller, parse_mana_cost(op.mana))
+            events.append(
+                Event(EventKind.EFFECT, ctx.controller, f"{state.player(ctx.controller).name} pays {op.mana}.", {"effect": "pay_mana", "mana": op.mana})
+            )
         case "COUNTER_UNLESS_PAYS":
             for ref in refs:
                 item = state.stack_item(parse_ref(ref)[1])
@@ -847,7 +860,8 @@ def _counter_unless_pays(state: GameState, item: StackItem, op: Op, ctx: EffectC
 
     cost = parse_mana_cost(op.mana)
     payer = item.controller
-    if state.player(payer).alive and can_pay(sources(state, payer), cost):
+    uncounterable = item.card is not None and item.card.spec.uncounterable
+    if not uncounterable and state.player(payer).alive and can_pay(sources(state, payer), cost):
         options = [ChoiceOption("c00", f"Pay {op.mana}", 1), ChoiceOption("c01", "Don't pay", 0)]
         if ctx.ask(state, payer, "pay", f"{ctx.source_name}: pay {op.mana} or {item.name} is countered", options).key == "c00":
             paid = pay(state, payer, cost)
@@ -948,11 +962,14 @@ def resolve_abilities(state: GameState, item: StackItem, abilities, ctx: EffectC
                 # That target (or the one "it" refers to) became illegal: this part does nothing.
                 done = done and not op.optional
                 continue
+            if op.optional and not _wants(state, ability, op, ctx):
+                done = False
+                continue
+            happened = apply_op(state, ability, op, ctx, index)
             if op.optional:
-                done = _wants(state, ability, op, ctx)
-                if not done:
-                    continue
-            events += apply_op(state, ability, op, ctx, index)
+                # "If you do" asks what happened: discarding from an empty hand did not.
+                done = bool(happened)
+            events += happened
     return events, False
 
 

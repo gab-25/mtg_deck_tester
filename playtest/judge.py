@@ -189,9 +189,10 @@ def assemble(abilities: list[ClauseSet], answers: dict) -> dict:
             restriction = fields.pop("restriction", None)
             referent = _referent(targets, clause_targets)
             if op == "DEAL_DAMAGE" and clause.text.startswith("it ") and (
-                referent is not None or ability.trigger == dsl.Trigger.SPELL
+                referent is not None or ability.trigger not in _SELF_EVENT_TRIGGERS
             ):
-                # "it deals" is this permanent only when nothing was targeted before.
+                # "it deals" is this permanent only in an ability about this
+                # permanent, and only when nothing was targeted before.
                 raise _Refused(ReasonKind.INVALID, f"clause {clause_no}: “it” is ambiguous")
             if fields.get("amount") in dsl.EXPRESSIONS.values() or selector in dsl.DERIVED_SELECTORS:
                 if referent is None:
@@ -264,6 +265,19 @@ def _target_key(targets: dict, selector: str, restriction: dict | None, of: str 
     key = f"t{len(targets) + 1}"
     targets[key] = entry
     return key
+
+
+# Abilities in which an unbound "it" can only be the permanent itself.
+_SELF_EVENT_TRIGGERS = (
+    dsl.Trigger.ETB,
+    dsl.Trigger.DIES,
+    dsl.Trigger.ATTACKS,
+    dsl.Trigger.COMBAT_DAMAGE,
+    dsl.Trigger.LEAVES,
+    dsl.Trigger.UPKEEP,
+    dsl.Trigger.END_STEP,
+    dsl.Trigger.ACTIVATED,
+)
 
 
 class _NotCached(Exception):

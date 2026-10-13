@@ -248,7 +248,7 @@ def split_effect(effect: str, line: str) -> tuple[Clause, ...]:
 
 def _split_sentence(sentence: str, pieces: list, whole: set) -> None:
     """Cuts one sentence into clauses, appending ``(text, shares_target_with)`` to ``pieces``."""
-    if re.fullmatch(r"shuffle(?: your library)?", sentence) and whole:
+    if re.fullmatch(r"shuffle(?: your library)?", sentence) and pieces and pieces[-1][0].startswith("search your library"):
         return  # the search before it already shuffles
     if sentence.startswith("search your library"):
         # One clause, read whole by the search grammar: its commas and

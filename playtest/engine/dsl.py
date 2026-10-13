@@ -26,7 +26,7 @@ from .manacost import ManaCostError, parse_mana_cost, parse_mana_symbols
 
 # Bump only when the accepted vocabulary or a program's meaning changes: it is
 # part of the compiled-rules cache key.
-DSL_VERSION = "8"
+DSL_VERSION = "9"
 
 
 class DslError(ValueError):
@@ -1240,9 +1240,11 @@ def _validate_op(data, path: str, targets: dict, trigger: str, grounded: set[int
         if targets[fields["target"]].selector != "YOU":
             raise DslError(f"{path}.target", "only its controller pays")
         try:
-            parse_mana_cost(data["mana"])
+            parsed = parse_mana_cost(data["mana"])
         except (ManaCostError, TypeError) as exc:
             raise DslError(f"{path}.mana", str(exc)) from exc
+        if parsed.x:
+            raise DslError(f"{path}.mana", "{X} is never a fixed payment")
         fields["mana"] = data["mana"].upper()
     if name == "COUNTER_UNLESS_PAYS":
         mana = data["mana"]

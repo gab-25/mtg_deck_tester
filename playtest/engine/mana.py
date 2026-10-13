@@ -23,6 +23,7 @@ Payment is automatic, not an agent decision: see the rules text.
 """
 
 from collections import deque
+from itertools import combinations
 from dataclasses import dataclass
 
 from .cardrules import ManaAbility
@@ -79,15 +80,19 @@ def _cost_rank(abilities) -> int:
     return 2 if all(a.sacrifice for a in abilities) else 1
 
 
-def sources(state: GameState, seat: int) -> list[Source]:
-    """Every source of mana ``seat`` could use now, in spending order."""
+def sources(state: GameState, seat: int, exclude=()) -> list[Source]:
+    """Every source of mana ``seat`` could use now, in spending order.
+
+    ``exclude``: permanents a cost already uses up (sacrificed, returned), which
+    cannot also pay mana.
+    """
     player = state.player(seat)
     found = []
     for color in MANA_SYMBOLS:
         for index in range(player.mana_pool.get(color, 0)):
             found.append(Source((0, 1, 0, index), None, color, 1, color))
     for perm in state.battlefield:
-        if perm.controller == seat and can_tap_for_mana(state, perm):
+        if perm.controller == seat and perm.id not in exclude and can_tap_for_mana(state, perm):
             abilities = usable_abilities(state, perm)
             if not abilities:
                 continue
@@ -227,13 +232,26 @@ def _ability_for(abilities, colors: dict[str, int]) -> ManaAbility:
     return min(fitting or abilities, key=order)
 
 
-def pay(state: GameState, seat: int, cost: ManaCost) -> list[Event]:
+def _fewest_costly(chosen: list[Source], free_only: list[Source], cost: ManaCost):
+    """The flow that unlocks the costly colors of as few sources as possible (cheapest first)."""
+    costly = [i for i, (src, free) in enumerate(zip(chosen, free_only)) if src is not free]
+    if len(costly) <= 8:
+        for size in range(1, len(costly) + 1):
+            for unlocked in combinations(costly, size):
+                trial = [chosen[i] if i in unlocked else free_only[i] for i in range(len(chosen))]
+                paid, used = _flow(trial, cost)
+                if paid:
+                    return used
+    return _flow(chosen, cost)[1]
+
+
+def pay(state: GameState, seat: int, cost: ManaCost, exclude=()) -> list[Event]:
     """Spends ``seat``'s mana on ``cost``; returns the events of any cost paid with it.
 
     Raises ``ValueError`` when the cost cannot be paid — callers only pay
     costs they checked with :func:`can_pay`.
     """
-    srcs = sources(state, seat)
+    srcs = sources(state, seat, exclude)
     chosen = choose_payment(srcs, cost)
     if chosen is None:
         raise ValueError(f"cannot pay {cost}")
@@ -246,7 +264,7 @@ def pay(state: GameState, seat: int, cost: ManaCost) -> list[Event]:
     ]
     paid_free, used = _flow(free_only, cost)
     if not paid_free:
-        _, used = _flow(chosen, cost)
+        used = _fewest_costly(chosen, free_only, cost)
     player = state.player(seat)
     events: list[Event] = []
     for src, colors in zip(chosen, used):

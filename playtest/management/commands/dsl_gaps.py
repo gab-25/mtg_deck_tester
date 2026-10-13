@@ -18,7 +18,7 @@ class Command(BaseCommand):
     help = (
         "Lists every reason the cards of the metagame decks (or of decklist files) cannot be "
         "compiled, weighted by how many deck slots each blocks, and the cards one reason "
-        "alone keeps out. Reads the card cache only; never asks the judge."
+        "alone keeps out. Reads cards through the card cache (Scryfall on a miss); never asks the judge."
     )
 
     def add_arguments(self, parser):

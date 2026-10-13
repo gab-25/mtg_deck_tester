@@ -216,7 +216,7 @@ def _cast(state: GameState, seat: int, action: Action) -> list[Event]:
         base = card.spec.cost
     ward = sum(ward_cost(state, ref, seat) for _, ref in action.targets)
     cost = base.with_x(action.x or 0).plus_generic(ward)
-    paid = pay(state, seat, cost)
+    paid = pay(state, seat, cost, exclude=action.paid_with)
     take_from(zone, card.id)
     paid += _pay_other_costs(state, seat, card, action)
     tax = state.rules.commander_tax * player.commander_casts.get(card.id, 0) if commander else 0
@@ -268,7 +268,8 @@ def _activate(state: GameState, seat: int, action: Action) -> list[Event]:
     if cost.tap:
         perm.tapped = True
     ward = sum(ward_cost(state, ref, seat) for _, ref in action.targets)
-    paid = pay(state, seat, parse_mana_cost(cost.mana).plus_generic(ward))
+    used = action.paid_with + ((perm.id,) if cost.sacrifice_self else ())
+    paid = pay(state, seat, parse_mana_cost(cost.mana).plus_generic(ward), exclude=used)
     perm.activations += 1
     events = paid + [Event(EventKind.ACTIVATE, seat, f"{state.player(seat).name} activates {perm.name}.", {"card": perm.name})]
     if cost.life:

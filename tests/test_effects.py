@@ -1187,3 +1187,144 @@ def test_a_sacrifice_cost_lets_the_player_pick_the_permanent():
     shaman = _put(state, other)
     assert all(a.paid_with != (shaman.id,) for a in legal_actions(state, 0) if a.permanent == shaman.id)
     assert outlet in state.battlefield
+
+
+# -- review fixes ---------------------------------------------------------------------
+
+
+def _treasure(state, seat=0):
+    from playtest.engine.effects import ARTIFACT_TOKENS
+
+    return enter_battlefield(state, None, seat, ARTIFACT_TOKENS["TREASURE"])
+
+
+def test_a_treasure_is_never_both_the_mana_and_the_sacrifice():
+    game, state = _table()
+    _mana(state, amount=1)
+    treasure = _treasure(state)
+    state.triggers.clear()
+    text = "As an additional cost to cast this spell, sacrifice an artifact or creature.\nDraw two cards."
+    dispute = _hand(state, compiled_spec("Dispute", "Instant", "{2}", text))
+    # Wastes and the Treasure pay {2} only if the Treasure is not also the sacrifice.
+    assert not [a for a in legal_actions(state, 0) if a.card == dispute.id]
+    _mana(state, amount=1)
+    [cast] = [a for a in legal_actions(state, 0) if a.card == dispute.id]
+    assert cast.paid_with == (treasure.id,)
+    apply(state, 0, cast)
+    assert treasure not in state.battlefield and not any(p.spec.is_land and p.tapped is False for p in state.battlefield)
+
+    game, state = _table()
+    treasure = _treasure(state)
+    _put(state, compiled_spec("Altar", "Artifact", "{1}", "{1}, Sacrifice an artifact: You gain 2 life."))
+    assert not [a for a in legal_actions(state, 0) if a.kind == ActionKind.ACTIVATE and a.paid_with == (treasure.id,)]
+
+
+def test_painlands_pay_life_only_for_the_colored_pip():
+    from dataclasses import replace
+
+    from playtest.engine.cardrules import ManaAbility
+    from playtest.engine.mana import pay
+    from playtest.engine.manacost import parse_mana_cost
+
+    game, state = _table()
+    for colors in ("RG", "UR"):
+        land = card(f"Pain {colors}", "Land", produces="C" + colors)
+        _put(state, replace(land, mana_abilities=(ManaAbility("C"), ManaAbility(colors, life=1))))
+    pay(state, 0, parse_mana_cost("{R}{1}"))
+    assert state.player(0).life == 19
+
+
+def test_if_you_do_needs_the_optional_op_to_have_happened():
+    game, state = _table()
+    _mana(state, amount=1)
+    hand = len(state.player(0).hand)
+    _cast(state, compiled_spec("Rummage", "Sorcery", "{1}", "You may discard a card. If you do, draw a card."))
+    assert len(state.player(0).hand) == hand
+
+
+def test_a_shuffle_is_dropped_only_after_a_search():
+    scry = compiled_spec("Spin", "Sorcery", "{1}", "Scry 2. Shuffle your library.")
+    assert not scry.supported
+    fetch = compiled_spec("Fetch", "Sorcery", "{1}", "Search your library for a basic land card, put it into your hand. Shuffle your library.")
+    assert fetch.supported
+
+
+def test_its_power_reads_the_current_value_while_the_object_is_there():
+    game, state = _table()
+    _mana(state, amount=1)
+    target = _put(state, bear(), seat=0)
+    spec = compiled_spec("Feast", "Instant", "{1}", "Target creature gets +3/+3 until end of turn. You gain life equal to its power.")
+    assert spec.supported
+    _cast(state, spec, targets=[_ref(target)])
+    assert state.player(0).life == 20 + power(state, target)
+
+
+def test_it_in_an_event_trigger_is_not_this_permanent():
+    spec = compiled_spec("Pinger", "Enchantment", "{1}", "Whenever another creature you control enters, it deals 1 damage to any target.")
+    assert not spec.supported
+
+
+def test_a_commander_is_never_offered_an_alternative_cost():
+    game, state = _table(rules=COMMANDER)
+    text = "You may pay 1 life and exile a blue card from your hand rather than pay this spell's mana cost.\nFlying"
+    spec = compiled_spec("Pitcher", "Creature — Spirit", "{4}{U}", text, "3", "3")
+    assert spec.alt_costs
+    state.player(0).command.append(Card(state.new_id(), spec, 0, is_commander=True))
+    _hand(state, card("Storm", "Instant", "{U}"))
+    assert not [a for a in legal_actions(state, 0) if a.kind == ActionKind.CAST_COMMANDER]
+
+
+def test_counter_unless_pays_does_not_ask_for_an_uncounterable_spell():
+    game, state = _table()
+    decay = compiled_spec("Decay", "Instant", "{1}", "This spell can't be countered.\nDraw a card.")
+    _opponent_casts(state, decay)
+    _mana(state, amount=1, seat=1)
+    _mana(state, amount=1)
+    asked = []
+    item = _hand(state, compiled_spec("Spike", "Instant", "{1}", "Counter target spell unless its controller pays {1}."))
+    apply(state, 0, next(a for a in legal_actions(state, 0) if a.card == item.id))
+    resolve_top(state, lambda *args: asked.append(args) or "c00")
+    assert not asked
+
+
+def test_pay_mana_with_x_is_rejected():
+    from playtest.engine import dsl
+    from playtest.engine.cardrules import characteristics
+
+    from .cards import raw_card
+
+    facts = characteristics(raw_card("X", "Sorcery", "{X}", "You may pay {X}. If you do, draw a card."))
+    payload = {
+        "version": dsl.DSL_VERSION,
+        "abilities": [
+            {
+                "trigger": "SPELL",
+                "targets": {"t1": {"selector": "YOU"}},
+                "ops": [
+                    {"op": "PAY_MANA", "target": "t1", "mana": "{X}", "optional": True},
+                    {"op": "DRAW_CARDS", "target": "t1", "amount": 1, "if_done": True},
+                ],
+            }
+        ],
+    }
+    with pytest.raises(dsl.DslError, match="mana"):
+        dsl.validate_program(payload, facts)
+
+
+def test_a_game_with_treasures_and_sacrifice_costs_keeps_its_invariants():
+    from playtest.agents.heuristic import HeuristicAgent
+    from playtest.engine.cards import DeckSpec
+    from playtest.engine.game import Game
+
+    swamp = card("Swamp", "Basic Land", produces="B")
+    specs = [
+        compiled_spec("Strike", "Sorcery", "{1}", "Create a Treasure token."),
+        compiled_spec("Dispute", "Instant", "{1}{B}", "As an additional cost to cast this spell, sacrifice an artifact or creature.\nDraw two cards and create a Treasure token."),
+        compiled_spec("Altar", "Artifact", "{1}", "{1}, Sacrifice an artifact: You gain 2 life."),
+        compiled_spec("Bombardment", "Enchantment", "{2}", "Sacrifice a creature: This enchantment deals 1 damage to any target."),
+    ]
+    library = [swamp] * 22 + specs * 4 + [card(f"Rat {i}", "Creature", "{1}{B}", 2, 1) for i in range(22)]
+    decks = [DeckSpec(name, None, tuple(library)) for name in "AB"]
+    for seed in range(4):
+        result = Game(decks, [HeuristicAgent(0), HeuristicAgent(1)], DUEL, seed=seed, max_rounds=25, check_invariants=True).run()
+        assert "agent_fallback" not in [e.event.kind for e in result.events]
