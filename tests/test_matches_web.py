@@ -299,17 +299,17 @@ def _metagame(fmt="modern", **fields):
     cards = constructed_cards(fmt)
     cache_raw_cards(cards)
     defaults = {"source": "mtgtop8", "archetype": "Goblins", "meta_share": 8.4, "rank": 1, "cards": cards,
-                "coverage": {"percent": 46}}
+                "coverage": {"unresolved": ["Odd Goblin"], "unsupported_cards": []}}
     defaults.update(fields)
     return MetagameDeck.objects.create(format=fmt, **defaults)
 
 
 @pytest.mark.django_db
-def test_the_form_offers_metagame_decks_with_a_coverage_warning(client):
+def test_the_form_offers_metagame_decks_warning_of_cards_forge_does_not_know(client):
     deck = _metagame()
     page = client.get("/matches/new").content.decode()
     assert f'value="metagame:{deck.id}" data-format="modern"' in page
-    assert "Goblins — 8.4% — coverage 46% ⚠ low coverage" in page
+    assert "Goblins — 8.4% — 1 card unknown to Forge ⚠" in page
 
 
 @pytest.mark.django_db
@@ -339,3 +339,50 @@ def test_a_metagame_deck_of_another_format_or_failed_is_refused(client, user):
         data = {"format": "modern", "seat-0-deck": str(mine.id), "seat-1-deck": value}
         response = client.post("/matches/create", data)
         assert response.status_code == 422 and message in response.content
+
+
+@pytest.mark.django_db
+def test_the_deck_page_checks_the_deck_with_forge_only_on_demand(client, user, fake_forge, monkeypatch):
+    from playtest import forge
+
+    deck = make_deck(user)
+    called = []
+    monkeypatch.setattr(fake_forge, "check_deck", lambda fmt, text: called.append((fmt, text)) or {"unresolved": ["Bear 3"], "unsupported_cards": [], "missing_commander": False})
+    page = client.get(f"/decks/{deck.id}").content.decode()
+    assert "Check with Forge" in page and not called
+    result = client.post(f"/decks/{deck.id}/forge-check").content.decode()
+    assert called[0][0] == "commander" and called[0][1].startswith("Commander\n1 Bear Lord")
+    assert "a match with this deck would be refused" in result and "Bear 3" in result
+
+    def down(*args):
+        raise forge.ForgeError("Forge bridge unreachable at http://localhost:8080")
+
+    monkeypatch.setattr(fake_forge, "check_deck", down)
+    assert "Forge bridge unreachable" in client.post(f"/decks/{deck.id}/forge-check").content.decode()
+
+
+@pytest.mark.django_db
+def test_someone_elses_deck_cannot_be_checked(client, django_user_model, fake_forge):
+    deck = make_deck(django_user_model.objects.create_user(username="other"))
+    assert client.post(f"/decks/{deck.id}/forge-check").status_code == 404
+
+
+@pytest.mark.django_db
+def test_a_jev_match_on_the_fake_bridge_shows_confidence_and_low_confidence_fallbacks(client, user, fake_forge, monkeypatch):
+    from playtest.agents import typesafe
+
+    from .test_jev_agent import StubJev
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(typesafe, "system_one", StubJev(confidence=0.9))
+    decks = [make_deck(user, name=f"Deck {i}", fmt="duel") for i in range(2)]
+    client.post("/matches/create", _form("duel", decks, agent="jev"))
+    match = Match.objects.get(owner=user)
+    page = client.get(f"/matches/{match.id}").content.decode()
+    assert "0.90" in page and "runner-up:" in page
+
+    monkeypatch.setattr(typesafe, "system_one", StubJev(confidence=0.05))
+    client.post("/matches/create", _form("duel", decks, agent="jev"))
+    unsure = Match.objects.exclude(pk=match.pk).get()
+    page = client.get(f"/matches/{unsure.id}").content.decode()
+    assert "decided by Forge AI (delegate)" in page and "low_confidence" in page and "Jev leaned to:" in page

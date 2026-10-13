@@ -1,0 +1,33 @@
+{% comment %}
+The deck page's Forge check, swapped in place of its button (HTMX).
+{% endcomment %}
+<div class="panel-card p-[18px]" id="forge-check">
+    <div class="flex items-center justify-between gap-2 mb-2">
+        <div class="font-semibold text-[12.5px] tracking-[.08em] uppercase text-txt3">Forge engine</div>
+        {% if check %}
+        {% if check.unresolved %}
+        <span class="font-mono2 font-bold text-[13px] text-danger">{{ check.unresolved|length }} unknown</span>
+        {% elif check.unsupported_cards %}
+        <span class="font-mono2 font-bold text-[13px] text-gold">{{ check.unsupported_cards|length }} unsupported</span>
+        {% else %}
+        <span class="font-mono2 font-bold text-[13px] text-teal">ready</span>
+        {% endif %}
+        {% endif %}
+    </div>
+    {% if error %}
+    <div class="text-[12px] text-danger leading-[1.45]">{{ error }}</div>
+    {% elif check.unresolved %}
+    <div class="text-[12px] text-txt3 font-light leading-[1.45]">Forge does not know these cards, so a match with this deck would be refused:</div>
+    <ul class="mt-1.5 text-[12px] text-txt3 font-light leading-[1.45]" style="margin-bottom:0;padding-left:16px;list-style:disc">
+        {% for card in check.unresolved %}<li translate="no" class="text-txt2">{{ card }}</li>{% endfor %}
+    </ul>
+    {% elif check.unsupported_cards %}
+    <div class="text-[12px] text-txt3 font-light leading-[1.45]">Forge knows every card, but cannot play these fully:</div>
+    <ul class="mt-1.5 text-[12px] text-txt3 font-light leading-[1.45]" style="margin-bottom:0;padding-left:16px;list-style:disc">
+        {% for card in check.unsupported_cards %}<li translate="no" class="text-txt2">{{ card }}</li>{% endfor %}
+    </ul>
+    {% else %}
+    <div class="text-[12px] text-txt3 font-light leading-[1.45]">Forge knows and plays every card of this deck.</div>
+    {% endif %}
+    {% if check.missing_commander %}<div class="text-[12px] text-danger mt-2">Forge found no commander in this deck.</div>{% endif %}
+</div>

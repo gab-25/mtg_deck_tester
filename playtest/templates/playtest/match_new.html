@@ -59,7 +59,7 @@
                                 {% if metagame_decks %}
                                 <optgroup label="Metagame">
                                     {% for value, meta in metagame_decks %}
-                                    <option value="{{ value }}" data-format="{{ meta.format }}" {% if row.deck == value %}selected{% endif %}>{{ meta.label }}{% if meta.low_coverage %} ⚠ low coverage{% endif %}</option>
+                                    <option value="{{ value }}" data-format="{{ meta.format }}" {% if row.deck == value %}selected{% endif %}>{{ meta.label }}{% if meta.unknown_cards %} ⚠{% endif %}</option>
                                     {% endfor %}
                                 </optgroup>
                                 {% endif %}

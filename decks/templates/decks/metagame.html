@@ -34,8 +34,10 @@
                         {% if deck.meta_share is not None %}<span class="text-txt2">{{ deck.meta_share|floatformat:"-1" }}%</span>{% endif %}
                         {% if deck.status == 'failed' %}
                         <span class="text-danger" title="{{ deck.error }}">failed: {{ deck.error|truncatechars:80 }}</span>
-                        {% elif deck.coverage_percent is not None %}
-                        <span class="{% if deck.low_coverage %}text-gold{% else %}text-teal{% endif %}">coverage {{ deck.coverage_percent }}%{% if deck.low_coverage %} ⚠{% endif %}</span>
+                        {% elif deck.unknown_cards %}
+                        <span class="text-gold" title="{{ deck.unknown_cards|join:', ' }}">{{ deck.unknown_cards|length }} unknown to Forge ⚠</span>
+                        {% elif deck.forge_checked %}
+                        <span class="text-teal">Forge ready</span>
                         {% endif %}
                     </div>
                 </div>

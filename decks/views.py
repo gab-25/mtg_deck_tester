@@ -8,7 +8,6 @@ from django.views.decorators.http import require_http_methods
 from mtg_deck_tester.access import get_owned_or_404
 from mtg_deck_tester.jobs import start_job
 
-from .cache import DbCardCache
 from .formats import DEFAULT_FORMAT, FORMATS, format_choices
 from .importer import decklist_errors, run_import
 from .models import Deck, MetagameDeck
@@ -78,8 +77,6 @@ def deck_detail(request, deck_id):
     deck = get_owned_or_404(Deck, request.user, deck_id)
     if deck.is_busy:
         return redirect("deck_list")
-    from playtest.judge import cached_coverage
-
     return render(
         request,
         "decks/deck_detail.html",
@@ -89,11 +86,28 @@ def deck_detail(request, deck_id):
             "card_groups": card_groups(deck.cards),
             "commander_cards": commander_cards(deck.cards),
             "sideboard": sideboard_group(deck.cards),
-            # Only from the caches: a page view never compiles a card. The
-            # sideboard never plays, so it does not count.
-            "coverage": cached_coverage(deck.main_cards, DbCardCache()),
         },
     )
+
+
+@login_required
+@require_http_methods(["POST"])
+def deck_forge_check(request, deck_id):
+    """What the Forge engine makes of the deck, on demand: cards it does not
+    know (a match would be refused) and cards it cannot play fully."""
+    # The playtest app talks to Forge; imported here so decks keeps no
+    # module-level dependency on it.
+    from playtest import forge
+
+    deck = get_owned_or_404(Deck, request.user, deck_id)
+    context = {"deck": deck}
+    try:
+        context["check"] = forge.client().check_deck(
+            deck.format, forge.decklist_text(deck.cards, has_commander=deck.has_commander)
+        )
+    except forge.ForgeError as exc:
+        context["error"] = str(exc)
+    return render(request, "decks/partials/forge_check.html", context)
 
 
 @login_required

@@ -96,8 +96,13 @@ class ForgeClient:
         return self._json(response, "create game")
 
     def check_deck(self, fmt: str, decklist: str) -> dict:
-        """``{"unresolved", "unsupported_cards", "missing_commander"}`` for one decklist; no game starts."""
-        response = self._call("POST", "/decks/check", json={"format": bridge_format(fmt), "decklist": decklist})
+        """``{"unresolved", "unsupported_cards", "missing_commander"}`` for one decklist; no game starts.
+
+        A format the bridge cannot seat is checked as its family: Forge knows
+        the same cards, and a commander deck is read the same way.
+        """
+        checked = FORMATS[fmt].forge_format or ("duel_commander" if FORMATS[fmt].has_commander else "vintage")
+        response = self._call("POST", "/decks/check", json={"format": checked, "decklist": decklist})
         if response.status_code == 404:
             raise ForgeError("This Forge bridge cannot check decks: update mtg_forge_engine.")
         return self._json(response, "check deck")

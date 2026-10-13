@@ -10,8 +10,8 @@ from decks.metagame import SourceError, sync
 class Command(BaseCommand):
     help = (
         "Fetches the current top decks of each format (EDHTop16 for Commander, MTGTop8 "
-        "for Duel Commander and the constructed formats), imports and compiles them, "
-        "and replaces that format's metagame decks."
+        "for Duel Commander and the constructed formats), imports them, checks their cards "
+        "against the Forge bridge when it runs, and replaces that format's metagame decks."
     )
 
     def add_arguments(self, parser):
@@ -19,12 +19,6 @@ class Command(BaseCommand):
         parser.add_argument("--limit", type=int, default=10, help="Decks per format (default: 10).")
 
     def handle(self, *args, **options):
-        from playtest.agents import openrouter
-
-        if openrouter.api_key() is None:
-            self.stderr.write(
-                "No OPENROUTER_API_KEY: cards that need the judge are counted as unsupported."
-            )
         formats = [options["format"]] if options["format"] else list(FORMATS)
         cache = DbCardCache()
         failed = []
@@ -35,9 +29,10 @@ class Command(BaseCommand):
                 failed.append(fmt)
                 self.stderr.write(f"{fmt}: {exc}")
                 continue
-            coverage = "n/a" if report.mean_coverage is None else f"{report.mean_coverage}%"
-            self.stdout.write(
-                f"{fmt}: {report.imported} imported, {report.failed} failed, mean coverage {coverage}"
-            )
+            if report.unknown_to_forge is None:
+                forge = "not checked (Forge bridge unreachable)"
+            else:
+                forge = f"{report.unknown_to_forge} with cards Forge does not know"
+            self.stdout.write(f"{fmt}: {report.imported} imported, {report.failed} failed, {forge}")
         if failed:
             raise CommandError(f"Could not sync: {', '.join(failed)}. Their previous decks are kept.")

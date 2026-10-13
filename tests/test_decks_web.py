@@ -241,11 +241,11 @@ def test_the_metagame_page_lists_each_format(client):
 
     MetagameDeck.objects.create(
         format="modern", source="mtgtop8", archetype="UR Aggro", source_url="https://www.mtgtop8.com/archetype?a=1",
-        meta_share=8.0, rank=1, coverage={"percent": 46},
+        meta_share=8.0, rank=1, coverage={"unresolved": ["Nope Card"], "unsupported_cards": []},
     )
     MetagameDeck.objects.create(format="modern", source="mtgtop8", archetype="Broken", rank=2, status="failed", error="Missing Card")
     page = client.get("/metagame").content.decode()
-    assert "UR Aggro" in page and "8%" in page and "46%" in page
+    assert "UR Aggro" in page and "8%" in page and "1 unknown to Forge" in page
     assert "Missing Card" in page
     assert "Not synced yet" in page  # every other format
     client.logout()

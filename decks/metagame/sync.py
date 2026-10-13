@@ -6,9 +6,9 @@ from dataclasses import dataclass
 from django.db import transaction
 from django.utils import timezone
 
+from ..formats import FORMATS
 from ..importer import import_decklist
 from ..models import MetagameDeck
-from ..rules.legality import board_of
 from . import SourceError, source_for
 
 logger = logging.getLogger(__name__)
@@ -25,32 +25,42 @@ class SyncReport:
     format: str
     imported: int
     failed: int
-    # Mean coverage percent of the imported decks, or None when none was measured.
-    mean_coverage: int | None
+    # Imported decks with cards Forge does not know, or None when the Forge
+    # bridge could not check them.
+    unknown_to_forge: int | None
 
 
-def _default_coverage(cache):
-    def compile_coverage(cards: list) -> dict:
-        # The playtest app compiles cards; imported here so decks keeps no
+def forge_check(fmt: str):
+    """Checks a deck's cards against the Forge bridge; ``{}`` when it is unreachable."""
+
+    def check(cards: list) -> dict:
+        # The playtest app talks to Forge; imported here so decks keeps no
         # module-level dependency on it.
-        from playtest.engine.coverage import coverage_report
-        from playtest.judge import compile_deck
+        from playtest import forge
 
-        return coverage_report([entry.coverage() for entry in compile_deck(cards, cache)])
+        try:
+            result = forge.client().check_deck(
+                fmt, forge.decklist_text(cards, has_commander=FORMATS[fmt].has_commander)
+            )
+        except forge.ForgeError as exc:
+            logger.info("Forge could not check a %s metagame deck: %s", fmt, exc)
+            return {}
+        return {"unresolved": result.get("unresolved", []), "unsupported_cards": result.get("unsupported_cards", [])}
 
-    return compile_coverage
+    return check
 
 
-def sync_format(fmt: str, limit: int, cache, *, fetch=None, compile_coverage=None) -> SyncReport:
+def sync_format(fmt: str, limit: int, cache, *, fetch=None, check=None) -> SyncReport:
     """Replaces ``fmt``'s metagame decks with the current top ``limit`` decks.
 
     The source is read first: if it fails (:class:`~decks.metagame.SourceError`),
     or not one of its decks can be imported, nothing is changed. A deck that cannot be imported is kept as ``failed`` with
-    the reason; the others are compiled and their coverage stored.
+    the reason; the others are checked against the Forge bridge (``check``),
+    which names the cards it does not know.
     """
     source = source_for(fmt)
     fetch = fetch or source.fetch
-    compile_coverage = compile_coverage or _default_coverage(cache)
+    check = check or forge_check(fmt)
     entries = fetch(fmt, limit)
 
     fetched_at = timezone.now()
@@ -76,8 +86,7 @@ def sync_format(fmt: str, limit: int, cache, *, fetch=None, compile_coverage=Non
             deck.cards = result["cards"]
             deck.commander = result["commander"]
             deck.color_identity = result["color_identity"]
-            main = [item for item in deck.cards if board_of(item) == "main"]
-            deck.coverage = compile_coverage(main)
+            deck.coverage = check(deck.cards)
         decks.append(deck)
 
     if decks and not any(d.status == MetagameDeck.Status.READY for d in decks):
@@ -90,10 +99,10 @@ def sync_format(fmt: str, limit: int, cache, *, fetch=None, compile_coverage=Non
         MetagameDeck.objects.bulk_create(decks)
 
     ready = [d for d in decks if d.status == MetagameDeck.Status.READY]
-    measured = [d.coverage_percent for d in ready if d.coverage_percent is not None]
+    checked = [d for d in ready if d.forge_checked]
     return SyncReport(
         format=fmt,
         imported=len(ready),
         failed=len(decks) - len(ready),
-        mean_coverage=sum(measured) // len(measured) if measured else None,
+        unknown_to_forge=sum(1 for d in checked if d.unknown_cards) if checked else None,
     )

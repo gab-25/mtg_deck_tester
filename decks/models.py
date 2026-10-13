@@ -137,10 +137,6 @@ class CardRule(models.Model):
         ]
 
 
-# Below this coverage a metagame deck is flagged in the opponent picker.
-LOW_COVERAGE_PERCENT = 70
-
-
 class MetagameDeck(models.Model):
     """A top deck of a format, imported by ``manage.py sync_metagame``.
 
@@ -170,7 +166,9 @@ class MetagameDeck(models.Model):
     cards = models.JSONField(default=list)
     commander = models.CharField(max_length=255, blank=True, default="")
     color_identity = models.JSONField(default=list)
-    # The main deck's coverage report (playtest.engine.coverage), computed at sync.
+    # What the Forge engine made of the deck at sync:
+    # ``{"unresolved": [...], "unsupported_cards": [...]}``, or empty when the
+    # bridge could not be reached.
     coverage = models.JSONField(default=dict, blank=True)
 
     class Meta:
@@ -193,20 +191,21 @@ class MetagameDeck(models.Model):
         return FORMATS[self.format].has_commander
 
     @property
-    def coverage_percent(self) -> int | None:
-        return (self.coverage or {}).get("percent")
+    def forge_checked(self) -> bool:
+        return "unresolved" in (self.coverage or {})
 
     @property
-    def low_coverage(self) -> bool:
-        percent = self.coverage_percent
-        return percent is not None and percent < LOW_COVERAGE_PERCENT
+    def unknown_cards(self) -> list[str]:
+        """Cards Forge does not know: a match with this deck would be refused."""
+        return list((self.coverage or {}).get("unresolved") or [])
 
     @property
     def label(self) -> str:
-        """``UR Aggro — 8.4% — coverage 46%``: what the opponent picker shows."""
+        """``UR Aggro — 8.4% — 2 cards unknown to Forge``: what the opponent picker shows."""
         parts = [self.archetype]
         if self.meta_share is not None:
             parts.append(f"{self.meta_share:g}%")
-        if self.coverage_percent is not None:
-            parts.append(f"coverage {self.coverage_percent}%")
+        if self.unknown_cards:
+            count = len(self.unknown_cards)
+            parts.append(f"{count} card{'s' if count > 1 else ''} unknown to Forge")
         return " — ".join(parts)

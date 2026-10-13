@@ -83,29 +83,18 @@ max-width stays inline — a utility would lose to the unlayered component rule.
             </div>
             {% endfor %}
 
-            {% if coverage %}
-            <div class="panel-card p-[18px]">
+            <div class="panel-card p-[18px]" id="forge-check">
                 <div class="flex items-center justify-between gap-2 mb-2">
-                    <div class="font-semibold text-[12.5px] tracking-[.08em] uppercase text-txt3">Playtest coverage</div>
-                    <span class="font-mono2 font-bold text-[15px] {% if coverage.percent < 70 %}text-danger{% elif coverage.percent < 90 %}text-gold{% else %}text-teal{% endif %}">{{ coverage.percent }}%</span>
+                    <div class="font-semibold text-[12.5px] tracking-[.08em] uppercase text-txt3">Forge engine</div>
                 </div>
-                <div class="text-[12px] text-txt3 font-light leading-[1.45]">
-                    of {{ coverage.total }} cards can be simulated. Unsupported cards play as blanks, so the playtest favours big, simple creatures.
+                <div class="text-[12px] text-txt3 font-light leading-[1.45] mb-3">
+                    Matches are played by Forge, which refuses a deck with a card it does not know. Check this deck before seating it.
                 </div>
-                {% if coverage.commander_unsupported %}<div class="text-[12px] text-danger mt-2 font-semibold">The commander is unsupported: it plays as a vanilla creature.</div>{% endif %}
-                {% if coverage.dead_spells %}<div class="text-[12px] text-gold mt-1.5">{{ coverage.dead_spells }} dead spell{{ coverage.dead_spells|pluralize }}.</div>{% endif %}
-                {% if coverage.unsupported_cards %}
-                <details class="mt-2 text-[12px]">
-                    <summary class="cursor-pointer text-txt2">{{ coverage.unsupported }} unsupported card{{ coverage.unsupported|pluralize }}</summary>
-                    <ul class="mt-1.5 text-txt3 font-light leading-[1.45]" style="margin-bottom:0;padding-left:16px;list-style:disc">
-                        {% for card in coverage.unsupported_cards %}
-                        <li><span translate="no" class="text-txt2">{{ card.name }}</span> — {{ card.reason }}</li>
-                        {% endfor %}
-                    </ul>
-                </details>
-                {% endif %}
+                <form hx-post="{% url 'deck_forge_check' deck.id %}" hx-target="#forge-check" hx-swap="outerHTML">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-line btn-sm"><span translate="no" class="ms text-[16px]">fact_check</span>Check with Forge</button>
+                </form>
             </div>
-            {% endif %}
         </div>
     </div>
     {% endif %}
