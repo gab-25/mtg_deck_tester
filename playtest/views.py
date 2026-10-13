@@ -15,7 +15,7 @@ from mtg_deck_tester.jobs import start_job
 
 from . import forge
 from .agents import openrouter, typesafe
-from .forms import DEFAULT_MATCH_FORMAT, METAGAME_PREFIX, SEAT_ROWS, agent_choices, parse_match_form
+from .forms import DEFAULT_MATCH_FORMAT, METAGAME_PREFIX, SEAT_ROWS, parse_match_form
 from .models import Match, Seat
 from .runner import run_match, start_game
 from .summary import event_row, fallback_executions, fallback_reason, table_names
@@ -46,7 +46,6 @@ def _form_context(user, post=None, **extra) -> dict:
         {
             "index": i,
             "deck": post.get(f"seat-{i}-deck", ""),
-            "agent": post.get(f"seat-{i}-agent", Seat.Agent.JEV),
             "model": post.get(f"seat-{i}-model", ""),
         }
         for i in range(SEAT_ROWS)
@@ -57,14 +56,12 @@ def _form_context(user, post=None, **extra) -> dict:
         "formats": playable_formats(),
         "form_format": post.get("format", DEFAULT_MATCH_FORMAT),
         "form_seed": post.get("seed", ""),
-        "agent_choices": agent_choices(),
         "metagame_decks": [
             (f"{METAGAME_PREFIX}{meta.id}", meta)
             for meta in MetagameDeck.objects.filter(status=MetagameDeck.Status.READY).order_by("format", "rank")
         ],
-        "default_model": openrouter.default_model(),
         "jev_model": typesafe.default_model(),
-        "llm_available": openrouter.api_key() is not None,
+        "jev_available": openrouter.api_key() is not None,
         **extra,
     }
 

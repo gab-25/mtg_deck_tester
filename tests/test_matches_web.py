@@ -13,17 +13,28 @@ def user(django_user_model):
 
 
 @pytest.fixture
-def client(client, user, monkeypatch):
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+def jev(monkeypatch):
+    """Jev plays every seat: a key and a stand-in answer, no network."""
+    from playtest.agents import typesafe
+
+    from .test_jev_agent import StubJev
+
+    stub = StubJev(confidence=0.9)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(typesafe, "system_one", stub)
+    return stub
+
+
+@pytest.fixture
+def client(client, user, jev):
     client.force_login(user)
     return client
 
 
-def _form(fmt, decks, agent="random", **extra):
+def _form(fmt, decks, **extra):
     data = {"format": fmt, "seed": "7"}
     for i, deck in enumerate(decks):
         data[f"seat-{i}-deck"] = str(deck.id)
-        data[f"seat-{i}-agent"] = agent
     data.update(extra)
     return data
 
@@ -45,7 +56,7 @@ def test_new_match_form_prefills_the_deck_from_its_page(client, user):
 
 
 @pytest.mark.django_db
-def test_a_duel_between_random_agents_runs_to_the_end(client, user, fake_forge):
+def test_a_duel_between_two_jev_agents_runs_to_the_end(client, user, fake_forge):
     decks = [make_deck(user, name=f"Deck {i}", fmt="duel") for i in range(2)]
     response = client.post("/matches/create", _form("duel", decks))
     match = Match.objects.get(owner=user)
@@ -53,6 +64,7 @@ def test_a_duel_between_random_agents_runs_to_the_end(client, user, fake_forge):
     assert response["Location"] == f"/matches/{match.id}"
     assert match.status == Match.Status.FINISHED, match.error
     assert match.seed == 7 and fake_forge.created[0]["seed"] == 7
+    assert list(match.seats.values_list("agent", flat=True)) == ["jev", "jev"]
 
     page = client.get(f"/matches/{match.id}").content.decode()
     assert "Game log" in page and "Turn 1 (Deck 0)" in page and "played by Forge" in page
@@ -109,28 +121,13 @@ def test_someone_elses_deck_cannot_be_seated(client, user, django_user_model):
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("agent", ["llm", "jev"])
-def test_model_seats_need_an_api_key(client, user, agent):
+def test_a_match_needs_an_api_key_since_jev_plays_every_seat(client, user, monkeypatch):
+    monkeypatch.delenv("OPENROUTER_API_KEY")
     decks = [make_deck(user, name=f"Deck {i}", fmt="duel") for i in range(2)]
-    response = client.post("/matches/create", _form("duel", decks, agent=agent))
+    response = client.post("/matches/create", _form("duel", decks))
     assert response.status_code == 422
     assert b"OPENROUTER_API_KEY" in response.content
-
-
-@pytest.mark.django_db
-def test_an_llm_match_records_the_reasoning(client, user, monkeypatch, fake_forge):
-    from playtest.agents import llm_agent
-
-    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
-    monkeypatch.setattr(
-        llm_agent.openrouter, "chat", lambda messages, model: '{"choice": 1, "reason": "first is best"}'
-    )
-    decks = [make_deck(user, name=f"Deck {i}", fmt="duel") for i in range(2)]
-    client.post("/matches/create", _form("duel", decks, agent="llm"))
-    match = Match.objects.get(owner=user)
-    assert match.status == Match.Status.FINISHED, match.error
-    assert match.events.filter(reasoning="first is best").exists()
-    assert b"first is best" in client.get(f"/matches/{match.id}").content
+    assert b"no match can start" in client.get("/matches/new").content
 
 
 @pytest.mark.django_db
@@ -199,22 +196,19 @@ def test_deleting_a_running_match_aborts_its_game(client, user, fake_forge):
 
 
 @pytest.mark.django_db
-def test_the_form_offers_agents_with_jev_by_default_and_never_forges_ai(client):
+def test_the_form_offers_no_agent_choice(client):
     content = client.get("/matches/new").content.decode()
-    for agent in ("jev", "llm", "random"):
-        assert f'value="{agent}"' in content
-    for agent in ("forge_ai", "heuristic"):
-        assert f'value="{agent}"' not in content
-    assert 'value="jev" selected' in content
+    assert 'name="seat-0-agent"' not in content
+    assert "JEV PLAYS EVERY SEAT" in content
 
 
 @pytest.mark.django_db
-def test_a_deck_cannot_be_tested_against_forges_ai(client, user):
+def test_a_posted_agent_is_ignored_every_seat_is_jev(client, user, fake_forge):
     decks = [make_deck(user, name=f"Deck {i}", fmt="duel") for i in range(2)]
-    response = client.post("/matches/create", _form("duel", decks, agent="forge_ai"))
-    assert response.status_code == 422
-    assert b"unknown agent" in response.content
-    assert not Match.objects.exists()
+    client.post("/matches/create", _form("duel", decks, **{"seat-0-agent": "forge_ai", "seat-1-agent": "random"}))
+    match = Match.objects.get(owner=user)
+    assert list(match.seats.values_list("agent", flat=True)) == ["jev", "jev"]
+    assert [s["controller"] for s in fake_forge.created[0]["seats"]] == ["external", "external"]
 
 
 def _finished(user, **seat_fields):
@@ -274,7 +268,7 @@ def test_a_finished_match_shows_its_summary(client, user, fake_forge):
     page = client.get(f"/matches/{played.id}").content.decode()
     assert "Match summary" in page and "Spells cast" in page and "Fallbacks" in page
     assert "Automatic for every seat: mana payment" in page and "assignCombatDamage" in page
-    assert "% Random" in page
+    assert "% Jev" in page
 
 
 @pytest.mark.django_db
@@ -287,7 +281,7 @@ def test_a_constructed_match_between_two_jev_agents(client, user, fake_forge, mo
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setattr(typesafe, "system_one", StubJev())
     decks = [make_constructed_deck(user, name=f"Goblins {i}") for i in range(2)]
-    client.post("/matches/create", _form("modern", decks, agent="jev"))
+    client.post("/matches/create", _form("modern", decks))
     match = Match.objects.get(owner=user)
     assert match.status == Match.Status.FINISHED, match.error
     assert [s["controller"] for s in fake_forge.created[0]["seats"]] == ["external", "external"]
@@ -337,8 +331,7 @@ def test_a_match_against_a_metagame_deck(client, user, fake_forge):
 
     mine = make_constructed_deck(user)
     meta = _metagame()
-    data = {"format": "modern", "seed": "2", "seat-0-deck": str(mine.id), "seat-0-agent": "random",
-            "seat-1-deck": f"metagame:{meta.id}", "seat-1-agent": "random"}
+    data = {"format": "modern", "seed": "2", "seat-0-deck": str(mine.id), "seat-1-deck": f"metagame:{meta.id}"}
     assert client.post("/matches/create", data).status_code == 302
     match = Match.objects.get(owner=user)
     assert match.status == Match.Status.FINISHED, match.error
@@ -395,13 +388,13 @@ def test_a_jev_match_on_the_fake_bridge_shows_confidence_and_low_confidence_fall
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setattr(typesafe, "system_one", StubJev(confidence=0.9))
     decks = [make_deck(user, name=f"Deck {i}", fmt="duel") for i in range(2)]
-    client.post("/matches/create", _form("duel", decks, agent="jev"))
+    client.post("/matches/create", _form("duel", decks))
     match = Match.objects.get(owner=user)
     page = client.get(f"/matches/{match.id}").content.decode()
     assert "0.90" in page and "runner-up:" in page
 
     monkeypatch.setattr(typesafe, "system_one", StubJev(confidence=0.05))
-    client.post("/matches/create", _form("duel", decks, agent="jev"))
+    client.post("/matches/create", _form("duel", decks))
     unsure = Match.objects.exclude(pk=match.pk).get()
     page = client.get(f"/matches/{unsure.id}").content.decode()
     assert "decided by Forge AI (delegate)" in page and "low_confidence" in page and "Jev leaned to:" in page

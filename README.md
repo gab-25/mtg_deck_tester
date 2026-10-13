@@ -12,9 +12,10 @@ rules engine with nearly every card scripted, plays every game from its own cont
 ([`mtg_forge_engine`](https://github.com/gab-25/mtg_forge_engine), the *bridge*) and asks
 each seat one decision at a time. The seats are played by
 [Jev](https://docs.typesafe.ai/introduction), TypeSafe AI's System One model, which picks
-among Forge's options and says how sure it is, by a language model, or at random. A
-deck is always tested against another agent, never against Forge's own AI. No model is ever the rules engine: Forge lists the legal options; an
-agent only picks one of them, or hands the decision back to Forge's AI.
+among Forge's options and says how sure it is. Jev plays both seats: the deck under test
+always faces another Jev agent, and the user picks decks, never agents. No model is
+ever the rules engine: Forge lists the legal options; Jev only picks one of them, or
+hands the decision back to Forge's AI.
 
 ## Features
 
@@ -36,13 +37,14 @@ agent only picks one of them, or hands the decision back to Forge's AI.
 
   A constructed deck lists its sideboard under a `Sideboard` header; the sideboard is
   imported and checked, but a match is a single game played with the main deck.
-- **Agents**: each seat gets its own agent — `jev` (the default: Jev picks each of Forge's options through OpenRouter; its
-  confidence and runner-up options are logged), `llm` (a language model of your choice
-  through OpenRouter, with its written reason), or `random` (a free baseline). The
-  opponent of the deck under test is an agent too, Jev by default: Forge's own AI
-  never plays a seat (it only takes fallbacks and what the bridge does not expose). A Jev
-  seat that is unsure (below `JEV_MIN_CONFIDENCE`) or unreachable hands the decision to
-  Forge's AI, with the reason logged, so a match never stalls on a model.
+- **Jev on every seat**: Jev picks each of Forge's options through OpenRouter, and its
+  confidence and runner-up options are logged. There is no agent to choose: both seats
+  are Jev (the model can be overridden per seat). Forge's own AI never plays a seat;
+  it only takes fallbacks and what the bridge does not expose. A seat that is unsure
+  (below `JEV_MIN_CONFIDENCE`) or cannot reach Jev hands that decision to Forge's AI,
+  with the reason logged, so a match never stalls on a model. The code also keeps a
+  random agent (for the replay tests) and an LLM agent (to be evaluated in #44); neither
+  can be picked.
 - **Coverage**: Forge either knows a card or the match is refused, naming the card.
   Each seat lists the cards Forge knows but cannot play fully. The deck page checks a
   deck on demand (**Check with Forge**), never on page view.
@@ -58,8 +60,8 @@ agent only picks one of them, or hands the decision back to Forge's AI.
   seat: result, life over time, turns, spells cast, lands played, the agent's decisions
   against Forge AI's, confidence and fallbacks by reason. A running match can be
   stopped.
-- **Reproducible**: a match has a seed. The same seed with random seats
-  replays the same game; Jev seats are as reproducible as Jev.
+- **Reproducible**: a match has a seed. The same seed and the same answers replay the
+  same game, so a match is as reproducible as Jev.
 - **Scryfall cache in the database**: card JSON is cached in Postgres
   (`scryfall_cards`) and shared by every deck. Card images are not stored: the
   browser loads them straight from Scryfall's CDN (`cards.scryfall.io`). The card table can be
@@ -130,8 +132,7 @@ The project uses [`uv`](https://docs.astral.sh/uv/).
 ### Docker Compose
 
 ```bash
-export OPENROUTER_API_KEY="..."       # optional: enables Jev and LLM seats
-export OPENROUTER_MODEL="..."         # optional: default LLM (google/gemini-2.5-flash)
+export OPENROUTER_API_KEY="..."       # required to start a match: Jev plays every seat
 export JEV_MODEL="..."                # optional: Jev model (~typesafe/jev-latest)
 docker compose up --build
 docker compose exec web python manage.py createsuperuser
@@ -202,9 +203,8 @@ local development; real environment variables win):
 | `DATABASE_URL` | Postgres or SQLite URL | `postgresql://mtg:mtg@localhost:5432/mtg_tester` |
 | `FORGE_URL` | The Forge bridge (Compose sets `http://mtg-forge-engine:8080`) | `http://localhost:8080` |
 | `FORGE_WORKERS` | Threads answering Forge's decisions: the most model calls in flight; `0` lets each match's runner answer its own | `4` |
-| `OPENROUTER_API_KEY` | Enables Jev and LLM seats | — |
-| `OPENROUTER_MODEL` | Default model for LLM seats | `google/gemini-2.5-flash` |
-| `JEV_MODEL` | Jev model for Jev seats | `~typesafe/jev-latest` |
+| `OPENROUTER_API_KEY` | Jev's key: required to start a match | — |
+| `JEV_MODEL` | Jev model, unless a seat names another | `~typesafe/jev-latest` |
 | `JEV_MIN_CONFIDENCE` | Below this confidence a Jev seat hands the decision to Forge's AI | `0.2` |
 | `MAX_AGENT_CALLS` | Model calls per seat; past it the seat delegates to Forge's AI | `400` |
 | `MAX_MATCH_SECONDS` | Match wall clock; past it model seats delegate to Forge's AI | `1800` |
@@ -220,7 +220,7 @@ described in [its README](https://github.com/gab-25/mtg_forge_engine#run); Compo
 passes the first three through.
 
 Jev is reached through OpenRouter (`/api/v1/systemone`), so one key covers everything;
-no TypeSafe account is needed. A Jev or LLM seat asks its model once per decision Forge
+no TypeSafe account is needed. A seat asks Jev once per decision Forge
 exposes (a single-option decision is never asked), and a match can take a few hundred
 decisions: keep an eye on your OpenRouter spend.
 

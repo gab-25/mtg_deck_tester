@@ -4,12 +4,16 @@ An agent is whatever plays a seat. It never decides what is legal: Forge lists t
 options of each decision (see [Forge engine](engine.md)), and the agent picks one of
 them by index, or delegates the decision to Forge's AI.
 
+**Every seat of a new match is Jev** (`playtest.forms.SEAT_AGENT`): the new-match form
+offers decks, not agents, and ignores any posted agent; only the Jev model can be
+overridden per seat. The other agents stay in the code for tests and evaluation.
+
 | `Seat.Agent` | Class | Network | Notes |
 |---|---|---|---|
-| `jev` (default) | `JevAgent` | OpenRouter | One Jev `choice` per decision; logs its confidence. |
-| `llm` | `LLMAgent` | OpenRouter | One chat completion per decision; logs its reason. |
-| `random` | `RandomAgent` | none | The free baseline, seeded per seat. |
-| `forge_ai` | — | none | Older matches only: the new-match form never offers it, since a deck is tested against an agent (Jev by default), not Forge's own AI. Such a seat is created with `controller: "forge_ai"` and never reaches a worker. |
+| `jev` | `JevAgent` | OpenRouter | Every new seat. One Jev `choice` per decision; logs its confidence. |
+| `llm` | `LLMAgent` | OpenRouter | Not selectable; kept for the evaluation in #44. One chat completion per decision; logs its reason. |
+| `random` | `RandomAgent` | none | Not selectable; the seeded baseline of the runner and replay tests. |
+| `forge_ai` | — | none | Older matches only. Such a seat is created with `controller: "forge_ai"` and never reaches a worker. |
 
 ## The interface
 
@@ -122,8 +126,8 @@ Without `OPENROUTER_API_KEY` the new-match form refuses Jev and LLM seats.
 2. Add a value to `playtest.models.Seat.Agent` (a migration) and an icon in
    `Seat.agent_icon`.
 3. Build it in `playtest.workers.build_agent` from the `Seat` and the match seed.
-4. List it in `PLAYABLE_AGENTS` (`playtest/forms.py`), and extend `match_new.html`
-   if it needs configuration.
+4. To let new matches use it, change `SEAT_AGENT` in `playtest/forms.py` (today every
+   seat is Jev and the form offers no choice).
 5. Test it without network: pass a fake `ask` / `chat`, or monkeypatch
    `typesafe.system_one` / `requests.post`, and play it against the `fake_forge`
    fixture (`tests/test_jev_agent.py`, `tests/test_runner.py`).

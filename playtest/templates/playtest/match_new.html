@@ -64,13 +64,9 @@
                                 </optgroup>
                                 {% endif %}
                             </select>
-                            <select name="seat-{{ row.index }}-agent" class="field">
-                                {% for value, label in agent_choices %}
-                                <option value="{{ value }}" {% if row.agent == value %}selected{% endif %}>{{ label }}</option>
-                                {% endfor %}
-                            </select>
+                            <span class="chip"><span translate="no" class="ms text-[14px]">bolt</span>Jev</span>
                             <input type="text" name="seat-{{ row.index }}-model" value="{{ row.model }}" class="field"
-                                placeholder="default model" spellcheck="false" />
+                                placeholder="{{ jev_model }}" spellcheck="false" aria-label="Jev model" />
                         </div>
                         {% endfor %}
                     </div>
@@ -79,23 +75,19 @@
                 <div>
                     <label class="field-label mb-2">Seed</label>
                     <input type="text" name="seed" value="{{ form_seed }}" placeholder="random" class="field" inputmode="numeric" />
-                    <div class="text-[12px] text-txt3 mt-2 font-light">The same seed and the same answers replay the same game: random seats replay exactly.</div>
+                    <div class="text-[12px] text-txt3 mt-2 font-light">The same seed and the same answers replay the same game.</div>
                 </div>
             </div>
 
             <div class="editor-sidebar flex flex-col gap-4 sticky top-[78px]">
                 <div class="panel-card p-[18px]">
                     <div class="flex items-center gap-[7px] font-semibold text-[12.5px] tracking-[.06em] text-violet2 mb-3">
-                        <span translate="no" class="ms text-[18px]">smart_toy</span>AGENTS
+                        <span translate="no" class="ms text-[18px]">smart_toy</span>JEV PLAYS EVERY SEAT
                     </div>
                     <div class="text-[12.5px] text-txt3 font-light leading-[1.55]">
-                        <span class="text-txt2">Jev</span> asks TypeSafe's Jev model (through OpenRouter) to pick each of Forge's options, and logs how sure it was
-                        (leave the model empty for <span class="font-mono2">{{ jev_model }}</span>); when it is unsure or unreachable Forge's AI decides.
-                        <span class="text-txt2">LLM</span> asks a language model on OpenRouter
-                        (<span class="font-mono2">{{ default_model }}</span> by default).
-                        <span class="text-txt2">Random</span> picks any option Forge offers: a free baseline.
-                        A deck is always tested against an agent, Jev by default, never against Forge's own AI.
-                        {% if not llm_available %}<span class="text-gold">No OPENROUTER_API_KEY is set, so Jev and LLM seats are unavailable.</span>{% endif %}
+                        Both seats are played by <span class="text-txt2">Jev</span>, TypeSafe's model (through OpenRouter): it picks each of Forge's options and logs how sure it was
+                        (leave the model empty for <span class="font-mono2">{{ jev_model }}</span>). When it is unsure or unreachable, Forge's AI takes that one decision.
+                        {% if not jev_available %}<span class="text-gold">No OPENROUTER_API_KEY is set, so no match can start.</span>{% endif %}
                     </div>
                 </div>
 

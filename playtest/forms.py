@@ -11,22 +11,15 @@ from .models import Seat
 
 # A seat's deck picker value for a metagame deck.
 METAGAME_PREFIX = "metagame:"
-# Seats that ask a model through OpenRouter.
-MODEL_AGENTS = {Seat.Agent.LLM, Seat.Agent.JEV}
-# The agents a new match may seat, in the order the form lists them. A deck is
-# tested against agents, never against Forge's own AI: forge_ai only names the
-# seats of older matches (Forge's AI still takes fallbacks and the decisions
-# the bridge does not expose).
-PLAYABLE_AGENTS = [Seat.Agent.JEV, Seat.Agent.RANDOM, Seat.Agent.LLM]
+# Every seat of a new match is played by Jev: the user picks decks, not agents.
+# The other Seat.Agent values only name the seats of older matches; Forge's AI
+# still takes fallbacks and the decisions the bridge does not expose.
+SEAT_AGENT = Seat.Agent.JEV
 
 # Rows the form shows; the format decides how many of them may be filled.
 SEAT_ROWS = max(fmt.max_seats for fmt in playable_formats().values())
 # The format the form starts on.
 DEFAULT_MATCH_FORMAT = next(iter(playable_formats()))
-
-
-def agent_choices() -> list[tuple[str, str]]:
-    return [(agent.value, agent.label) for agent in PLAYABLE_AGENTS]
 
 
 @dataclass
@@ -75,15 +68,12 @@ def parse_match_form(post, user) -> tuple[MatchForm | None, list[str]]:
         errors.append("The seed must be a whole number.")
 
     decks = {str(d.id): d for d in Deck.objects.filter(owner=user, status=Deck.Status.READY)}
-    agents = set(PLAYABLE_AGENTS)
     seats = []
     for row in range(SEAT_ROWS):
         deck_id = post.get(f"seat-{row}-deck") or ""
         if not deck_id:
             continue
-        agent = post.get(f"seat-{row}-agent") or Seat.Agent.JEV
-        if agent not in agents:
-            errors.append(f"Seat {row + 1}: unknown agent {agent!r}.")
+        agent = SEAT_AGENT
         model = (post.get(f"seat-{row}-model") or "").strip()
         if deck_id.startswith(METAGAME_PREFIX):
             meta = MetagameDeck.objects.filter(pk=_int(deck_id.removeprefix(METAGAME_PREFIX))).first()
@@ -111,8 +101,8 @@ def parse_match_form(post, user) -> tuple[MatchForm | None, list[str]]:
             wanted = f"{rules.min_seats} to {rules.max_seats}"
         errors.append(f"{rules.label} is played by {wanted} players; {len(seats)} chosen.")
 
-    if any(s.agent in MODEL_AGENTS for s in seats) and not openrouter.api_key():
-        errors.append("Jev and LLM seats need an OpenRouter API key: set OPENROUTER_API_KEY.")
+    if seats and not openrouter.api_key():
+        errors.append("Jev plays every seat and needs an OpenRouter API key: set OPENROUTER_API_KEY.")
 
     if errors:
         return None, errors
