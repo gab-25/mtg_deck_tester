@@ -18,7 +18,15 @@ def user(django_user_model):
     return django_user_model.objects.create_user(username="u")
 
 
-def _match(user, agents=("random", "random"), fmt="modern", seed=5):
+@pytest.fixture(autouse=True)
+def jev(monkeypatch):
+    """Every Jev seat answers through a confident stub: deterministic, no network."""
+    stub = StubJev(confidence=0.9)
+    monkeypatch.setattr(typesafe, "system_one", stub)
+    return stub
+
+
+def _match(user, agents=("jev", "jev"), fmt="modern", seed=5):
     match = Match.objects.create(owner=user, format=fmt, seed=seed)
     for position, agent in enumerate(agents):
         deck = make_constructed_deck(user, name=f"Deck {position}", fmt=fmt) if fmt != "duel" else make_deck(user, name=f"Deck {position}", fmt=fmt)
@@ -32,7 +40,7 @@ def _play(match):
     return match
 
 
-def test_a_random_duel_plays_to_the_end_and_stores_the_log(user, fake_forge):
+def test_a_jev_duel_plays_to_the_end_and_stores_the_log(user, fake_forge):
     match = _play(_match(user))
     assert match.status == Match.Status.FINISHED, match.error
     assert match.forge_game_id and match.started_at and match.finished_at
@@ -49,7 +57,7 @@ def test_a_random_duel_plays_to_the_end_and_stores_the_log(user, fake_forge):
 
 
 def test_the_bridge_receives_the_decklists_seed_and_controllers(user, fake_forge):
-    _play(_match(user, agents=("random", "forge_ai"), seed=11))
+    _play(_match(user, agents=("jev", "forge_ai"), seed=11))
     [created] = fake_forge.created
     assert created["format"] == "modern" and created["seed"] == 11
     assert [s["controller"] for s in created["seats"]] == ["external", "forge_ai"]
@@ -57,13 +65,15 @@ def test_the_bridge_receives_the_decklists_seed_and_controllers(user, fake_forge
     assert "Sideboard\n3 Side 0" in created["seats"][0]["decklist"]
 
 
-def test_random_against_forge_ai_only_asks_the_random_seat(user, fake_forge):
-    match = _play(_match(user, agents=("random", "forge_ai")))
+def test_jev_against_forge_ai_only_asks_the_jev_seat(user, fake_forge):
+    match = _play(_match(user, agents=("jev", "forge_ai")))
     assert match.status == Match.Status.FINISHED, match.error
     assert set(match.events.filter(kind="decision").values_list("seat_position", flat=True)) == {0}
 
 
-def test_the_same_seed_replays_the_same_game(user, fake_forge):
+def test_the_same_seed_replays_the_same_game(user, fake_forge, jev):
+    # Jev's first option: the seeded shuffle decides which one it is.
+    jev.prefer = lambda criteria: next(iter(criteria))
     first = _play(_match(user, seed=9))
     second = _play(_match(user, seed=9))
     texts = lambda match: list(match.events.values_list("text", flat=True))  # noqa: E731
@@ -126,13 +136,6 @@ def test_a_stopped_game_is_recorded_as_stopped(user, fake_forge, monkeypatch):
 # -- Jev seats ---------------------------------------------------------------------------
 
 
-@pytest.fixture
-def jev(monkeypatch):
-    stub = StubJev(confidence=0.9)
-    monkeypatch.setattr(typesafe, "system_one", stub)
-    return stub
-
-
 def test_a_jev_match_stores_confidence_probabilities_and_model_on_every_decision(user, fake_forge, jev):
     match = _play(_match(user, agents=("jev", "jev")))
     assert match.status == Match.Status.FINISHED, match.error
@@ -147,7 +150,7 @@ def test_a_jev_match_stores_confidence_probabilities_and_model_on_every_decision
 
 def test_low_confidence_delegates_with_jevs_distribution(user, fake_forge, jev):
     jev.confidence = 0.05
-    match = _play(_match(user, agents=("jev", "random")))
+    match = _play(_match(user, agents=("jev", "forge_ai")))
     assert match.status == Match.Status.FINISHED, match.error
     fallbacks = list(match.events.filter(kind="fallback", seat_position=0))
     assert fallbacks and not match.events.filter(kind="decision", seat_position=0).exists()
@@ -176,10 +179,11 @@ def test_the_call_budget_hands_the_rest_of_the_seats_game_to_forges_ai(user, fak
 
 def test_the_wall_clock_budget_hands_every_model_seat_over(user, fake_forge, jev, monkeypatch):
     monkeypatch.setenv("MAX_MATCH_SECONDS", "0")
-    match = _play(_match(user, agents=("jev", "random")))
-    assert not jev.requests
-    assert match.events.filter(kind="fallback", seat_position=0, payload__fallback_kind="budget").exists()
-    assert match.events.filter(kind="decision", seat_position=1).exists()
+    match = _play(_match(user))
+    assert match.status == Match.Status.FINISHED, match.error
+    assert not jev.requests and not match.events.filter(kind="decision").exists()
+    budget = match.events.filter(kind="fallback", payload__fallback_kind="budget")
+    assert {e.seat_position for e in budget} == {0, 1}
 
 
 def test_an_agent_that_crashes_delegates(user, fake_forge, monkeypatch):

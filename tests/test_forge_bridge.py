@@ -10,9 +10,11 @@ import os
 import pytest
 
 from playtest import forge, runner
+from playtest.agents import typesafe
 from playtest.models import Match, Seat
 
 from .factories import make_deck, scryfall_card
+from .test_jev_agent import StubJev
 
 pytestmark = [
     pytest.mark.forge,
@@ -35,7 +37,7 @@ def _deck(user, name, entries):
 def _match(user, seed):
     match = Match.objects.create(owner=user, format="modern", seed=seed)
     for position, deck in enumerate((_deck(user, "Red", RED), _deck(user, "Green", GREEN))):
-        Seat.objects.create(match=match, position=position, deck=deck, deck_name=deck.name, agent=Seat.Agent.RANDOM)
+        Seat.objects.create(match=match, position=position, deck=deck, deck_name=deck.name, agent=Seat.Agent.JEV)
     return match
 
 
@@ -46,7 +48,9 @@ def _play(user, seed):
     return match
 
 
-def test_a_random_duel_plays_on_the_bridge_and_replays_from_its_seed(django_user_model):
+def test_a_jev_duel_plays_on_the_bridge_and_replays_from_its_seed(django_user_model, monkeypatch):
+    # A stub answers for Jev: the bridge is real, OpenRouter is not.
+    monkeypatch.setattr(typesafe, "system_one", StubJev(confidence=0.9))
     user = django_user_model.objects.create_user(username="u")
     first = _play(user, 21)
     assert first.status == Match.Status.FINISHED, first.error

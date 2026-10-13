@@ -108,8 +108,8 @@ with the first match. Each long-polls `lease(30)`, finds the `Match` by its
 pool size bounds the model calls in flight across every running match.
 
 - Agents live in an `AgentCache`, one per (match, seat), for the whole game: a game's
-  decisions come one at a time, so a seat's seeded RNG is consumed in order and a
-  random seat replays from its seed.
+  decisions come one at a time, so a seat's seeded RNG (Jev's option order) is
+  consumed in order.
 - A decision for a game not yet linked to a match waits up to 5 seconds for the link
   (the bridge starts a game before the view stores its id), then is delegated.
 - Model-backed agents are metered: past `MAX_AGENT_CALLS` (400) for the seat or
@@ -125,9 +125,10 @@ match's runner answers its own decisions between reads of the log.
 
 ## Reproducibility
 
-The bridge replays a game from its seed when the answers are the same, so random seats
-replay exactly — every event but Forge's wall-clock line
-("Match Duration …"). Jev seats are as reproducible as Jev.
+The bridge replays a game from its seed when the answers are the same — every event
+but Forge's wall-clock line ("Match Duration …"). Jev's option order is seeded too, so
+Jev seats are as reproducible as Jev's answers: a stub that answers deterministically
+(as in the tests) replays exactly.
 
 ## The summary
 
@@ -156,5 +157,5 @@ folds runs of `forge_ai` events into one line.
 - Two seats per game: multiplayer Commander waits for a bridge extension.
 - The bridge keeps no state across restarts: running matches then fail.
 - With several web processes (gunicorn workers), each runs its own pool, so one
-  game's decisions may be answered by agents in different processes and a random
-  seat no longer replays exactly.
+  game's decisions may be answered by agents in different processes and a seat no
+  longer replays exactly.

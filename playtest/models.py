@@ -65,7 +65,7 @@ class Match(models.Model):
     )
     format = models.CharField(max_length=16, choices=format_choices(), default=DEFAULT_FORMAT)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
-    # Seeds Forge's shuffles and the random agents: the same seed and the same
+    # Seeds Forge's shuffles and Jev's option order: the same seed and the same
     # answers replay the same game.
     seed = models.BigIntegerField()
     # The game on the Forge bridge, set once the bridge accepted the decks.
@@ -117,7 +117,6 @@ class Seat(models.Model):
     class Agent(models.TextChoices):
         # Older matches only: new seats are always played by an agent.
         FORGE_AI = "forge_ai", "Forge AI"
-        RANDOM = "random", "Random"
         JEV = "jev", "Jev"
 
     match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name="seats")
@@ -158,9 +157,8 @@ class Seat(models.Model):
         """The icon-font ligature for this seat's agent."""
         return {
             self.Agent.FORGE_AI: "memory",
-            self.Agent.RANDOM: "casino",
             self.Agent.JEV: "bolt",
-        }.get(self.agent, "casino")
+        }.get(self.agent, "bolt")
 
     @property
     def controller(self) -> str:

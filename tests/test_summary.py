@@ -17,7 +17,7 @@ def _seats(*agents):
 
 
 def test_the_summary_reads_forges_log_by_the_seats_names():
-    summary = summarize_match(GAME["events"], _seats("random", "random"), "modern", GAME["game"])
+    summary = summarize_match(GAME["events"], _seats("jev", "jev"), "modern", GAME["game"])
     red, green = summary["seats"]
     assert summary["winner_seat"] == 1 and summary["end_reason"] == "AllOpponentsLost" and summary["turns"] == 14
     assert (red["result"], green["result"]) == ("lost", "won")
@@ -31,7 +31,7 @@ def test_the_summary_reads_forges_log_by_the_seats_names():
 
 
 def test_decisions_are_split_between_the_agent_and_forges_ai():
-    summary = summarize_match(GAME["events"], _seats("random", "random"), "modern", GAME["game"])
+    summary = summarize_match(GAME["events"], _seats("jev", "jev"), "modern", GAME["game"])
     red, green = summary["seats"]
     assert red["decisions"] == {"agent": 20, "forge_ai": 2, "agent_share": 91}
     assert green["decisions"] == {"agent": 42, "forge_ai": 3, "agent_share": 93}
@@ -60,7 +60,7 @@ def test_a_fallbacks_reason_is_the_agents_when_it_delegated():
 
 
 def test_the_summary_is_identical_for_identical_events():
-    seats = _seats("random", "jev")
+    seats = _seats("jev", "jev")
     first = summarize_match(GAME["events"], seats, "modern", GAME["game"])
     second = summarize_match(json.loads(json.dumps(GAME["events"])), seats, "modern", dict(GAME["game"]))
     assert first == second
@@ -75,6 +75,6 @@ def test_a_fallback_and_the_forge_ai_decision_carrying_it_out_count_once():
         {"seq": 3, "turn": 1, "seat": 0, "kind": "forge_ai", "text": "", "payload": {"method": "chooseSpellAbilityToPlay"}},
         {"seq": 4, "turn": 1, "seat": 0, "kind": "forge_ai", "text": "", "payload": {"method": "assignCombatDamage"}},
     ]
-    summary = summarize_match(events, _seats("jev", "random"), "modern", {"turn": 1})
+    summary = summarize_match(events, _seats("jev", "forge_ai"), "modern", {"turn": 1})
     assert summary["seats"][0]["decisions"] == {"agent": 0, "forge_ai": 2, "agent_share": 0}
     assert summary["automatic"] == {"assignCombatDamage": 1}

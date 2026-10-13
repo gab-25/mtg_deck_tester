@@ -73,7 +73,7 @@ def test_saved_decks_get_their_image_urls_from_the_cached_card_json(django_user_
 
 
 @pytest.mark.django_db(transaction=True)
-def test_forge_matches_keep_the_round_as_turn_and_give_llm_seats_to_forge_ai(django_user_model):
+def test_forge_matches_keep_the_round_as_turn_and_give_llm_and_random_seats_to_forge_ai(django_user_model):
     apps = _migrate(("playtest", "0001_initial"))
     try:
         owner = django_user_model.objects.create_user(username="old")
@@ -85,7 +85,8 @@ def test_forge_matches_keep_the_round_as_turn_and_give_llm_seats_to_forge_ai(dja
         apps = _migrate(("playtest", "0002_forge_playtests"))
         assert apps.get_model("playtest", "Match").objects.get().turn == 5
         agents = list(apps.get_model("playtest", "Seat").objects.order_by("position").values_list("agent", flat=True))
-        assert agents == ["forge_ai", "random"]
+        assert agents == ["forge_ai", "forge_ai"]
     finally:
         executor = MigrationExecutor(connection)
         executor.migrate(executor.loader.graph.leaf_nodes())
+

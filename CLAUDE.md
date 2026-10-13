@@ -40,7 +40,7 @@ The default `DATABASE_URL` is the Compose Postgres on localhost; set
   `MatchEvent` rows, stores the result and the summary (`playtest/summary.py`).
 - `playtest/workers.py` — the worker pool answering the bridge's decisions with each
   seat's agent → `docs/engine.md`.
-- `playtest/agents/` — Jev and random agents; the Jev client →
+- `playtest/agents/` — the Jev agent and its client →
   `docs/agents.md`.
 - `theme/static/` — precompiled stylesheet, vendored fonts and icons.
 - Overall flow (request → background thread → stored result, HTMX polling) →

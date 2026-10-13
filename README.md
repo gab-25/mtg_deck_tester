@@ -42,8 +42,7 @@ hands the decision back to Forge's AI.
   are Jev, with the model set on the server (`JEV_MODEL`). Forge's own AI never plays a seat;
   it only takes fallbacks and what the bridge does not expose. A seat that is unsure
   (below `JEV_MIN_CONFIDENCE`) or cannot reach Jev hands that decision to Forge's AI,
-  with the reason logged, so a match never stalls on a model. The code also keeps a
-  random agent for the replay tests; it cannot be picked.
+  with the reason logged, so a match never stalls on a model.
 - **Coverage**: Forge either knows a card or the match is refused, naming the card.
   Each seat lists the cards Forge knows but cannot play fully. The deck page checks a
   deck on demand (**Check with Forge**), never on page view.
@@ -92,7 +91,7 @@ See [Forge engine](docs/engine.md) for the decision protocol.
   background job → stored result flow, the data model and the boundaries.
 - [Forge engine](docs/engine.md) — the bridge's contract, the client, the runner, the
   worker pool, reproducibility and the summary.
-- [Agents](docs/agents.md) — the agent interface, the Jev and random agents, the
+- [Agents](docs/agents.md) — the agent interface, the Jev agent, the
   Jev and OpenRouter clients and the fallbacks to Forge's AI.
 - [Deck import](docs/deck-import.md) — parsing (sideboards included), Scryfall
   fetching, the card cache, legality checks per format family and the format
@@ -119,7 +118,7 @@ playtest/               # App: matches between agents
 ├── forge.py            #   HTTP client of the Forge bridge
 ├── runner.py           #   Starts a game on the bridge, stores its events and result
 ├── workers.py          #   The worker pool answering Forge's decisions
-├── agents/             #   Jev and random agents; the Jev client
+├── agents/             #   the Jev agent and its client
 ├── summary.py          #   The deterministic match summary
 └── forms.py            #   The new-playtest form: a deck to test and its opponents
 theme/static/           # Precompiled stylesheet, vendored fonts and icons

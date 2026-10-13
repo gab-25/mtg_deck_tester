@@ -1,18 +1,6 @@
-"""Tests for the agent interface and the random agent."""
+"""Tests for the agent interface."""
 
 from playtest.agents.base import Decision, delegate
-from playtest.agents.random_agent import RandomAgent
-
-from .fakeforge import sample_decision
-
-DECISION = sample_decision()
-VIEW, OPTIONS = DECISION["view"], DECISION["options"]
-
-
-def test_random_agent_is_reproducible_and_picks_an_offered_option():
-    picks = lambda seed: [RandomAgent(seed).choose(VIEW, OPTIONS).choice for _ in range(5)]  # noqa: E731
-    assert picks(3) == picks(3)
-    assert all(0 <= pick < len(OPTIONS) for pick in picks(3))
 
 
 def test_a_decision_is_a_choice_or_a_delegation_with_its_meta():

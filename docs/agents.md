@@ -6,12 +6,11 @@ them by index, or delegates the decision to Forge's AI.
 
 **Every seat of a new match is Jev** (`playtest.forms.SEAT_AGENT`): the new-playtest form
 offers decks, not agents or models, and ignores any posted agent or model: every seat
-uses the server's `JEV_MODEL`. The other agents stay in the code for tests and evaluation.
+uses the server's `JEV_MODEL`. Jev is the only agent; `forge_ai` survives for older seats.
 
 | `Seat.Agent` | Class | Network | Notes |
 |---|---|---|---|
 | `jev` | `JevAgent` | OpenRouter | Every new seat. One Jev `choice` per decision; logs its confidence. |
-| `random` | `RandomAgent` | none | Not selectable; the seeded baseline of the runner and replay tests. |
 | `forge_ai` | — | none | Older matches only. Such a seat is created with `controller: "forge_ai"` and never reaches a worker. |
 
 ## The interface

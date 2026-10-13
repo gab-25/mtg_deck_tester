@@ -25,7 +25,6 @@ from . import forge
 from .agents import typesafe
 from .agents.base import Decision, delegate
 from .agents.jev_agent import JevAgent
-from .agents.random_agent import RandomAgent
 from .models import Match, Seat
 
 logger = logging.getLogger(__name__)
@@ -66,8 +65,6 @@ def build_agent(seat: Seat, seed: int):
     agent_seed = seed + seat.position
     if seat.agent == Seat.Agent.JEV:
         return JevAgent(seat.model or typesafe.default_model(), seed=agent_seed)
-    if seat.agent == Seat.Agent.RANDOM:
-        return RandomAgent(agent_seed)
     # forge_ai seats never reach a worker; anything else is Forge's AI too.
     return None
 
@@ -83,7 +80,7 @@ class AgentCache:
     """One agent per (match, seat), kept for the whole game.
 
     Agents hold their seeded RNG: the same agent answering the game's
-    decisions in order is what makes a random seat replay from its seed.
+    decisions in order is what makes a seat replay from its seed.
     A game's decisions come one at a time, so one entry is used by one worker
     at a time — unless an agent outlives the bridge's DECISION_TIMEOUT, when
     the next decision may arrive meanwhile and that game stops replaying exactly.

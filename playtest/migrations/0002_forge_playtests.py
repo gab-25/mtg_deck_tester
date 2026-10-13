@@ -1,6 +1,6 @@
 """Matches played by the Forge bridge in playtest sessions: a game id, turns instead
 of rounds, Forge's end reasons, a stopped status, metagame opponents, and the
-forge_ai and jev seats replacing the LLM one."""
+forge_ai and jev seats replacing the LLM and random ones."""
 
 import django.db.models.deletion
 import django.utils.timezone
@@ -9,10 +9,10 @@ from django.conf import settings
 from django.db import migrations, models
 
 
-def llm_to_forge_ai(apps, schema_editor):
-    """The LLM agent is gone; Forge's AI takes its seats, as it would at play time."""
+def old_agents_to_forge_ai(apps, schema_editor):
+    """The LLM and random agents are gone; Forge's AI takes their seats, as it would at play time."""
     Seat = apps.get_model("playtest", "Seat")
-    Seat.objects.filter(agent="llm").update(agent="forge_ai")
+    Seat.objects.filter(agent__in=["llm", "random"]).update(agent="forge_ai")
 
 
 class Migration(migrations.Migration):
@@ -86,11 +86,11 @@ class Migration(migrations.Migration):
             name='status',
             field=models.CharField(choices=[('pending', 'Pending'), ('running', 'Running'), ('finished', 'Finished'), ('failed', 'Failed'), ('stopped', 'Stopped')], default='pending', max_length=16),
         ),
-        migrations.RunPython(llm_to_forge_ai, migrations.RunPython.noop),
+        migrations.RunPython(old_agents_to_forge_ai, migrations.RunPython.noop),
         migrations.AlterField(
             model_name='seat',
             name='agent',
-            field=models.CharField(choices=[('forge_ai', 'Forge AI'), ('random', 'Random'), ('jev', 'Jev')], default='jev', max_length=16),
+            field=models.CharField(choices=[('forge_ai', 'Forge AI'), ('jev', 'Jev')], default='jev', max_length=16),
         ),
         migrations.CreateModel(
             name='Playtest',
