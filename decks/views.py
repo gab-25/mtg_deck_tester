@@ -10,8 +10,8 @@ from mtg_deck_tester.jobs import start_job
 
 from .formats import DEFAULT_FORMAT, FORMATS, format_choices
 from .importer import decklist_errors, run_import
-from .models import Deck
-from .presentation import card_groups, commander_cards, deck_pips
+from .models import Deck, MetagameDeck
+from .presentation import card_groups, commander_cards, deck_pips, sideboard_group
 
 
 def _grid_context(user) -> dict:
@@ -32,7 +32,7 @@ def deck_list(request):
 
 
 def _form_context(**extra) -> dict:
-    return {"format_choices": format_choices(), "form_format": DEFAULT_FORMAT, **extra}
+    return {"format_choices": format_choices(), "formats": FORMATS, "form_format": DEFAULT_FORMAT, **extra}
 
 
 @login_required
@@ -52,7 +52,7 @@ def create_deck(request):
 
     # Cheap validation first, so an illegal deck is reported inline; the
     # Scryfall fetch runs in the background afterwards.
-    errors = decklist_errors(decklist)
+    errors = decklist_errors(decklist, fmt)
     if errors:
         context = _form_context(
             errors=errors, form_name=name, form_decklist=decklist, form_format=fmt
@@ -85,8 +85,29 @@ def deck_detail(request, deck_id):
             "pips": deck_pips(deck),
             "card_groups": card_groups(deck.cards),
             "commander_cards": commander_cards(deck.cards),
+            "sideboard": sideboard_group(deck.cards),
         },
     )
+
+
+@login_required
+@require_http_methods(["POST"])
+def deck_forge_check(request, deck_id):
+    """What the Forge engine makes of the deck, on demand: cards it does not
+    know (a match would be refused) and cards it cannot play fully."""
+    # The playtest app talks to Forge; imported here so decks keeps no
+    # module-level dependency on it.
+    from playtest import forge
+
+    deck = get_owned_or_404(Deck, request.user, deck_id)
+    context = {"deck": deck}
+    try:
+        context["check"] = forge.client().check_deck(
+            deck.format, forge.decklist_text(deck.cards, has_commander=deck.has_commander)
+        )
+    except forge.ForgeError as exc:
+        context["error"] = str(exc)
+    return render(request, "decks/partials/forge_check.html", context)
 
 
 @login_required
@@ -117,3 +138,23 @@ def card_image_modal(request):
     if any(not url.startswith(SCRYFALL_IMAGE_PREFIX) for url in urls):
         return HttpResponse("Not a Scryfall image", status=400)
     return render(request, "partials/card_image_modal.html", {"image_urls": urls})
+
+
+@login_required
+@require_http_methods(["GET"])
+def metagame(request):
+    """Every format's metagame decks, as the last ``sync_metagame`` left them."""
+    by_format = {key: [] for key in FORMATS}
+    for deck in MetagameDeck.objects.all():
+        by_format.setdefault(deck.format, []).append(deck)
+    sections = [
+        {
+            "key": key,
+            "label": FORMATS[key].label,
+            "decks": decks,
+            "synced": max((d.fetched_at for d in decks), default=None),
+        }
+        for key, decks in by_format.items()
+        if key in FORMATS
+    ]
+    return render(request, "decks/metagame.html", {"sections": sections})

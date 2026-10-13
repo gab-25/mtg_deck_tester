@@ -109,13 +109,14 @@ class TestCheckDecklist:
         entries = [_entry(1, ATRAXA)] + _legal_entries()[1:]
         assert any("No commander declared" in issue for issue in check_decklist(entries))
 
-    def test_reports_more_than_one_commander(self):
-        # Partners and backgrounds are not accepted: one commander, full stop.
+    def test_reports_more_than_two_commanders(self):
+        # A partner pair is two commanders; three is never legal.
         entries = _legal_entries()
         entries[1] = _entry(1, "Partner", is_commander=True)
+        entries[2] = _entry(1, "Another", is_commander=True)
         issues = check_decklist(entries)
         assert len(issues) == 1
-        assert "2 commanders declared" in issues[0]
+        assert "3 commanders declared" in issues[0]
 
     def test_reports_duplicates(self):
         entries = _legal_entries()
@@ -364,3 +365,50 @@ class TestDoubleFacedCards:
         issues = check_decklist(entries)
         assert len(issues) == 1
         assert "2×" in issues[0]
+
+
+
+# -- partner commanders --------------------------------------------------------
+
+
+def _deck_with(*commanders):
+    items = [_item(1, c, is_commander=True) for c in commanders]
+    items.append(_item(100 - len(commanders), _card("Forest", "Basic Land — Forest")))
+    return items
+
+
+def _legend(name, text=""):
+    return _card(name, "Legendary Creature — Human", rules_text=text)
+
+
+def test_two_partners_are_a_legal_pair():
+    assert check_deck(_deck_with(_legend("Kraum", "Partner"), _legend("Tymna", "Partner"))) == []
+
+
+def test_partner_with_must_name_the_other():
+    ok = _deck_with(_legend("Pir", "Partner with Toothy"), _legend("Toothy", "Partner with Pir"))
+    assert check_deck(ok) == []
+    bad = _deck_with(_legend("Pir", "Partner with Toothy"), _legend("Kraum", "Partner"))
+    assert any("cannot share" in i for i in check_deck(bad))
+
+
+def test_a_background_pairs_with_a_commander_that_chooses_one():
+    background = _card("Cloakwood", "Legendary Enchantment — Background")
+    chooser = _legend("Wilson", "Choose a Background")
+    assert check_deck(_deck_with(chooser, background)) == []
+
+
+def test_two_commanders_without_partner_are_refused():
+    issues = check_deck(_deck_with(_legend("A"), _legend("B")))
+    assert any("cannot share" in i for i in issues)
+
+
+def test_the_decklist_pass_accepts_two_commanders():
+    entries = [_entry(1, "A", True), _entry(1, "B", True), _entry(98, "Forest")]
+    assert check_decklist(entries) == []
+
+
+def test_partner_identity_is_the_union():
+    a = _card("Kraum", "Legendary Creature — Zombie", identity=("U", "R"), rules_text="Partner")
+    b = _card("Tymna", "Legendary Creature — Human", identity=("W", "B"), rules_text="Partner")
+    assert deck_color_identity([_item(1, a, True), _item(1, b, True)]) == ["W", "U", "B", "R"]

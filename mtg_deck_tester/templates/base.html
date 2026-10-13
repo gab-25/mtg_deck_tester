@@ -26,13 +26,16 @@
             </a>
             <nav class="flex items-center gap-[13px] flex-wrap">
                 <a href="{% url 'match_list' %}" class="btn btn-line btn-sm">
-                    <span translate="no" class="ms text-[18px]">swords</span>Matches
+                    <span translate="no" class="ms text-[18px]">swords</span>Playtests
                 </a>
                 <a href="{% url 'deck_list' %}" class="btn btn-line btn-sm">
                     <span translate="no" class="ms text-[18px]">style</span>Decks
                 </a>
+                <a href="{% url 'metagame' %}" class="btn btn-line btn-sm">
+                    <span translate="no" class="ms text-[18px]">leaderboard</span>Metagame
+                </a>
                 <a href="{% url 'new_match' %}" class="btn btn-grad">
-                    <span translate="no" class="ms text-[20px]">add</span>New match
+                    <span translate="no" class="ms text-[20px]">add</span>Test a deck
                 </a>
                 <div class="flex items-center gap-[11px]">
                     <div translate="no" class="avatar">{{ user.get_username|slice:":2" }}</div>

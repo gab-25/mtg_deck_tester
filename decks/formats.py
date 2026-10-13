@@ -1,15 +1,21 @@
-"""The Commander formats a deck can be built for and a match can be played in."""
+"""The formats a deck can be built for and a match can be played in."""
 
 from dataclasses import dataclass
 
 
+COMMANDER_FAMILY = "commander"
+CONSTRUCTED_FAMILY = "constructed"
+
+
 @dataclass(frozen=True)
 class Format:
-    """Everything that varies between the supported Commander formats.
+    """Everything that varies between the supported formats.
 
-    Deck construction does not vary — 100 cards, singleton, one commander — so
-    those rules live in :mod:`decks.rules.commander`. What varies is the ban
-    list a deck is checked against and the game it is played in.
+    Formats come in two families. Commander formats (100 cards, singleton, one
+    commander, color identity) differ only in ban list and table; constructed
+    formats (a 60-card main deck and a 15-card sideboard, four copies) differ
+    only in ban list. The construction rules of each family live in
+    :mod:`decks.rules.commander` and :mod:`decks.rules.constructed`.
     """
 
     label: str
@@ -22,7 +28,39 @@ class Format:
     # Combat damage from a single commander that eliminates a player, or None
     # when the format does not track commander damage.
     commander_damage_limit: int | None
+    family: str = COMMANDER_FAMILY
+    # Main-deck size: exactly ``deck_size`` when ``exact_size``, else at least.
+    deck_size: int = 100
+    exact_size: bool = True
+    sideboard_size: int = 0
+    max_copies: int = 1
+    # The format's name on the Forge bridge (mtg_forge_engine), or None when
+    # the bridge cannot play it (it seats two players).
+    forge_format: str | None = None
 
+    @property
+    def has_commander(self) -> bool:
+        return self.family == COMMANDER_FAMILY
+
+
+def _constructed(label: str, key: str) -> Format:
+    return Format(
+        label=label,
+        legality_key=key,
+        starting_life=20,
+        min_seats=2,
+        max_seats=2,
+        commander_damage_limit=None,
+        family=CONSTRUCTED_FAMILY,
+        deck_size=60,
+        exact_size=False,
+        sideboard_size=15,
+        max_copies=4,
+        forge_format=key,
+    )
+
+
+CONSTRUCTED_FORMATS = ("standard", "pioneer", "modern", "legacy", "vintage", "pauper")
 
 FORMATS: dict[str, Format] = {
     "commander": Format(
@@ -40,10 +78,17 @@ FORMATS: dict[str, Format] = {
         min_seats=2,
         max_seats=2,
         commander_damage_limit=None,
+        forge_format="duel_commander",
     ),
+    **{key: _constructed(key.capitalize(), key) for key in CONSTRUCTED_FORMATS},
 }
 
 DEFAULT_FORMAT = "commander"
+
+
+def playable_formats() -> dict[str, Format]:
+    """The formats a match can be played in: those the Forge bridge knows."""
+    return {key: fmt for key, fmt in FORMATS.items() if fmt.forge_format}
 
 
 def format_choices() -> list[tuple[str, str]]:

@@ -152,7 +152,7 @@ TIME_ZONE = "UTC"
 LANGUAGE_CODE = "en-us"
 
 # Deck imports (minutes of Scryfall calls) and matches (possibly hundreds of
-# LLM calls) run in a background thread so the request returns immediately.
+# agent calls) run in a background thread so the request returns immediately.
 # Disabled in tests, where the work runs inline (see ``settings_test``).
 RUN_JOBS_IN_BACKGROUND = os.environ.get("RUN_JOBS_IN_BACKGROUND", "1").lower() in {
     "1",

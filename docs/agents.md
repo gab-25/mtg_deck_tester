@@ -1,7 +1,17 @@
 # Agents
 
-An agent is whatever plays a seat. The engine never trusts it: it offers a list of
-legal actions, the agent picks one, and anything not on the list fails the game.
+An agent is whatever plays a seat. It never decides what is legal: Forge lists the
+options of each decision (see [Forge](forge.md)), and the agent picks one of
+them by index, or delegates the decision to Forge's AI.
+
+**Every seat of a new match is Jev** (`playtest.forms.SEAT_AGENT`): the new-playtest form
+offers decks, not agents or models, and ignores any posted agent or model: every seat
+uses `~typesafe/jev-latest` (`typesafe.MODEL`). Jev is the only agent; `forge_ai` survives for older seats.
+
+| `Seat.Agent` | Class | Network | Notes |
+|---|---|---|---|
+| `jev` | `JevAgent` | OpenRouter | Every new seat. One Jev `choice` per decision; logs its confidence. |
+| `forge_ai` | — | none | Older matches only. Such a seat is created with `controller: "forge_ai"` and never reaches a worker. |
 
 ## The interface
 
@@ -10,99 +20,96 @@ legal actions, the agent picks one, and anything not on the list fails the game.
 ```python
 @dataclass(frozen=True)
 class Decision:
-    action: Action
-    reasoning: str = ""        # why, in the agent's own words
-    fallback_reason: str = ""  # set when a fallback chose instead
+    choice: int | None          # the picked option's index; None delegates to Forge's AI
+    reasoning: str = ""         # why, in the agent's own words
+    fallback_reason: str = ""   # set when it delegates: why, in words
+    fallback_kind: str = ""     # "low_confidence", "error" or "budget"
+    confidence: float | None = None                    # Jev
+    probabilities: tuple[tuple[str, float], ...] = ()  # top options by label
+    model: str = ""             # the versioned model id that answered
+
+    delegate: bool              # property: choice is None
+    def meta(self) -> dict: ... # what the bridge stores on the event
+
+def delegate(kind, reason, **extra) -> Decision: ...
 
 class Agent(Protocol):
-    def choose(self, view: dict, options: list[Action]) -> Decision: ...
+    def choose(self, view: dict, options: list[dict], *, kind: str = "", prompt: str = "") -> Decision: ...
 ```
 
-- `view` is `playtest.engine.view.player_view(state, seat)`: plain JSON-ready data,
-  no hidden information (see [Game engine](engine.md#what-a-seat-can-see)).
-- `options` is `legal_actions(...)`, never empty; `pass` is always last. The engine
-  does not call the agent when `pass` is the only option.
-- The returned `action` must be one of `options` (compared by `kind`, `card_uid`,
-  `target_seat`; the `label` is ignored).
+- `view`, `options` (`index`, `label`, `facts`), `kind` and `prompt` are the bridge's
+  decision as is. The bridge never asks when there is a single option.
+- The worker answers `{"choice": i, "meta": ...}` or `{"delegate": true, "meta": ...}`;
+  `meta` carries `confidence`, `probabilities`, `model`, `reason`,
+  `fallback_reason` and `fallback_kind`, and lands on the bridge's `decision` or
+  `fallback` event, which the match page and the summary read.
 
-It is a `Protocol`: an agent is any object with a matching `choose` method.
+## Jev agent
 
-## Random agent
+`playtest/agents/jev_agent.py` — `JevAgent(model=None, *, seed=None, ask=None, min_confidence=None)`.
 
-`playtest/agents/random_agent.py` — `RandomAgent(seed)` picks uniformly with its own
-`random.Random(seed)`. It is the free baseline, and the fallback of the LLM agent.
+One Jev request per decision:
 
-The runner seeds each seat with `match.seed + seat.position`, so two random seats do
-not mirror each other and the same match seed replays the same game, event for
-event.
+- **state** (`jev_state`): the view filtered to what a decision needs — turn, phase,
+  active player; your life, hand with card text, library count, mana available,
+  lands played, commanders with their tax; every battlefield with P/T, tapped,
+  summoning sick, damage, counters and what an aura is attached to; opponents' hand
+  and library counts; the stack and combat. Graveyards and exile are counts unless
+  the decision is about them (a `choose_cards` or `target` prompt naming a graveyard
+  or exile). No ids, no history.
+- **one `choice` named `action`**: its instructions name the seat, the format, the
+  turn, whose turn and phase it is and the goal, plus a line per decision kind
+  (`KIND_LINES`) and Forge's prompt. Its options are exactly the bridge's, keyed
+  `o<index>`, each described by its label **plus Forge's facts** (`describe_option`);
+  the model computes nothing.
+- the options are **shuffled with the agent's seeded RNG** before each request and
+  mapped back by key, because Jev leans toward the first option and Forge's first is
+  always "Pass" or "Done".
 
-## LLM agent
+`gate()` is the one place an uncertain decision is handed over: below
+`MIN_CONFIDENCE` (0.2) the agent delegates with `low_confidence`, keeping
+Jev's confidence and top options in the fallback's meta. Jev's confidence measures
+how peaked its distribution is, not the chosen option's probability. Measured on
+Forge decisions (a Modern Burn seat against Forge's AI, 23 decisions, jev-1.13):
+median 0.38, quartiles 0.20 / 0.82; 0.2 hands over 17% of decisions (near-ties
+between two burn spells), 0.4 would hand over half — the same shape as on the old
+Python kernel (222 decisions, median ~0.4). A missing key, a transport error, a malformed answer
+or one naming no offered option delegates with `error`.
 
-`playtest/agents/llm_agent.py` — `LLMAgent(model=None, *, seed=None, chat=None)`.
+**Metering** happens in the worker (`playtest.workers.decide`) for agents marked
+`metered` (Jev): past `MAX_AGENT_CALLS` (400) for the seat or
+`MAX_MATCH_SECONDS` (1800) for the match, the seat delegates without calling the
+model (`budget`).
 
-Each decision is **one chat completion** with two messages (`build_messages`):
+## Jev client
 
-- **system**: a short brief ("play to win…"), the engine rules — the docstring of
-  `playtest/engine/rules.py`, imported verbatim as `RULES_TEXT` — and the required
-  reply format: `{"choice": <number>, "reason": "<one short sentence>"}`.
-- **user**: the view as indented JSON, then the options numbered from 1 by their
-  `label`.
-
-`parse_choice` takes the first `{...}` block of the reply (models often wrap JSON in
-prose or code fences), accepts `choice` as an int or a digit string, checks it is in
-range, and returns the 0-based index plus the reason. The reason becomes the
-`Decision.reasoning`, which the engine logs on the `decision` / `pass` event and the
-match page shows.
-
-There is no conversation memory: every decision is a fresh, stateless request.
-
-### Fallback
-
-The agent never blocks a game. If the chat call raises `openrouter.ChatError` (no
-key, network error, non-200, empty or malformed response) or `parse_choice` raises
-`ValueError` (no JSON, invalid choice), it:
-
-1. logs a warning (`LLM agent (<model>) fell back to random: <reason>`);
-2. asks its internal `RandomAgent(seed)` instead;
-3. returns that action with `fallback_reason` set.
-
-The engine then records an `agent_fallback` event with the reason, so a fallback is
-visible in the match log. Any other exception is not caught and fails the match.
-
-## OpenRouter client
-
-`playtest/agents/openrouter.py` — one function, `chat(messages, model=None, key=None) -> str`,
-against OpenRouter's OpenAI-compatible `/chat/completions` endpoint. The model is a
-setting, not a dependency: any id from <https://openrouter.ai/models> works.
+`playtest/agents/typesafe.py` — `system_one(state, questions, *, model=None, key=None, sleep=time.sleep)`
+against OpenRouter's `POST /api/v1/systemone`, which serves Jev in TypeSafe's native
+`state` / `questions` format. No SDK.
 
 | | |
 |---|---|
-| API key | `OPENROUTER_API_KEY` (`api_key()` returns `None` when unset or empty) |
-| Default model | `OPENROUTER_MODEL`, else `DEFAULT_MODEL = "google/gemini-2.5-flash"` (`default_model()`) |
-| Per-seat model | `Seat.model`; empty means the default |
-| Timeout | `REQUEST_TIMEOUT = 60` seconds per request |
-| Attribution | `HTTP-Referer` / `X-Title` headers |
+| API key | `OPENROUTER_API_KEY` (`api_key()`) |
+| Model | always `~typesafe/jev-latest`; the response's versioned id is returned |
+| Retries | up to 4 attempts on `429` / `529`, honouring `retry-after`, exponential back-off |
+| Timeout | `REQUEST_TIMEOUT = 30` seconds per request |
+| Limits | `choice()` refuses more than 255 options |
 
-Every failure is raised as `ChatError` with a readable message (the HTTP body is
-truncated to 300 characters).
+`read_choice(answer, options)` checks an answer names an offered option. Every
+failure is a `TypeSafeError`.
 
-Without a key, the new-match form refuses LLM seats ("LLM seats need an OpenRouter
-API key") and the home page shows "LLM players: Off".
-
-**Cost.** One request per decision, up to `max_decisions_per_turn` (30) per turn,
-for every turn of every LLM seat until `max_rounds`. Keep round limits low while
-experimenting.
+Without `OPENROUTER_API_KEY` the new-playtest form refuses to start: Jev plays every seat.
 
 ## Adding an agent
 
-1. Write a class with `choose(view, options) -> Decision` under `playtest/agents/`.
-   Return one of `options`; put any explanation in `reasoning`; if it has to fall
-   back, say why in `fallback_reason`.
-2. Add a value to `playtest.models.Seat.Agent` and generate a migration (the field's
-   `choices` are part of the migration state).
-3. Build it in `playtest.runner.build_agent` from the `Seat` and the match seed.
-4. If it needs configuration on the form (like the LLM's model), extend
-   `playtest/forms.py` and `playtest/templates/playtest/match_new.html`.
-5. Test it without network: `tests/test_agents.py` passes a fake `chat` callable to
-   `LLMAgent`, the OpenRouter tests monkeypatch `requests.post`, and
-   `tests/test_matches_web.py` monkeypatches `openrouter.chat` for a full LLM match.
+1. Write a class with `choose(view, options, *, kind="", prompt="") -> Decision`
+   under `playtest/agents/`. Return an offered option's index, or `delegate(...)`
+   with a reason. Set `metered = True` if it calls a model.
+2. Add a value to `playtest.models.Seat.Agent` (a migration) and an icon in
+   `Seat.agent_icon`.
+3. Build it in `playtest.workers.build_agent` from the `Seat` and the match seed.
+4. To let new matches use it, change `SEAT_AGENT` in `playtest/forms.py` (today every
+   seat is Jev and the form offers no choice).
+5. Test it without network: pass a fake `ask`, or monkeypatch
+   `typesafe.system_one` / `requests.post`, and play it against the `fake_forge`
+   fixture (`tests/test_jev_agent.py`, `tests/test_runner.py`).

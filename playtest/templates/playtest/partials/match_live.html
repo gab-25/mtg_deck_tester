@@ -1,14 +1,14 @@
 {% comment %}
-Scoreboard and log. While the match runs the region polls itself (outerHTML
-swap); the finished render drops the trigger and polling stops.
+Scoreboard, coverage, summary and log. While the match runs the region polls
+itself (outerHTML swap); the finished render drops the trigger and polling stops.
 {% endcomment %}
 <div id="match-live-region" class="flex flex-col gap-5"
     {% if match.is_busy %}hx-get="{% url 'match_live' match.id %}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
 
     <div class="flex items-center gap-3 flex-wrap">
         {% include "playtest/partials/match_status.html" with match=match %}
-        {% if match.status == 'finished' %}
-        <span class="text-[13px] text-txt2">{{ match.get_end_reason_display }} after {{ match.round }} round{{ match.round|pluralize }}.</span>
+        {% if match.status == 'finished' or match.status == 'stopped' %}
+        <span class="text-[13px] text-txt2">{{ match.get_end_reason_display|default:"Ended" }} after {{ match.turn }} turn{{ match.turn|pluralize }}.</span>
         {% endif %}
     </div>
 
@@ -17,45 +17,143 @@ swap); the finished render drops the trigger and polling stops.
     {% endif %}
 
     <div class="seat-grid">
-        {% for seat in seats %}
-        <div class="seat-card{% if match.winner_id == seat.id %} seat-winner{% elif seat.eliminated_round %} seat-out{% endif %}">
+        {% for seat, stats in seat_stats %}
+        <div class="seat-card{% if match.winner_id == seat.id %} seat-winner{% elif match.winner_id %} seat-out{% endif %}">
             <div class="flex items-center justify-between gap-2 mb-2">
                 <span class="field-label">Seat {{ seat.position|add:1 }}</span>
                 <span class="chip">
-                    <span translate="no" class="ms text-[14px]">{% if seat.agent == 'llm' %}psychology{% else %}casino{% endif %}</span>{{ seat.get_agent_display }}
+                    <span translate="no" class="ms text-[14px]">{{ seat.agent_icon }}</span>{{ seat.get_agent_display }}
                 </span>
             </div>
             <div translate="no" class="font-cinzel font-semibold text-[16px] leading-[1.2] mb-1.5">{{ seat.deck_name }}</div>
-            {% if seat.agent == 'llm' %}<div class="font-mono2 text-[11px] text-txt3 mb-2">{{ seat.model|default:default_model }}</div>{% endif %}
+            {% if seat.metagame_deck %}<div class="text-[11px] text-txt3 mb-2">Metagame · {{ seat.metagame_deck.get_source_display }} · {{ seat.metagame_deck.fetched_at|date:"j M Y" }}</div>{% endif %}
+            {% if seat.agent == 'jev' %}<div class="font-mono2 text-[11px] text-txt3 mb-2">{{ seat.model|default:jev_model }}</div>{% endif %}
             <div class="flex items-center gap-2 mt-2 text-[13px]">
                 {% if match.winner_id == seat.id %}
                 <span translate="no" class="ms text-[18px] text-gold">military_tech</span><span class="text-gold font-semibold">Winner</span>
-                {% elif seat.eliminated_round %}
-                <span translate="no" class="ms text-[18px] text-danger">heart_broken</span><span class="text-txt3">Out in round {{ seat.eliminated_round }}</span>
+                {% elif match.winner_id %}
+                <span translate="no" class="ms text-[18px] text-danger">heart_broken</span><span class="text-txt3">Lost</span>
                 {% endif %}
                 {% if seat.life is not None %}<span class="font-mono2 font-bold">{{ seat.life }} life</span>{% endif %}
             </div>
+
+            {% if seat.coverage %}
+            <div class="mt-3 pt-[13px] border-t border-line2 text-[12px]">
+                <div class="flex items-center justify-between gap-2">
+                    <span class="field-label">Coverage</span>
+                    {% if seat.coverage.unsupported_cards %}
+                    <span class="font-mono2 font-bold text-[13px] text-gold">{{ seat.coverage.unsupported_cards|length }} unsupported</span>
+                    {% else %}
+                    <span class="font-mono2 font-bold text-[13px] text-teal">every card</span>
+                    {% endif %}
+                </div>
+                {% if seat.coverage.unsupported_cards %}
+                <details class="mt-2">
+                    <summary class="cursor-pointer text-txt2">Forge knows these cards but cannot play them fully</summary>
+                    <ul class="mt-1.5 text-txt3 font-light leading-[1.45]" style="margin-bottom:0;padding-left:16px;list-style:disc">
+                        {% for card in seat.coverage.unsupported_cards %}<li translate="no" class="text-txt2">{{ card }}</li>{% endfor %}
+                    </ul>
+                </details>
+                {% else %}
+                <div class="text-txt3 font-light mt-1 leading-[1.45]">Forge plays every card of this deck with its own rules.</div>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            {% if stats %}
+            <div class="mt-3 pt-[13px] border-t border-line2 text-[12px] flex flex-col gap-1.5">
+                <div class="flex items-center justify-between gap-2">
+                    <span class="field-label">Decisions</span>
+                    {% if seat.agent == 'forge_ai' %}
+                    <span class="font-mono2 text-txt2">all Forge AI</span>
+                    {% elif stats.decisions.agent_share is not None %}
+                    <span class="font-mono2 font-bold text-[13px] {% if stats.decisions.agent_share < 50 %}text-gold{% else %}text-teal{% endif %}">{{ stats.decisions.agent_share }}% {{ seat.get_agent_display }}</span>
+                    {% endif %}
+                </div>
+                {% if seat.agent != 'forge_ai' %}
+                <div class="text-txt3 font-light">{{ stats.decisions.agent }} by {{ seat.get_agent_display }} · {{ stats.decisions.forge_ai }} by Forge AI</div>
+                {% if stats.confidence.median is not None %}
+                <div class="text-txt3 font-light">Median confidence <span class="font-mono2 text-txt2">{{ stats.confidence.median|floatformat:2 }}</span>{% if stats.confidence.low %} · <span class="text-gold">{{ stats.confidence.low }} unsure</span>{% endif %}</div>
+                {% endif %}
+                {% endif %}
+            </div>
+            {% endif %}
         </div>
         {% endfor %}
     </div>
+
+    {% if summary.seats %}
+    <div class="panel-card overflow-hidden">
+        <div class="flex items-center gap-[9px] py-4 px-[18px] border-b border-line2">
+            <span translate="no" class="ms text-txt2 text-[20px]">insights</span>
+            <span class="font-semibold text-[15px]">Match summary</span>
+            <span class="text-[12px] text-txt3">computed from the log</span>
+        </div>
+        <div class="seat-grid p-[18px]">
+            {% for seat, stats in seat_stats %}{% if stats %}
+            <div class="seat-card text-[12.5px]">
+                <div translate="no" class="font-cinzel font-semibold text-[15px] leading-[1.2] mb-2">{{ seat.deck_name }}</div>
+                <div class="flex flex-col gap-1.5 text-txt2">
+                    <div class="flex justify-between gap-2"><span class="text-txt3">Result</span><span class="font-mono2">{{ stats.result }}, {{ stats.final_life }} life</span></div>
+                    <div class="flex justify-between gap-2"><span class="text-txt3">Turns played</span><span class="font-mono2">{{ stats.turns_taken }} of {{ summary.turns }}</span></div>
+                    <div class="flex justify-between gap-2"><span class="text-txt3">Spells cast</span><span class="font-mono2">{{ stats.spells_cast }}</span></div>
+                    <div class="flex justify-between gap-2"><span class="text-txt3">Lands played</span><span class="font-mono2">{{ stats.lands_played }}</span></div>
+                    {% if seat.agent != 'forge_ai' %}
+                    <div class="flex justify-between gap-2"><span class="text-txt3">Decisions</span><span class="font-mono2">{{ stats.decisions.agent }} agent · {{ stats.decisions.forge_ai }} Forge AI</span></div>
+                    {% if stats.confidence.rated %}
+                    <div class="flex justify-between gap-2"><span class="text-txt3">Confidence</span><span class="font-mono2">median {{ stats.confidence.median|floatformat:2 }} · {{ stats.confidence.low }} low</span></div>
+                    {% endif %}
+                    <div class="flex justify-between gap-2"><span class="text-txt3">Fallbacks</span><span class="font-mono2">{% for reason, count in stats.fallbacks.items %}{{ count }} {{ reason }}{% if not forloop.last %} · {% endif %}{% empty %}none{% endfor %}</span></div>
+                    {% endif %}
+                    <div class="font-mono2 text-[11px] text-txt3 mt-1" title="Life at the end of each turn">{{ summary.starting_life }}{% for life in stats.life_by_turn %} › {{ life }}{% endfor %}</div>
+                </div>
+            </div>
+            {% endif %}{% endfor %}
+        </div>
+        <div class="px-[18px] pb-4 text-[12px] text-txt3 font-light">
+            Automatic for every seat: mana payment, combat damage assignment and the other choices the bridge leaves to Forge’s AI{% if summary.automatic %} ({% for method, count in summary.automatic.items %}{{ method }} {{ count }}{% if not forloop.last %}, {% endif %}{% endfor %}){% endif %}. Forge AI seats decide everything themselves.
+        </div>
+    </div>
+    {% endif %}
 
     <div class="panel-card overflow-hidden">
         <div class="flex items-center gap-[9px] py-4 px-[18px] border-b border-line2">
             <span translate="no" class="ms text-txt2 text-[20px]">event_list</span>
             <span class="font-semibold text-[15px]">Game log</span>
-            <span class="text-[12px] text-txt3">{{ events|length }} event{{ events|length|pluralize }}</span>
+            <span class="text-[12px] text-txt3">{{ event_count }} event{{ event_count|pluralize }}</span>
         </div>
         <div class="event-log">
-            {% for event in events %}
-            <div class="event-row{% if event.kind == 'turn' or event.kind == 'game_over' or event.kind == 'eliminated' %} event-headline{% endif %}">
-                <span class="font-mono2 text-[11px] text-txt3 min-w-[19px] flex-none">{{ event.seq }}</span>
+            {% for row in log %}{% with event=row.event %}
+            <div class="event-row{% if row.headline or row.kind == 'game_over' %} event-headline{% endif %}">
+                <span class="font-mono2 text-[11px] text-txt3 min-w-[19px] flex-none">{{ row.seq }}</span>
                 <div class="min-w-0">
-                    <div class="{% if event.kind == 'agent_fallback' or event.kind == 'decision_limit' %}text-gold{% elif event.kind == 'eliminated' %}text-danger{% endif %}">{{ event.text }}</div>
+                    {% if row.kind == 'forge_ai' %}
+                    <div class="text-[12px] text-txt3"><span translate="no" class="ms text-[13px]">memory</span> Forge AI decided for <span translate="no">{{ row.who }}</span>: {{ row.methods|join:", " }}{% if row.count > 1 %} ({{ row.count }}×){% endif %}</div>
+                    {% elif row.kind == 'fallback' %}
+                    <div class="text-gold"><span translate="no">{{ row.who }}</span> — {{ event.text }}</div>
+                    <div class="event-reason">
+                        <span class="text-gold">{{ row.reason }}</span>{% if event.payload.confidence is not None %} · confidence <span class="font-mono2">{{ event.payload.confidence|floatformat:2 }}</span>{% endif %}
+                        {% for option in event.payload.probabilities %}{% if forloop.first %} · Jev leaned to: {% else %}, {% endif %}{{ option.label }} <span class="font-mono2">{{ option.p|floatformat:2 }}</span>{% endfor %}
+                        {% if event.payload.fallback_reason and row.reason == 'error' %} · {{ event.payload.fallback_reason }}{% endif %}
+                    </div>
+                    {% elif row.kind == 'decision' %}
+                    <div><span translate="no" class="text-txt2">{{ row.who }}</span> — {{ event.text }}</div>
+                    {% if event.payload.confidence is not None %}
+                    <div class="event-reason">
+                        <span class="font-mono2 text-txt2">{{ event.payload.confidence|floatformat:2 }}</span>
+                        {% for option in event.payload.probabilities|slice:"1:" %}{% if forloop.first %} · runner-up: {% else %}, {% endif %}{{ option.label }} <span class="font-mono2">{{ option.p|floatformat:2 }}</span>{% endfor %}
+                    </div>
+                    {% endif %}
                     {% if event.reasoning %}<div class="event-reason">“{{ event.reasoning }}”</div>{% endif %}
+                    {% elif row.kind == 'game_over' %}
+                    <div>{{ event.text }}</div>
+                    {% else %}
+                    <div{% if not row.headline %} class="text-txt2"{% endif %}>{{ event.text }}</div>
+                    {% endif %}
                 </div>
             </div>
-            {% empty %}
-            <div class="py-5 px-[18px] text-txt3 text-[13px]">Shuffling up…</div>
+            {% endwith %}{% empty %}
+            <div class="py-5 px-[18px] text-txt3 text-[13px]">Forge is shuffling up…</div>
             {% endfor %}
         </div>
     </div>

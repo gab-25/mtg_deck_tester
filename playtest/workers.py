@@ -1,0 +1,227 @@
+"""The worker pool: threads that answer Forge's decisions for every running match.
+
+Each worker long-polls the bridge for the oldest pending decision of any game,
+finds the match and the seat it belongs to, asks the seat's agent and answers.
+``FORGE_WORKERS`` threads (default 4) start once per process, with the first
+match; their number bounds the model calls in flight. With ``FORGE_WORKERS=0``
+(and in tests) no pool runs and each match's runner answers its own decisions,
+one at a time.
+
+A worker never stops on an error: a decision it cannot serve is delegated to
+Forge's AI, and if a worker dies anyway the bridge's ``DECISION_TIMEOUT`` hands
+its decision to Forge's AI, so no match stalls.
+"""
+
+import logging
+import os
+import threading
+import time
+from dataclasses import dataclass, field
+
+from django.db import close_old_connections
+from django.utils import timezone
+
+from . import forge
+from .agents import typesafe
+from .agents.base import Decision, delegate
+from .agents.jev_agent import JevAgent
+from .models import Match, Seat
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_WORKERS = 4
+LEASE_WAIT = 30
+# How long a decision for a game not yet linked to a match waits for the link:
+# the bridge starts a game before the app stores its id.
+UNKNOWN_GAME_GRACE = 5.0
+# Past either budget, model-backed seats delegate every remaining decision.
+DEFAULT_MAX_AGENT_CALLS = 400
+DEFAULT_MAX_MATCH_SECONDS = 1800
+# Pause after the bridge could not be reached, before polling again.
+ERROR_BACKOFF = 2.0
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name) or default)
+    except ValueError:
+        return default
+
+
+def worker_count() -> int:
+    return max(_env_int("FORGE_WORKERS", DEFAULT_WORKERS), 0)
+
+
+def max_agent_calls() -> int:
+    return _env_int("MAX_AGENT_CALLS", DEFAULT_MAX_AGENT_CALLS)
+
+
+def max_match_seconds() -> int:
+    return _env_int("MAX_MATCH_SECONDS", DEFAULT_MAX_MATCH_SECONDS)
+
+
+def build_agent(seat: Seat, seed: int):
+    # Offset the seed per seat, so two seats of one kind don't mirror each other.
+    agent_seed = seed + seat.position
+    if seat.agent == Seat.Agent.JEV:
+        return JevAgent(seat.model or typesafe.MODEL, seed=agent_seed)
+    # forge_ai seats never reach a worker; anything else is Forge's AI too.
+    return None
+
+
+@dataclass
+class SeatAgent:
+    agent: object
+    calls: int = 0
+
+
+@dataclass
+class AgentCache:
+    """One agent per (match, seat), kept for the whole game.
+
+    Agents hold their seeded RNG: the same agent answering the game's
+    decisions in order is what makes a seat replay from its seed.
+    A game's decisions come one at a time, so one entry is used by one worker
+    at a time — unless an agent outlives the bridge's DECISION_TIMEOUT, when
+    the next decision may arrive meanwhile and that game stops replaying exactly.
+    """
+
+    entries: dict = field(default_factory=dict)
+    lock: threading.Lock = field(default_factory=threading.Lock)
+
+    def get(self, match: Match, seat: Seat) -> SeatAgent:
+        key = (match.pk, seat.position)
+        with self.lock:
+            if key not in self.entries:
+                self.entries[key] = SeatAgent(build_agent(seat, match.seed))
+            return self.entries[key]
+
+    def forget(self, match_id) -> None:
+        with self.lock:
+            for key in [k for k in self.entries if k[0] == match_id]:
+                del self.entries[key]
+
+
+agents = AgentCache()
+
+
+def _find_match(game_id: str, grace: float) -> Match | None:
+    deadline = time.monotonic() + grace
+    while True:
+        match = Match.objects.filter(forge_game_id=game_id).first()
+        if match is not None or time.monotonic() >= deadline:
+            return match
+        time.sleep(0.2)
+
+
+def _over_budget(match: Match, entry: SeatAgent) -> str:
+    if entry.calls >= max_agent_calls():
+        return f"agent call budget spent ({max_agent_calls()} calls)"
+    started = match.started_at or match.created_at
+    if (timezone.now() - started).total_seconds() >= max_match_seconds():
+        return f"match wall clock spent ({max_match_seconds()} s)"
+    return ""
+
+
+def decide(decision: dict, *, cache: AgentCache = agents, grace: float = UNKNOWN_GAME_GRACE) -> Decision:
+    """What the seat's agent answers to one bridge decision."""
+    match = _find_match(decision["game_id"], grace)
+    if match is None:
+        return delegate("error", "no match for this game")
+    if not match.is_busy:
+        # A failed or stopped match whose game still runs: nobody plays it.
+        return delegate("error", f"the match is {match.status}")
+    seat = match.seats.filter(position=decision["seat"]).first()
+    if seat is None:
+        return delegate("error", f"no seat {decision['seat']} in this match")
+    entry = cache.get(match, seat)
+    if entry.agent is None:
+        return delegate("error", f"a {seat.get_agent_display()} seat has no agent")
+    if getattr(entry.agent, "metered", False):
+        spent = _over_budget(match, entry)
+        if spent:
+            return delegate("budget", spent)
+        entry.calls += 1
+    return entry.agent.choose(
+        decision["view"], decision["options"], kind=decision.get("kind", ""), prompt=decision.get("prompt", "")
+    )
+
+
+def serve(client, decision: dict, *, cache: AgentCache = agents, grace: float = UNKNOWN_GAME_GRACE) -> None:
+    """Answers one leased decision. Never raises for an agent's failure: that is delegated."""
+    try:
+        answer = decide(decision, cache=cache, grace=grace)
+    except Exception as exc:  # noqa: BLE001 - an agent bug must not cost the match.
+        logger.exception("Agent failed on decision %s", decision.get("decision_id"))
+        answer = delegate("error", f"agent error: {exc}")
+    if answer.choice is not None and not 0 <= answer.choice < len(decision["options"]):
+        answer = delegate("error", f"agent picked option {answer.choice}, which was not offered")
+    if not client.answer(decision["decision_id"], answer.choice, delegate=answer.delegate, meta=answer.meta()):
+        logger.info("Decision %s was no longer pending (timed out or game ended)", decision["decision_id"])
+
+
+class Pool:
+    def __init__(self, size: int, client_factory=None):
+        self.size = size
+        self.client_factory = client_factory or forge.client
+        self.threads: list[threading.Thread] = []
+        self.stopping = threading.Event()
+
+    def start(self) -> None:
+        for index in range(self.size):
+            thread = threading.Thread(target=self._loop, name=f"forge-worker-{index}", daemon=True)
+            thread.start()
+            self.threads.append(thread)
+
+    def stop(self, timeout: float | None = None) -> None:
+        """Stops the workers; with a ``timeout``, waits that long for each to finish its poll."""
+        self.stopping.set()
+        if timeout is not None:
+            for thread in self.threads:
+                thread.join(timeout)
+
+    def alive(self) -> bool:
+        return any(thread.is_alive() for thread in self.threads)
+
+    def _loop(self) -> None:
+        client = self.client_factory()
+        while not self.stopping.is_set():
+            try:
+                decision = client.lease(LEASE_WAIT)
+                if decision is None:
+                    continue
+                close_old_connections()
+                try:
+                    serve(client, decision)
+                finally:
+                    close_old_connections()
+            except forge.ForgeError as exc:
+                logger.warning("Forge worker: %s", exc)
+                self.stopping.wait(ERROR_BACKOFF)
+            except Exception:  # noqa: BLE001 - keep serving whatever happens.
+                logger.exception("Forge worker failed; carrying on")
+                self.stopping.wait(ERROR_BACKOFF)
+
+
+_pool: Pool | None = None
+_pool_lock = threading.Lock()
+
+
+def ensure_started() -> bool:
+    """Starts this process's pool once; False when ``FORGE_WORKERS`` is 0."""
+    global _pool
+    with _pool_lock:
+        if _pool is not None and _pool.alive():
+            return True
+        size = worker_count()
+        if size == 0:
+            return False
+        _pool = Pool(size)
+        _pool.start()
+        logger.info("Started %s Forge workers", size)
+        return True
+
+
+def running() -> bool:
+    """Whether a pool answers decisions in this process."""
+    return _pool is not None and _pool.alive()

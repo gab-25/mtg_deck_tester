@@ -6,7 +6,44 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-from decks.formats import DEFAULT_FORMAT, format_choices
+from decks.formats import DEFAULT_FORMAT, FORMATS, format_choices
+
+# Forge's reasons for a game's end (its GameEndReason, plus the bridge's own),
+# as the match page names them.
+END_REASONS = {
+    "AllOpponentsLost": "All opponents lost",
+    "Draw": "Draw",
+    "Conceded": "Conceded",
+    "WinsGameSpellEffect": "Won by a card's effect",
+    "turn_limit": "Turn limit reached",
+    "aborted": "Stopped",
+    "orphaned": "No worker answered",
+}
+
+
+class Playtest(models.Model):
+    """A test session: one deck plays one match against each chosen opponent."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="playtests"
+    )
+    format = models.CharField(max_length=16, choices=format_choices(), default=DEFAULT_FORMAT)
+    # The deck under test; deleting it keeps the session, ``deck_name`` remembers it.
+    deck = models.ForeignKey(
+        "decks.Deck", null=True, blank=True, on_delete=models.SET_NULL, related_name="playtests"
+    )
+    deck_name = models.CharField(max_length=255)
+    # Each match's seed is this one plus its opponent's index.
+    seed = models.BigIntegerField()
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = "playtests"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.deck_name} ({self.format})"
 
 
 class Match(models.Model):
@@ -15,31 +52,39 @@ class Match(models.Model):
         RUNNING = "running", "Running"
         FINISHED = "finished", "Finished"
         FAILED = "failed", "Failed"
-
-    class EndReason(models.TextChoices):
-        LAST_STANDING = "last_standing", "Last player standing"
-        TURN_LIMIT = "turn_limit", "Round limit reached"
+        STOPPED = "stopped", "Stopped"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="matches"
     )
+    # The test session this match belongs to: seat 0 plays the deck under test,
+    # seat 1 one of its opponents. Empty for matches from before sessions.
+    playtest = models.ForeignKey(
+        Playtest, null=True, blank=True, on_delete=models.CASCADE, related_name="matches"
+    )
     format = models.CharField(max_length=16, choices=format_choices(), default=DEFAULT_FORMAT)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
-    # Seeds the shuffles and the random agents: the same seed and agents replay
-    # the same game.
+    # Seeds Forge's shuffles and Jev's option order: the same seed and the same
+    # answers replay the same game.
     seed = models.BigIntegerField()
-    max_rounds = models.PositiveIntegerField(default=20)
-    # The round in progress, updated while the match runs.
-    round = models.PositiveIntegerField(default=0)
+    # The game on the Forge bridge, set once the bridge accepted the decks.
+    forge_game_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    # The game turn in progress (both players' turns count), updated as the log arrives.
+    turn = models.PositiveIntegerField(default=0)
 
     winner = models.ForeignKey(
         "Seat", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
-    end_reason = models.CharField(max_length=16, choices=EndReason.choices, blank=True, default="")
+    # Forge's reason (see END_REASONS), kept verbatim.
+    end_reason = models.CharField(max_length=32, blank=True, default="")
     error = models.TextField(blank=True, default="")
+    # The deterministic match summary (playtest.summary.summarize_match),
+    # written when the game ends; empty until then.
+    summary = models.JSONField(default=dict, blank=True)
 
     created_at = models.DateTimeField(default=timezone.now)
+    started_at = models.DateTimeField(null=True, blank=True)
     finished_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
@@ -51,11 +96,28 @@ class Match(models.Model):
     def is_busy(self) -> bool:
         return self.status in {self.Status.PENDING, self.Status.RUNNING}
 
+    @property
+    def has_commander(self) -> bool:
+        return FORMATS[self.format].has_commander
+
+    def get_end_reason_display(self) -> str:
+        return END_REASONS.get(self.end_reason, self.end_reason)
+
+    @property
+    def result(self) -> str:
+        """For the deck in seat 0: ``won``, ``lost``, ``draw``, or the match's status while it is not finished."""
+        if self.status != self.Status.FINISHED:
+            return self.status
+        if self.winner_id is None:
+            return "draw"
+        return "won" if self.winner.position == 0 else "lost"
+
 
 class Seat(models.Model):
     class Agent(models.TextChoices):
-        RANDOM = "random", "Random"
-        LLM = "llm", "LLM"
+        # Older matches only: new seats are always played by an agent.
+        FORGE_AI = "forge_ai", "Forge AI"
+        JEV = "jev", "Jev"
 
     match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name="seats")
     # 0-based place at the table.
@@ -65,13 +127,20 @@ class Seat(models.Model):
         "decks.Deck", null=True, blank=True, on_delete=models.SET_NULL, related_name="seats"
     )
     deck_name = models.CharField(max_length=255)
-    agent = models.CharField(max_length=16, choices=Agent.choices, default=Agent.RANDOM)
-    # OpenRouter model id for an LLM seat; empty means the default model.
+    # A metagame deck (decks.MetagameDeck) this seat plays; a later sync may
+    # delete it, and ``deck_name`` keeps its name.
+    metagame_deck = models.ForeignKey(
+        "decks.MetagameDeck", null=True, blank=True, on_delete=models.SET_NULL, related_name="seats"
+    )
+    agent = models.CharField(max_length=16, choices=Agent.choices, default=Agent.JEV)
+    # Jev model id of an older seat; empty means typesafe.MODEL.
     model = models.CharField(max_length=128, blank=True, default="")
+    # What Forge made of the deck when the game was created:
+    # ``{"unsupported_cards": [...]}``, cards it knows but cannot play fully.
+    coverage = models.JSONField(default=dict, blank=True)
 
     # Filled in when the match ends.
     life = models.IntegerField(null=True, blank=True)
-    eliminated_round = models.PositiveIntegerField(null=True, blank=True)
 
     class Meta:
         db_table = "seats"
@@ -83,17 +152,35 @@ class Seat(models.Model):
     def __str__(self) -> str:
         return f"Seat {self.position + 1}: {self.deck_name}"
 
+    @property
+    def agent_icon(self) -> str:
+        """The icon-font ligature for this seat's agent."""
+        return {
+            self.Agent.FORGE_AI: "memory",
+            self.Agent.JEV: "bolt",
+        }.get(self.agent, "bolt")
+
+    @property
+    def controller(self) -> str:
+        """How the bridge seats it: Forge's AI plays it, or a worker answers for it."""
+        return "forge_ai" if self.agent == self.Agent.FORGE_AI else "external"
+
 
 class MatchEvent(models.Model):
-    """One entry of a match log, as the engine reported it."""
+    """One entry of a match log, as the Forge bridge reported it.
+
+    ``kind`` is the bridge's: ``log`` (Forge's game log; ``payload.type`` is
+    its category), ``decision``, ``fallback``, ``forge_ai`` or ``game_over``.
+    """
 
     match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name="events")
     seq = models.PositiveIntegerField()
-    round = models.PositiveIntegerField()
     turn = models.PositiveIntegerField()
     # The seat the event is about, or None for table-wide events.
     seat_position = models.PositiveSmallIntegerField(null=True, blank=True)
     kind = models.CharField(max_length=32)
+    # Forge's phase it happened in (MAIN1, COMBAT_DECLARE_ATTACKERS…), when known.
+    step = models.CharField(max_length=32, blank=True, default="")
     text = models.TextField()
     payload = models.JSONField(default=dict)
     reasoning = models.TextField(blank=True, default="")

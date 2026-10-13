@@ -10,5 +10,7 @@ urlpatterns = [
     path("decks/create", views.create_deck, name="create_deck"),
     path("decks/<uuid:deck_id>", views.deck_detail, name="deck_detail"),
     path("decks/<uuid:deck_id>/delete", views.delete_deck, name="delete_deck"),
+    path("decks/<uuid:deck_id>/forge-check", views.deck_forge_check, name="deck_forge_check"),
     path("card-image", views.card_image_modal, name="card_image_modal"),
+    path("metagame", views.metagame, name="metagame"),
 ]

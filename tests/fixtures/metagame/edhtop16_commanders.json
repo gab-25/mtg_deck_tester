@@ -1,0 +1,637 @@
+{
+    "data": {
+        "commanders": {
+            "edges": [
+                {
+                    "node": {
+                        "name": "Kraum, Ludevic's Opus / Tymna the Weaver",
+                        "stats": {
+                            "metaShare": 0.024939981956358853
+                        },
+                        "entries": {
+                            "edges": [
+                                {
+                                    "node": {
+                                        "decklist": "https://topdeck.gg/deck/d-grid-on-the-stack/z0rVgKt4HGOWE57DB3qolitDrri1",
+                                        "maindeck": [
+                                            {
+                                                "name": "Arcane Signet"
+                                            },
+                                            {
+                                                "name": "Command Tower"
+                                            },
+                                            {
+                                                "name": "Exotic Orchard"
+                                            },
+                                            {
+                                                "name": "Sol Ring"
+                                            },
+                                            {
+                                                "name": "Lotus Petal"
+                                            },
+                                            {
+                                                "name": "City of Brass"
+                                            },
+                                            {
+                                                "name": "Lion's Eye Diamond"
+                                            },
+                                            {
+                                                "name": "Pact of Negation"
+                                            },
+                                            {
+                                                "name": "Tainted Pact"
+                                            },
+                                            {
+                                                "name": "Chain of Vapor"
+                                            },
+                                            {
+                                                "name": "Mystical Tutor"
+                                            },
+                                            {
+                                                "name": "Deflecting Swat"
+                                            },
+                                            {
+                                                "name": "Force of Negation"
+                                            },
+                                            {
+                                                "name": "Esper Sentinel"
+                                            },
+                                            {
+                                                "name": "Fierce Guardianship"
+                                            },
+                                            {
+                                                "name": "Ragavan, Nimble Pilferer"
+                                            },
+                                            {
+                                                "name": "Arid Mesa"
+                                            },
+                                            {
+                                                "name": "Scalding Tarn"
+                                            },
+                                            {
+                                                "name": "Sevinne's Reclamation"
+                                            },
+                                            {
+                                                "name": "Valley Floodcaller"
+                                            },
+                                            {
+                                                "name": "Rite of Flame"
+                                            },
+                                            {
+                                                "name": "Mental Misstep"
+                                            },
+                                            {
+                                                "name": "Mnemonic Betrayal"
+                                            },
+                                            {
+                                                "name": "Faerie Mastermind"
+                                            },
+                                            {
+                                                "name": "Red Elemental Blast"
+                                            },
+                                            {
+                                                "name": "Demonic Tutor"
+                                            },
+                                            {
+                                                "name": "Dark Ritual"
+                                            },
+                                            {
+                                                "name": "Chrome Mox"
+                                            },
+                                            {
+                                                "name": "Mockingbird"
+                                            },
+                                            {
+                                                "name": "Rain of Filth"
+                                            },
+                                            {
+                                                "name": "Tundra"
+                                            },
+                                            {
+                                                "name": "Flusterstorm"
+                                            },
+                                            {
+                                                "name": "Misty Rainforest"
+                                            },
+                                            {
+                                                "name": "Flare of Duplication"
+                                            },
+                                            {
+                                                "name": "Mox Diamond"
+                                            },
+                                            {
+                                                "name": "Badlands"
+                                            },
+                                            {
+                                                "name": "Ancient Tomb"
+                                            },
+                                            {
+                                                "name": "Otawara, Soaring City"
+                                            },
+                                            {
+                                                "name": "Polluted Delta"
+                                            },
+                                            {
+                                                "name": "Simian Spirit Guide"
+                                            },
+                                            {
+                                                "name": "Into the Flood Maw"
+                                            },
+                                            {
+                                                "name": "Smothering Tithe"
+                                            },
+                                            {
+                                                "name": "Vampiric Tutor"
+                                            },
+                                            {
+                                                "name": "Watery Grave"
+                                            },
+                                            {
+                                                "name": "Professional Face-Breaker"
+                                            },
+                                            {
+                                                "name": "Borne Upon a Wind"
+                                            },
+                                            {
+                                                "name": "Enlightened Tutor"
+                                            },
+                                            {
+                                                "name": "Gemstone Caverns"
+                                            },
+                                            {
+                                                "name": "Plateau"
+                                            },
+                                            {
+                                                "name": "Ranger-Captain of Eos"
+                                            },
+                                            {
+                                                "name": "Rhystic Study"
+                                            },
+                                            {
+                                                "name": "Mindbreak Trap"
+                                            },
+                                            {
+                                                "name": "Scrubland"
+                                            },
+                                            {
+                                                "name": "Underground Sea"
+                                            },
+                                            {
+                                                "name": "Marsh Flats"
+                                            },
+                                            {
+                                                "name": "Mystic Remora"
+                                            },
+                                            {
+                                                "name": "Mox Opal"
+                                            },
+                                            {
+                                                "name": "Underworld Breach"
+                                            },
+                                            {
+                                                "name": "Flooded Strand"
+                                            },
+                                            {
+                                                "name": "Tataru Taru"
+                                            },
+                                            {
+                                                "name": "Gamble"
+                                            },
+                                            {
+                                                "name": "Force of Will"
+                                            },
+                                            {
+                                                "name": "Ad Nauseam"
+                                            },
+                                            {
+                                                "name": "Brain Freeze"
+                                            },
+                                            {
+                                                "name": "Final Fortune"
+                                            },
+                                            {
+                                                "name": "Grand Abolisher"
+                                            },
+                                            {
+                                                "name": "An Offer You Can't Refuse"
+                                            },
+                                            {
+                                                "name": "Volcanic Island"
+                                            },
+                                            {
+                                                "name": "Dragon's Rage Channeler"
+                                            },
+                                            {
+                                                "name": "Diabolic Intent"
+                                            },
+                                            {
+                                                "name": "Swan Song"
+                                            },
+                                            {
+                                                "name": "Imperial Seal"
+                                            },
+                                            {
+                                                "name": "Silence"
+                                            },
+                                            {
+                                                "name": "Intuition"
+                                            },
+                                            {
+                                                "name": "Mana Vault"
+                                            },
+                                            {
+                                                "name": "Lotho, Corrupt Shirriff"
+                                            },
+                                            {
+                                                "name": "Mana Confluence"
+                                            },
+                                            {
+                                                "name": "Sink into Stupor // Soporific Springs"
+                                            },
+                                            {
+                                                "name": "Imposter Mech"
+                                            },
+                                            {
+                                                "name": "Mirrormade"
+                                            },
+                                            {
+                                                "name": "Starting Town"
+                                            },
+                                            {
+                                                "name": "Tarnished Citadel"
+                                            },
+                                            {
+                                                "name": "Orim's Chant"
+                                            },
+                                            {
+                                                "name": "City of Traitors"
+                                            },
+                                            {
+                                                "name": "Mayhem Devil"
+                                            },
+                                            {
+                                                "name": "Emergence Zone"
+                                            },
+                                            {
+                                                "name": "Dispel"
+                                            },
+                                            {
+                                                "name": "Commandeer"
+                                            },
+                                            {
+                                                "name": "Redirect Lightning"
+                                            },
+                                            {
+                                                "name": "Copy Enchantment"
+                                            },
+                                            {
+                                                "name": "Scheming Symmetry"
+                                            },
+                                            {
+                                                "name": "Storm-Kiln Artist"
+                                            },
+                                            {
+                                                "name": "Trickbind"
+                                            },
+                                            {
+                                                "name": "Flamescroll Celebrant // Revel in Silence"
+                                            },
+                                            {
+                                                "name": "Gifts Ungiven"
+                                            },
+                                            {
+                                                "name": "Permission Denied"
+                                            },
+                                            {
+                                                "name": "Firestorm"
+                                            },
+                                            {
+                                                "name": "Flash Photography"
+                                            }
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "node": {
+                        "name": "Kinnan, Bonder Prodigy",
+                        "stats": {
+                            "metaShare": 0.024894108292429315
+                        },
+                        "entries": {
+                            "edges": [
+                                {
+                                    "node": {
+                                        "decklist": "https://topdeck.gg/deck/level-7s-siege-at-the-castle-10k/10XZGpOw5vVlD7VeYRO1XvBv3Ft2",
+                                        "maindeck": [
+                                            {
+                                                "name": "Arcane Signet"
+                                            },
+                                            {
+                                                "name": "Command Tower"
+                                            },
+                                            {
+                                                "name": "Island"
+                                            },
+                                            {
+                                                "name": "Exotic Orchard"
+                                            },
+                                            {
+                                                "name": "Sol Ring"
+                                            },
+                                            {
+                                                "name": "Fellwar Stone"
+                                            },
+                                            {
+                                                "name": "Forest"
+                                            },
+                                            {
+                                                "name": "Lotus Petal"
+                                            },
+                                            {
+                                                "name": "City of Brass"
+                                            },
+                                            {
+                                                "name": "Pact of Negation"
+                                            },
+                                            {
+                                                "name": "Chain of Vapor"
+                                            },
+                                            {
+                                                "name": "Mox Amber"
+                                            },
+                                            {
+                                                "name": "Wooded Foothills"
+                                            },
+                                            {
+                                                "name": "Force of Negation"
+                                            },
+                                            {
+                                                "name": "Fierce Guardianship"
+                                            },
+                                            {
+                                                "name": "Scalding Tarn"
+                                            },
+                                            {
+                                                "name": "Snapback"
+                                            },
+                                            {
+                                                "name": "Valley Floodcaller"
+                                            },
+                                            {
+                                                "name": "Mental Misstep"
+                                            },
+                                            {
+                                                "name": "Verdant Catacombs"
+                                            },
+                                            {
+                                                "name": "Faerie Mastermind"
+                                            },
+                                            {
+                                                "name": "Chrome Mox"
+                                            },
+                                            {
+                                                "name": "Mockingbird"
+                                            },
+                                            {
+                                                "name": "Flusterstorm"
+                                            },
+                                            {
+                                                "name": "Misty Rainforest"
+                                            },
+                                            {
+                                                "name": "Mox Diamond"
+                                            },
+                                            {
+                                                "name": "Ancient Tomb"
+                                            },
+                                            {
+                                                "name": "Otawara, Soaring City"
+                                            },
+                                            {
+                                                "name": "Polluted Delta"
+                                            },
+                                            {
+                                                "name": "Borne Upon a Wind"
+                                            },
+                                            {
+                                                "name": "Gemstone Caverns"
+                                            },
+                                            {
+                                                "name": "Rhystic Study"
+                                            },
+                                            {
+                                                "name": "Mindbreak Trap"
+                                            },
+                                            {
+                                                "name": "Mystic Remora"
+                                            },
+                                            {
+                                                "name": "Mox Opal"
+                                            },
+                                            {
+                                                "name": "Flooded Strand"
+                                            },
+                                            {
+                                                "name": "Force of Will"
+                                            },
+                                            {
+                                                "name": "An Offer You Can't Refuse"
+                                            },
+                                            {
+                                                "name": "Swan Song"
+                                            },
+                                            {
+                                                "name": "Windswept Heath"
+                                            },
+                                            {
+                                                "name": "Mana Vault"
+                                            },
+                                            {
+                                                "name": "Mana Confluence"
+                                            },
+                                            {
+                                                "name": "Copy Artifact"
+                                            },
+                                            {
+                                                "name": "Basalt Monolith"
+                                            },
+                                            {
+                                                "name": "Sink into Stupor // Soporific Springs"
+                                            },
+                                            {
+                                                "name": "Dramatic Reversal"
+                                            },
+                                            {
+                                                "name": "Imposter Mech"
+                                            },
+                                            {
+                                                "name": "The One Ring"
+                                            },
+                                            {
+                                                "name": "Mirrormade"
+                                            },
+                                            {
+                                                "name": "Transmute Artifact"
+                                            },
+                                            {
+                                                "name": "Wan Shi Tong, Librarian"
+                                            },
+                                            {
+                                                "name": "Tarnished Citadel"
+                                            },
+                                            {
+                                                "name": "Dizzy Spell"
+                                            },
+                                            {
+                                                "name": "Misdirection"
+                                            },
+                                            {
+                                                "name": "Hullbreaker Horror"
+                                            },
+                                            {
+                                                "name": "Springleaf Drum"
+                                            },
+                                            {
+                                                "name": "Disrupting Shoal"
+                                            },
+                                            {
+                                                "name": "Dispel"
+                                            },
+                                            {
+                                                "name": "Commandeer"
+                                            },
+                                            {
+                                                "name": "Copy Enchantment"
+                                            },
+                                            {
+                                                "name": "Clever Impersonator"
+                                            },
+                                            {
+                                                "name": "Birds of Paradise"
+                                            },
+                                            {
+                                                "name": "Finale of Devastation"
+                                            },
+                                            {
+                                                "name": "Sylvan Library"
+                                            },
+                                            {
+                                                "name": "Breeding Pool"
+                                            },
+                                            {
+                                                "name": "Boseiju, Who Endures"
+                                            },
+                                            {
+                                                "name": "Elvish Spirit Guide"
+                                            },
+                                            {
+                                                "name": "High Fae Trickster"
+                                            },
+                                            {
+                                                "name": "Delighted Halfling"
+                                            },
+                                            {
+                                                "name": "Consecrated Sphinx"
+                                            },
+                                            {
+                                                "name": "Tropical Island"
+                                            },
+                                            {
+                                                "name": "Grim Monolith"
+                                            },
+                                            {
+                                                "name": "Flesh Duplicate"
+                                            },
+                                            {
+                                                "name": "Elvish Mystic"
+                                            },
+                                            {
+                                                "name": "Nature's Rhythm"
+                                            },
+                                            {
+                                                "name": "Waterlogged Grove"
+                                            },
+                                            {
+                                                "name": "Fyndhorn Elves"
+                                            },
+                                            {
+                                                "name": "Chord of Calling"
+                                            },
+                                            {
+                                                "name": "Rejuvenating Springs"
+                                            },
+                                            {
+                                                "name": "Llanowar Elves"
+                                            },
+                                            {
+                                                "name": "Invasion of Ikoria // Zilortha, Apex of Ikoria"
+                                            },
+                                            {
+                                                "name": "Endurance"
+                                            },
+                                            {
+                                                "name": "Trophy Mage"
+                                            },
+                                            {
+                                                "name": "Thrasios, Triton Hero"
+                                            },
+                                            {
+                                                "name": "Enduring Vitality"
+                                            },
+                                            {
+                                                "name": "Drift of Phantasms"
+                                            },
+                                            {
+                                                "name": "Colossal Skyturtle"
+                                            },
+                                            {
+                                                "name": "Talisman of Curiosity"
+                                            },
+                                            {
+                                                "name": "Mirage Mirror"
+                                            },
+                                            {
+                                                "name": "Volatile Stormdrake"
+                                            },
+                                            {
+                                                "name": "Yavimaya Coast"
+                                            },
+                                            {
+                                                "name": "Hidden Strings"
+                                            },
+                                            {
+                                                "name": "The Cabbage Merchant"
+                                            },
+                                            {
+                                                "name": "Emrakul, the Promised End"
+                                            },
+                                            {
+                                                "name": "Gene Pollinator"
+                                            },
+                                            {
+                                                "name": "Botanical Sanctum"
+                                            },
+                                            {
+                                                "name": "Sudden Substitution"
+                                            },
+                                            {
+                                                "name": "Twincast"
+                                            },
+                                            {
+                                                "name": "Flash Photography"
+                                            }
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            ]
+        }
+    }
+}

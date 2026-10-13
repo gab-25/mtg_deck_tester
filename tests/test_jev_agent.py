@@ -1,0 +1,127 @@
+"""Tests for the Jev agent on Forge's decisions (no network)."""
+
+import json
+
+import pytest
+
+from playtest.agents import typesafe
+from playtest.agents.jev_agent import JevAgent, describe_option, jev_state
+
+from .fakeforge import sample_decision
+
+
+class StubJev:
+    """Answers like Jev: picks the option ``prefer`` says, with a given confidence."""
+
+    def __init__(self, prefer=None, confidence=0.9, fail=None):
+        self.prefer = prefer or (lambda criteria: sorted(criteria)[-1])
+        self.confidence = confidence
+        self.fail = fail
+        self.requests = []
+
+    def __call__(self, state, questions, model=None):
+        self.requests.append((state, questions, model))
+        if self.fail:
+            raise typesafe.TypeSafeError(self.fail)
+        criteria = questions["action"]["criteria"]
+        pick = self.prefer(criteria)
+        rest = (1 - self.confidence) / max(len(criteria) - 1, 1)
+        probabilities = {key: (self.confidence if key == pick else rest) for key in criteria}
+        return {
+            "model": "typesafe/jev-1.13",
+            "answers": {"action": {"type": "choice", "choice": pick, "confidence": self.confidence, "probabilities": probabilities}},
+        }
+
+
+def _choose(agent, decision=None):
+    decision = decision or sample_decision()
+    return agent.choose(decision["view"], decision["options"], kind=decision["kind"], prompt=decision["prompt"])
+
+
+def test_the_options_are_exactly_the_bridges_shuffled_and_mapped_back():
+    decision = sample_decision()
+    jev = StubJev(prefer=lambda criteria: next(k for k, v in criteria.items() if v.startswith("Attack with Bear")))
+    picked = _choose(JevAgent("~typesafe/jev-latest", seed=3, ask=jev), decision)
+    assert picked.choice == 1
+    [(_, questions, model)] = jev.requests
+    criteria = questions["action"]["criteria"]
+    assert model == "~typesafe/jev-latest"
+    assert sorted(criteria) == ["o0", "o1", "o2"]
+    # The order Jev sees is a seeded shuffle, not Forge's order ("Done" first)…
+    orders = set()
+    for seed in range(8):
+        stub = StubJev()
+        _choose(JevAgent(seed=seed, ask=stub))
+        orders.add(tuple(stub.requests[0][1]["action"]["criteria"]))
+    assert len(orders) > 1
+    # …and the same seed shuffles the same way.
+    again = [StubJev(), StubJev()]
+    for stub in again:
+        _choose(JevAgent(seed=5, ask=stub))
+    assert list(again[0].requests[0][1]["action"]["criteria"]) == list(again[1].requests[0][1]["action"]["criteria"])
+
+
+def test_an_option_is_described_by_its_label_and_forges_facts():
+    option = sample_decision()["options"][1]
+    assert describe_option(option) == "Attack with Bear #3 (3/3) -> Green — deals 3 damage if unblocked"
+    assert describe_option({"index": 0, "label": "Pass priority", "facts": []}) == "Pass priority"
+
+
+def test_the_instructions_name_the_format_the_turn_the_kind_and_forges_prompt():
+    jev = StubJev()
+    _choose(JevAgent(seed=1, ask=jev))
+    text = jev.requests[0][1]["action"]["instructions"]
+    assert "(Modern)" in text and "turn 3, your turn" in text
+    assert "Declare attackers one at a time" in text
+    assert 'Forge asks: "Declare attackers"' in text
+
+
+def test_the_state_is_the_view_filtered_to_the_decision():
+    decision = sample_decision()
+    state = json.loads(jev_state(decision["view"], kind="attack", prompt="Declare attackers"))
+    assert state["you"]["life"] == 20 and state["opponents"][0]["life"] == 20
+    assert state["you"]["hand"][0] == {"name": "Shock", "mana_cost": "{R}", "types": "Instant", "text": "Shock deals 2 damage to any target."}
+    wall, rancor = state["opponents"][0]["battlefield"]
+    assert wall["summoning_sick"] and wall["counters"] == {"P1P1": 1} and "tapped" not in wall
+    assert rancor["attached_to"] == "Wall"
+    # Graveyards are counts unless the decision is about them; no ids anywhere.
+    assert state["you"]["graveyard"] == 1
+    assert '"id"' not in jev_state(decision["view"])
+    about = json.loads(jev_state(decision["view"], kind="choose_cards", prompt="Return a card from your graveyard"))
+    assert about["you"]["graveyard"][0]["name"] == "Lightning Bolt"
+
+
+def test_the_decision_carries_confidence_probabilities_and_model():
+    decision = _choose(JevAgent(seed=1, ask=StubJev(confidence=0.82)))
+    assert decision.confidence == 0.82 and decision.model == "typesafe/jev-1.13"
+    meta = decision.meta()
+    assert meta["confidence"] == 0.82 and meta["probabilities"][0]["p"] == 0.82
+    assert meta["probabilities"][0]["label"] in [o["label"] for o in sample_decision()["options"]]
+    assert not decision.delegate
+
+
+@pytest.mark.parametrize(
+    "jev, kind",
+    [
+        (StubJev(confidence=0.3), "low_confidence"),
+        (StubJev(fail="HTTP 503"), "error"),
+    ],
+)
+def test_doubt_or_failure_delegates_to_forges_ai(jev, kind):
+    decision = _choose(JevAgent(seed=1, ask=jev, min_confidence=0.5))
+    assert decision.delegate and decision.fallback_kind == kind
+    if kind == "low_confidence":
+        # Jev's distribution travels with the fallback.
+        assert decision.meta()["confidence"] == 0.3 and decision.meta()["probabilities"]
+
+
+def test_a_missing_key_delegates(monkeypatch):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    decision = _choose(JevAgent(seed=1))
+    assert decision.delegate and decision.fallback_kind == "error"
+    assert "OPENROUTER_API_KEY" in decision.fallback_reason
+
+
+def test_an_answer_outside_the_options_delegates():
+    decision = _choose(JevAgent(seed=1, ask=StubJev(prefer=lambda criteria: "o99")))
+    assert decision.delegate and "not an option" in decision.fallback_reason

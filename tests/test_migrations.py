@@ -66,4 +66,27 @@ def test_saved_decks_get_their_image_urls_from_the_cached_card_json(django_user_
         ]
         assert all("image_paths" not in card for card in cards)
     finally:
-        _migrate(("decks", "0003_delete_scryfallimage"))
+        # Back to the latest schema of every app: unapplying decks unapplied
+        # the playtest migrations that depend on it too.
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())
+
+
+@pytest.mark.django_db(transaction=True)
+def test_forge_matches_keep_the_round_as_turn_and_give_llm_and_random_seats_to_forge_ai(django_user_model):
+    apps = _migrate(("playtest", "0001_initial"))
+    try:
+        owner = django_user_model.objects.create_user(username="old")
+        Match = apps.get_model("playtest", "Match")
+        Seat = apps.get_model("playtest", "Seat")
+        match = Match.objects.create(owner_id=owner.id, seed=1, round=5)
+        Seat.objects.create(match=match, position=0, deck_name="A", agent="llm")
+        Seat.objects.create(match=match, position=1, deck_name="B", agent="random")
+        apps = _migrate(("playtest", "0002_forge_playtests"))
+        assert apps.get_model("playtest", "Match").objects.get().turn == 5
+        agents = list(apps.get_model("playtest", "Seat").objects.order_by("position").values_list("agent", flat=True))
+        assert agents == ["forge_ai", "forge_ai"]
+    finally:
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())
+

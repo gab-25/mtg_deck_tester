@@ -1,0 +1,45 @@
+{% comment %}
+A session's results, one row per opponent. While a match runs the region polls
+itself (outerHTML swap); once every match ended polling stops.
+{% endcomment %}
+<div id="playtest-live-region" class="flex flex-col gap-5"
+    {% if session.busy %}hx-get="{% url 'playtest_live' playtest.id %}" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
+
+    <div class="flex items-center gap-3 flex-wrap text-[13px] text-txt2">
+        {% for result, count in session.tally %}
+        <span class="chip"><span class="font-mono2 font-bold">{{ count }}</span> {{ result }}</span>
+        {% endfor %}
+    </div>
+
+    <div class="panel-card overflow-hidden">
+        <div class="flex items-center gap-[9px] py-4 px-[18px] border-b border-line2">
+            <span translate="no" class="ms text-txt2 text-[20px]">groups</span>
+            <span class="font-semibold text-[15px]">Against each opponent</span>
+            <span class="text-[12px] text-txt3">{{ session.rows|length }} match{{ session.rows|length|pluralize:"es" }}</span>
+        </div>
+        <div class="flex flex-col">
+            {% for row in session.rows %}
+            <a href="{% url 'match_detail' row.match.id %}" class="flex items-center justify-between gap-3 py-4 px-[18px] border-b border-line2 text-[13px] no-underline">
+                <div class="flex items-center gap-3 min-w-0">
+                    <span class="text-txt3">vs</span>
+                    <span translate="no" class="text-txt font-semibold">{{ row.opponent.deck_name|default:"—" }}</span>
+                    {% if row.opponent.metagame_deck_id %}<span class="text-[11px] text-txt3">Metagame</span>{% endif %}
+                </div>
+                <div class="flex items-center gap-3 flex-none">
+                    {% if row.result == 'won' %}
+                    <span class="text-gold font-semibold">Won</span>
+                    {% elif row.result == 'lost' %}
+                    <span class="text-danger font-semibold">Lost</span>
+                    {% elif row.result == 'draw' %}
+                    <span class="text-txt2 font-semibold">Draw</span>
+                    {% else %}
+                    {% include "playtest/partials/match_status.html" with match=row.match %}
+                    {% endif %}
+                    {% if row.match.turn %}<span class="font-mono2 text-[12px] text-txt3">{{ row.match.turn }} turn{{ row.match.turn|pluralize }}</span>{% endif %}
+                    <span translate="no" class="ms text-[18px] text-txt3">chevron_right</span>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+</div>

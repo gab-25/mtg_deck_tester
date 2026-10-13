@@ -156,31 +156,23 @@ def process_cached_card(card: dict) -> dict:
     }
 
 
-def fetch_card_data(card_name: str, cache) -> dict:
-    """Fetches English card data from cache or Scryfall.
+def fetch_card_raw(card_name: str, cache) -> dict | None:
+    """The raw Scryfall JSON of a card, from the cache or the network.
 
-    ``cache`` is a cache backend (see :mod:`decks.cache`) exposing
-    ``get_card``/``set_card``.
+    Keyed on the front face, so "Sink into Stupor" and "Sink into Stupor //
+    Soporific Springs" share the one entry they both resolve to. Returns None
+    for a card Scryfall does not know (cached) or could not be reached for
+    (not cached, so it is retried).
     """
-    # Keyed on the front face, so "Sink into Stupor" and "Sink into Stupor //
-    # Soporific Springs" share the one entry they both resolve to.
-    slug = card_slug(front_face_name(card_name))
-    cache_key = f"card_en_{slug}"
+    cache_key = f"card_en_{card_slug(front_face_name(card_name))}"
 
-    # 1. Check the cache.
     cached = cache.get_card(cache_key)
     if cached is not None:
-        if cached.get("error") == "not_found":
-            return None
-        return process_cached_card(cached)
+        return None if cached.get("error") == "not_found" else cached
 
-    # 2. Fetch the exact English match from the Scryfall API.
     encoded_name = urllib.parse.quote(card_name)
-    exact_url = f"https://api.scryfall.com/cards/named?exact={encoded_name}"
-
-    resp = _scryfall_get(exact_url)
+    resp = _scryfall_get(f"https://api.scryfall.com/cards/named?exact={encoded_name}")
     if resp is None:
-        # Network/rate-limit gave up: do not cache, so it is retried next run.
         return None
     if resp.status_code != 200:
         if resp.status_code == 404:
@@ -193,4 +185,14 @@ def fetch_card_data(card_name: str, cache) -> dict:
         return None
 
     cache.set_card(cache_key, card)
-    return process_cached_card(card)
+    return card
+
+
+def fetch_card_data(card_name: str, cache) -> dict:
+    """Fetches English card data from cache or Scryfall.
+
+    ``cache`` is a cache backend (see :mod:`decks.cache`) exposing
+    ``get_card``/``set_card``.
+    """
+    card = fetch_card_raw(card_name, cache)
+    return process_cached_card(card) if card is not None else None

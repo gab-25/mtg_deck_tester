@@ -26,7 +26,7 @@ max-width stays inline — a utility would lose to the unlayered component rule.
         <div class="flex gap-[9px] flex-wrap items-center">
             {% if deck.status == 'ready' %}
             <a href="{% url 'new_match' %}?deck={{ deck.id }}&format={{ deck.format }}" class="btn btn-grad btn-sm">
-                <span translate="no" class="ms text-[18px]">swords</span>Play a match
+                <span translate="no" class="ms text-[18px]">swords</span>Test this deck
             </a>
             {% endif %}
             {% url 'delete_deck' deck.id as delete_url %}
@@ -51,45 +51,15 @@ max-width stays inline — a utility would lose to the unlayered component rule.
             <div class="flex items-center gap-[9px] py-4 px-[18px] border-b border-line2">
                 <span translate="no" class="ms text-txt2 text-[20px]">playing_cards</span>
                 <span class="font-semibold text-[15px]">Cards</span>
-                <span class="text-[12px] text-txt3">{{ deck.total_cards }}</span>
+                <span class="text-[12px] text-txt3">{{ deck.total_cards }}{% if deck.sideboard_total %} + {{ deck.sideboard_total }} sideboard{% endif %}</span>
             </div>
             <div>
                 {% for group in card_groups %}
-                <div class="group-head">
-                    <span class="w-[9px] h-[9px] rounded-full" style="background:{{ group.hex }}"></span>
-                    <span class="font-semibold text-[12.5px] tracking-[.06em] uppercase text-txt2">{{ group.label }}</span>
-                    <span class="font-mono2 font-bold text-[11px] text-txt3">{{ group.count }}</span>
-                </div>
-                {% for c in group.cards %}
-                <button
-                    type="button"
-                    class="card-row"
-                    {% if c.image_query %}
-                    hx-get="{% url 'card_image_modal' %}?{{ c.image_query }}"
-                    hx-target="#card-image-modal-container"
-                    hx-swap="innerHTML"
-                    {% endif %}
-                    title="View card"
-                >
-                    <div class="card-thumb">
-                        {% if c.image %}<img src="{{ c.image }}" alt="{{ c.name }}" loading="lazy" />{% endif %}
-                        <span class="font-mono2 absolute top-1 left-1 min-w-[19px] h-[19px] py-0 px-[5px] flex items-center justify-center rounded-full bg-[rgba(10,11,16,.82)] font-bold text-[11px] text-txt">{{ c.quantity }}×</span>
-                        {% if c.image %}<span translate="no" class="ms absolute right-1 bottom-1 p-0.5 text-[15px] text-txt2 bg-[rgba(10,11,16,.72)] rounded-md">zoom_in</span>{% endif %}
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <div class="flex items-center gap-2 flex-wrap">
-                            <span class="font-semibold text-[14.5px]">{{ c.name }}</span>
-                            <span class="py-0.5 px-[7px] text-[11px] border border-line2 rounded-full" style="color:{{ c.type_hex }}">{{ c.type }}</span>
-                            {% if c.is_commander %}<span class="chip">Commander</span>{% endif %}
-                        </div>
-                        {% if c.oracle %}<div class="mt-1 max-w-[560px] text-[12.5px] text-txt3 font-light leading-[1.45] whitespace-pre-line">{{ c.oracle }}</div>{% endif %}
-                    </div>
-                    <div class="flex-none flex flex-col items-end gap-1.5">
-                        <span class="mv-badge">{{ c.mv }}</span>
-                    </div>
-                </button>
+                {% include "decks/partials/card_group.html" with group=group %}
                 {% endfor %}
-                {% endfor %}
+                {% if sideboard %}
+                {% include "decks/partials/card_group.html" with group=sideboard %}
+                {% endif %}
             </div>
         </div>
 
@@ -112,6 +82,19 @@ max-width stays inline — a utility would lose to the unlayered component rule.
                 </div>
             </div>
             {% endfor %}
+
+            <div class="panel-card p-[18px]" id="forge-check">
+                <div class="flex items-center justify-between gap-2 mb-2">
+                    <div class="font-semibold text-[12.5px] tracking-[.08em] uppercase text-txt3">Forge engine</div>
+                </div>
+                <div class="text-[12px] text-txt3 font-light leading-[1.45] mb-3">
+                    Matches are played by Forge, which refuses a deck with a card it does not know. Check this deck before seating it.
+                </div>
+                <form hx-post="{% url 'deck_forge_check' deck.id %}" hx-target="#forge-check" hx-swap="outerHTML">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-line btn-sm"><span translate="no" class="ms text-[16px]">fact_check</span>Check with Forge</button>
+                </form>
+            </div>
         </div>
     </div>
     {% endif %}

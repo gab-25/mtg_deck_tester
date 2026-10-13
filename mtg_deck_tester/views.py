@@ -1,4 +1,4 @@
-"""The home page: recent matches and decks at a glance."""
+"""The home page: recent playtests and decks at a glance."""
 
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
@@ -6,8 +6,9 @@ from django.views.decorators.http import require_http_methods
 
 from decks.models import Deck
 from decks.presentation import deck_pips
-from playtest.agents import openrouter
-from playtest.models import Match
+from playtest.agents import typesafe
+from playtest.models import Playtest
+from playtest.views import session_view
 
 RECENT = 6
 
@@ -15,11 +16,8 @@ RECENT = 6
 @login_required
 @require_http_methods(["GET"])
 def home(request):
-    matches = list(
-        Match.objects.filter(owner=request.user)
-        .select_related("winner")
-        .prefetch_related("seats")[:RECENT]
-    )
+    playtests = Playtest.objects.filter(owner=request.user).prefetch_related("matches__seats", "matches__winner")
+    sessions = [session_view(playtest) for playtest in playtests[:RECENT]]
     decks = list(Deck.objects.filter(owner=request.user)[:RECENT])
     for deck in decks:
         deck.pips = deck_pips(deck)
@@ -27,10 +25,10 @@ def home(request):
         request,
         "home.html",
         {
-            "matches": matches,
+            "sessions": sessions,
             "decks": decks,
             "deck_count": Deck.objects.filter(owner=request.user).count(),
-            "match_count": Match.objects.filter(owner=request.user).count(),
-            "llm_ready": openrouter.api_key() is not None,
+            "playtest_count": playtests.count(),
+            "jev_ready": typesafe.api_key() is not None,
         },
     )

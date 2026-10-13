@@ -1,20 +1,12 @@
 """Synthetic decks and cards shared by the tests (no network, no Scryfall)."""
 
-from playtest.engine.cards import CardSpec, DeckSpec, Kind
 
-FOREST = CardSpec("Forest", Kind.LAND)
-
-
-def bear(i=0, mana_value=2, power=2):
-    return CardSpec(f"Bear {i}", Kind.CREATURE, mana_value, power, power)
-
-
-def engine_deck(name="Deck", *, lands=38, commander_power=5, commander_cost=4, library=None):
-    """A 100-card deck: lands, 2-mana bears, and a creature commander."""
-    if library is None:
-        library = [FOREST] * lands + [bear(i) for i in range(99 - lands)]
-    commander = CardSpec(f"{name} Commander", Kind.CREATURE, commander_cost, commander_power, commander_power)
-    return DeckSpec(name=name, commander=commander, library=tuple(library))
+def _cost(cmc):
+    """A green mana cost of mana value ``cmc``: 4 -> ``{3}{G}``."""
+    cmc = int(cmc)
+    if not cmc:
+        return ""
+    return (f"{{{cmc - 1}}}" if cmc > 1 else "") + "{G}"
 
 
 def scryfall_card(
@@ -31,7 +23,7 @@ def scryfall_card(
         "image_urls": list(image_urls),
         "color_identity": ["G"],
         "legalities": {"commander": "legal", "duel": "legal"},
-        "faces": [{"name": name, "type_line": type_line, "rules_text": "", "mana_cost": ""}],
+        "faces": [{"name": name, "type_line": type_line, "rules_text": "", "mana_cost": _cost(cmc)}],
     }
 
 
@@ -76,3 +68,38 @@ def legal_decklist(commander="Atraxa, Praetors' Voice"):
     lines += [f"1 Spell {i}" for i in range(60)]
     lines.append("39 Forest")
     return "\n".join(lines)
+
+
+def legal_constructed_decklist():
+    """A legal 60+15 Modern decklist."""
+    lines = [f"4 Spell {i}" for i in range(9)] + ["24 Mountain", "", "Sideboard"]
+    lines += [f"3 Side {i}" for i in range(5)]
+    return "\n".join(lines)
+
+
+def constructed_cards(fmt="modern"):
+    """A legal 60+15 deck in the stored ``Deck.cards`` shape."""
+    cards = [
+        {
+            "quantity": 4,
+            "is_commander": False,
+            "board": "main",
+            "data": scryfall_card(f"Spell {i}", "Creature — Goblin", 1.0, "2", "1"),
+        }
+        for i in range(9)
+    ]
+    cards.append(
+        {"quantity": 24, "is_commander": False, "board": "main", "data": scryfall_card("Mountain", "Basic Land — Mountain")}
+    )
+    cards += [
+        {"quantity": 3, "is_commander": False, "board": "side", "data": scryfall_card(f"Side {i}", "Instant", 1.0)}
+        for i in range(5)
+    ]
+    for item in cards:
+        item["data"]["legalities"][fmt] = "legal"
+        item["data"]["color_identity"] = ["R"]
+    return cards
+
+
+def make_constructed_deck(owner, name="Goblins", fmt="modern"):
+    return make_deck(owner, name=name, fmt=fmt, cards=constructed_cards(fmt), commander="", color_identity=["R"])

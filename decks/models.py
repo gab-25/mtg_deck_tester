@@ -6,7 +6,7 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-from .formats import DEFAULT_FORMAT, format_choices
+from .formats import DEFAULT_FORMAT, FORMATS, format_choices
 
 
 class Deck(models.Model):
@@ -52,8 +52,25 @@ class Deck(models.Model):
         return self.name
 
     @property
+    def main_cards(self) -> list:
+        """The cards a match plays with (an entry without ``board`` is main deck)."""
+        return [item for item in self.cards if item.get("board") != "side"]
+
+    @property
+    def sideboard_cards(self) -> list:
+        return [item for item in self.cards if item.get("board") == "side"]
+
+    @property
     def total_cards(self) -> int:
-        return sum(item["quantity"] for item in self.cards)
+        return sum(item["quantity"] for item in self.main_cards)
+
+    @property
+    def sideboard_total(self) -> int:
+        return sum(item["quantity"] for item in self.sideboard_cards)
+
+    @property
+    def has_commander(self) -> bool:
+        return FORMATS[self.format].has_commander
 
     @property
     def is_busy(self) -> bool:
@@ -85,3 +102,77 @@ class BulkDataLoad(models.Model):
 
     class Meta:
         db_table = "scryfall_bulk_loads"
+
+
+class MetagameDeck(models.Model):
+    """A top deck of a format, imported by ``manage.py sync_metagame``.
+
+    Shared and read-only: no owner, replaced as a whole by the next sync of its
+    format. Its cards have the same shape as :attr:`Deck.cards`.
+    """
+
+    class Source(models.TextChoices):
+        EDHTOP16 = "edhtop16", "EDHTop16"
+        MTGTOP8 = "mtgtop8", "MTGTop8"
+
+    class Status(models.TextChoices):
+        READY = "ready", "Ready"
+        FAILED = "failed", "Failed"
+
+    format = models.CharField(max_length=16, choices=format_choices())
+    source = models.CharField(max_length=16, choices=Source.choices)
+    archetype = models.CharField(max_length=255)
+    source_url = models.URLField(max_length=500, blank=True, default="")
+    # Percent of the format's metagame, when the source gives one.
+    meta_share = models.FloatField(null=True, blank=True)
+    rank = models.PositiveIntegerField(default=0)
+    fetched_at = models.DateTimeField(default=timezone.now)
+    raw_decklist = models.TextField(blank=True, default="")
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.READY)
+    error = models.TextField(blank=True, default="")
+    cards = models.JSONField(default=list)
+    commander = models.CharField(max_length=255, blank=True, default="")
+    color_identity = models.JSONField(default=list)
+    # What the Forge engine made of the deck at sync:
+    # ``{"unresolved": [...], "unsupported_cards": [...]}``, or empty when the
+    # bridge could not be reached.
+    coverage = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        db_table = "metagame_decks"
+        ordering = ["format", "rank", "archetype"]
+
+    def __str__(self) -> str:
+        return f"{self.archetype} ({self.format})"
+
+    @property
+    def main_cards(self) -> list:
+        return [item for item in self.cards if item.get("board") != "side"]
+
+    @property
+    def total_cards(self) -> int:
+        return sum(item["quantity"] for item in self.main_cards)
+
+    @property
+    def has_commander(self) -> bool:
+        return FORMATS[self.format].has_commander
+
+    @property
+    def forge_checked(self) -> bool:
+        return "unresolved" in (self.coverage or {})
+
+    @property
+    def unknown_cards(self) -> list[str]:
+        """Cards Forge does not know: a match with this deck would be refused."""
+        return list((self.coverage or {}).get("unresolved") or [])
+
+    @property
+    def label(self) -> str:
+        """``UR Aggro — 8.4% — 2 cards unknown to Forge``: what the opponent picker shows."""
+        parts = [self.archetype]
+        if self.meta_share is not None:
+            parts.append(f"{self.meta_share:g}%")
+        if self.unknown_cards:
+            count = len(self.unknown_cards)
+            parts.append(f"{count} card{'s' if count > 1 else ''} unknown to Forge")
+        return " — ".join(parts)

@@ -7,7 +7,8 @@
             <div class="kicker">Playtest</div>
             <h1 class="font-cinzel font-semibold text-[34px] mt-[7px] mb-1.5 tracking-[.03em]">The Table</h1>
             <p class="m-0 text-txt2 font-light text-[14.5px]">
-                Import Commander decks, seat them at a table and let AI agents play them out.
+                Import competitive decks, seat them at a table and let AI agents play them out:
+                Standard, Pioneer, Modern, Legacy, Vintage, Pauper, Commander and Duel Commander.
             </p>
         </div>
         <div class="flex gap-[11px] items-center flex-wrap">
@@ -15,7 +16,7 @@
                 <span translate="no" class="ms text-[20px]">add</span>Import deck
             </a>
             <a href="{% url 'new_match' %}" class="btn btn-grad">
-                <span translate="no" class="ms text-[20px]">swords</span>New match
+                <span translate="no" class="ms text-[20px]">swords</span>Test a deck
             </a>
         </div>
     </div>
@@ -27,20 +28,24 @@
         </div>
         <div class="stat-card">
             <span translate="no" class="ms text-[26px] text-teal">swords</span>
-            <div><div class="stat-num text-teal">{{ match_count }}</div><div class="stat-label">Matches</div></div>
+            <div><div class="stat-num text-teal">{{ playtest_count }}</div><div class="stat-label">Playtests</div></div>
         </div>
         <div class="stat-card">
             <span translate="no" class="ms text-[26px] text-gold">smart_toy</span>
-            <div><div class="stat-num text-gold">{% if llm_ready %}On{% else %}Off{% endif %}</div><div class="stat-label">LLM players</div></div>
+            <div><div class="stat-num text-gold">{% if jev_ready %}On{% else %}Off{% endif %}</div><div class="stat-label">Jev players</div></div>
         </div>
     </div>
 
     <div class="flex items-center justify-between mb-3">
-        <div class="kicker">Recent matches</div>
-        <a href="{% url 'match_list' %}" class="text-[13px] text-violet2 no-underline">All matches</a>
+        <div class="kicker">Recent playtests</div>
+        <a href="{% url 'match_list' %}" class="text-[13px] text-violet2 no-underline">All playtests</a>
     </div>
     <div class="mb-[26px]">
-        {% include "playtest/partials/match_cards.html" %}
+        {% if sessions %}
+        {% include "playtest/partials/playtest_cards.html" %}
+        {% else %}
+        <div class="text-txt3 text-[13px]">No playtests yet. <a href="{% url 'new_match' %}" class="text-violet2 no-underline">Test a deck</a>.</div>
+        {% endif %}
     </div>
 
     <div class="flex items-center justify-between mb-3">
