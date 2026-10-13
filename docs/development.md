@@ -12,13 +12,10 @@ uv sync                                   # dependencies, dev group included
 cp .env.example .env                      # then edit it
 docker compose up -d db                   # optional: just Postgres, on localhost:5432
 docker compose up -d forge                # the Forge bridge, on localhost:8080
+uv run python manage.py migrate
 uv run python manage.py createsuperuser
-uv run python -m mtg_deck_tester          # migrate + runserver on HOST:PORT
+uv run python manage.py runserver         # http://localhost:8000, auto-reload
 ```
-
-`python -m mtg_deck_tester` (`mtg_deck_tester/__main__.py`) applies pending
-migrations and starts Django's `runserver` on `HOST`/`PORT` (default `0.0.0.0:8000`),
-with auto-reload only when `RELOAD` is truthy (`.env.example` sets `RELOAD=1`).
 
 The default `DATABASE_URL` points at the Compose Postgres
 (`postgresql://mtg:mtg@localhost:5432/mtg_tester`). For a database-free setup use
