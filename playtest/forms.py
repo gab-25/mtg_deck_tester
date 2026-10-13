@@ -1,4 +1,4 @@
-"""Reading and checking the new-match form."""
+"""Reading and checking the new-playtest form: a deck to test and its opponents."""
 
 import random
 from dataclasses import dataclass
@@ -9,25 +9,23 @@ from decks.models import Deck, MetagameDeck
 from .agents import openrouter
 from .models import Seat
 
-# A seat's deck picker value for a metagame deck.
+# An opponent picker value for a metagame deck.
 METAGAME_PREFIX = "metagame:"
 # Every seat of a new match is played by Jev, with the server's model
-# (JEV_MODEL): the user picks decks, not agents or models.
-# The other Seat.Agent values only name the seats of older matches; Forge's AI
-# still takes fallbacks and the decisions the bridge does not expose.
+# (JEV_MODEL): the user picks decks, not agents or models. The other
+# Seat.Agent values only name the seats of older matches; Forge's AI still
+# takes fallbacks and the decisions the bridge does not expose.
 SEAT_AGENT = Seat.Agent.JEV
-
-# Rows the form shows; the format decides how many of them may be filled.
-SEAT_ROWS = max(fmt.max_seats for fmt in playable_formats().values())
+# The most opponents one session plays: each match is a few hundred Jev calls.
+MAX_OPPONENTS = 10
 # The format the form starts on.
 DEFAULT_MATCH_FORMAT = next(iter(playable_formats()))
 
 
 @dataclass
-class SeatChoice:
+class DeckChoice:
     # A user's deck, or None for a metagame deck.
     deck: Deck | None
-    agent: str
     metagame_deck: MetagameDeck | None = None
 
     @property
@@ -38,10 +36,11 @@ class SeatChoice:
 
 
 @dataclass
-class MatchForm:
+class PlaytestForm:
     format: str
     seed: int
-    seats: list[SeatChoice]
+    deck: Deck
+    opponents: list[DeckChoice]
 
 
 def _int(value, default=None):
@@ -51,8 +50,31 @@ def _int(value, default=None):
         return default
 
 
-def parse_match_form(post, user) -> tuple[MatchForm | None, list[str]]:
-    """Returns the chosen match set-up, or ``None`` and every reason it is refused."""
+def _opponent(value: str, decks: dict, fmt: str, errors: list) -> DeckChoice | None:
+    label = FORMATS[fmt].label
+    if value.startswith(METAGAME_PREFIX):
+        meta = MetagameDeck.objects.filter(pk=_int(value.removeprefix(METAGAME_PREFIX))).first()
+        if meta is None:
+            errors.append("An opponent metagame deck is gone; sync again or pick another.")
+        elif meta.format != fmt:
+            errors.append(f"Opponent {meta.archetype} is not a {label} metagame deck.")
+        elif meta.status != MetagameDeck.Status.READY:
+            errors.append(f"Opponent {meta.archetype} could not be imported ({meta.error}).")
+        else:
+            return DeckChoice(deck=None, metagame_deck=meta)
+        return None
+    deck = decks.get(value)
+    if deck is None:
+        errors.append("Pick opponents among your imported decks and the metagame decks.")
+        return None
+    if deck.format != fmt:
+        errors.append(f"Opponent {deck.name} is not a {label} deck.")
+        return None
+    return DeckChoice(deck=deck)
+
+
+def parse_playtest_form(post, user) -> tuple[PlaytestForm | None, list[str]]:
+    """Returns the chosen session, or ``None`` and every reason it is refused."""
     errors = []
     fmt = post.get("format") if post.get("format") in FORMATS else DEFAULT_MATCH_FORMAT
     rules = FORMATS[fmt]
@@ -68,41 +90,22 @@ def parse_match_form(post, user) -> tuple[MatchForm | None, list[str]]:
         errors.append("The seed must be a whole number.")
 
     decks = {str(d.id): d for d in Deck.objects.filter(owner=user, status=Deck.Status.READY)}
-    seats = []
-    for row in range(SEAT_ROWS):
-        deck_id = post.get(f"seat-{row}-deck") or ""
-        if not deck_id:
-            continue
-        agent = SEAT_AGENT
-        if deck_id.startswith(METAGAME_PREFIX):
-            meta = MetagameDeck.objects.filter(pk=_int(deck_id.removeprefix(METAGAME_PREFIX))).first()
-            if meta is None:
-                errors.append(f"Seat {row + 1}: that metagame deck is gone; sync again or pick another.")
-            elif meta.format != fmt:
-                errors.append(f"Seat {row + 1}: {meta.archetype} is not a {rules.label} metagame deck.")
-            elif meta.status != MetagameDeck.Status.READY:
-                errors.append(f"Seat {row + 1}: {meta.archetype} could not be imported ({meta.error}).")
-            else:
-                seats.append(SeatChoice(deck=None, agent=agent, metagame_deck=meta))
-            continue
-        deck = decks.get(deck_id)
-        if deck is None:
-            errors.append(f"Seat {row + 1}: pick one of your imported decks.")
-            continue
-        if deck.format != fmt:
-            errors.append(f"Seat {row + 1}: {deck.name} is not a {rules.label} deck.")
-        seats.append(SeatChoice(deck=deck, agent=agent))
+    deck = decks.get(post.get("deck") or "")
+    if deck is None:
+        errors.append("Pick the deck to test among your imported decks.")
+    elif deck.format != fmt:
+        errors.append(f"{deck.name} is not a {rules.label} deck.")
 
-    if fmt in playable_formats() and not rules.min_seats <= len(seats) <= rules.max_seats:
-        if rules.min_seats == rules.max_seats:
-            wanted = f"exactly {rules.min_seats}"
-        else:
-            wanted = f"{rules.min_seats} to {rules.max_seats}"
-        errors.append(f"{rules.label} is played by {wanted} players; {len(seats)} chosen.")
+    values = list(dict.fromkeys(v for v in post.getlist("opponents") if v))
+    if not values:
+        errors.append("Pick at least one opponent.")
+    elif len(values) > MAX_OPPONENTS:
+        errors.append(f"Pick at most {MAX_OPPONENTS} opponents; {len(values)} chosen.")
+    opponents = [o for o in (_opponent(v, decks, fmt, errors) for v in values[:MAX_OPPONENTS]) if o]
 
-    if seats and not openrouter.api_key():
+    if not openrouter.api_key():
         errors.append("Jev plays every seat and needs an OpenRouter API key: set OPENROUTER_API_KEY.")
 
     if errors:
         return None, errors
-    return MatchForm(format=fmt, seed=seed, seats=seats), []
+    return PlaytestForm(format=fmt, seed=seed, deck=deck, opponents=opponents), []

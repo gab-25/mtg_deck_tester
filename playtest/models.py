@@ -21,6 +21,31 @@ END_REASONS = {
 }
 
 
+class Playtest(models.Model):
+    """A test session: one deck plays one match against each chosen opponent."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="playtests"
+    )
+    format = models.CharField(max_length=16, choices=format_choices(), default=DEFAULT_FORMAT)
+    # The deck under test; deleting it keeps the session, ``deck_name`` remembers it.
+    deck = models.ForeignKey(
+        "decks.Deck", null=True, blank=True, on_delete=models.SET_NULL, related_name="playtests"
+    )
+    deck_name = models.CharField(max_length=255)
+    # Each match's seed is this one plus its opponent's index.
+    seed = models.BigIntegerField()
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = "playtests"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.deck_name} ({self.format})"
+
+
 class Match(models.Model):
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"
@@ -32,6 +57,11 @@ class Match(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="matches"
+    )
+    # The test session this match belongs to: seat 0 plays the deck under test,
+    # seat 1 one of its opponents. Empty for matches from before sessions.
+    playtest = models.ForeignKey(
+        Playtest, null=True, blank=True, on_delete=models.CASCADE, related_name="matches"
     )
     format = models.CharField(max_length=16, choices=format_choices(), default=DEFAULT_FORMAT)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
@@ -72,6 +102,15 @@ class Match(models.Model):
 
     def get_end_reason_display(self) -> str:
         return END_REASONS.get(self.end_reason, self.end_reason)
+
+    @property
+    def result(self) -> str:
+        """For the deck in seat 0: ``won``, ``lost``, ``draw``, or the match's status while it is not finished."""
+        if self.status != self.Status.FINISHED:
+            return self.status
+        if self.winner_id is None:
+            return "draw"
+        return "won" if self.winner.position == 0 else "lost"
 
 
 class Seat(models.Model):

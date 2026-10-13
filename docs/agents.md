@@ -4,7 +4,7 @@ An agent is whatever plays a seat. It never decides what is legal: Forge lists t
 options of each decision (see [Forge engine](engine.md)), and the agent picks one of
 them by index, or delegates the decision to Forge's AI.
 
-**Every seat of a new match is Jev** (`playtest.forms.SEAT_AGENT`): the new-match form
+**Every seat of a new match is Jev** (`playtest.forms.SEAT_AGENT`): the new-playtest form
 offers decks, not agents or models, and ignores any posted agent or model: every seat
 uses the server's `JEV_MODEL`. The other agents stay in the code for tests and evaluation.
 
@@ -116,7 +116,7 @@ in #44.
 against `/chat/completions`. Default model `OPENROUTER_MODEL`, else
 `google/gemini-2.5-flash`. Failures raise `ChatError`.
 
-Without `OPENROUTER_API_KEY` the new-match form refuses Jev and LLM seats.
+Without `OPENROUTER_API_KEY` the new-playtest form refuses to start: Jev plays every seat.
 
 ## Adding an agent
 

@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 
-{% block title %}New match — MTG Deck Tester{% endblock %}
+{% block title %}New playtest — MTG Deck Tester{% endblock %}
 
 {% block content %}
-<div class="page-narrow" data-screen-label="Match set-up">
+<div class="page-narrow" data-screen-label="Playtest set-up">
     <a href="{% url 'match_list' %}" class="link-back mb-[18px]">
         <span translate="no" class="ms text-[18px]">arrow_back</span>Cancel
     </a>
-    <div class="kicker">New match</div>
-    <h1 class="font-cinzel font-semibold text-[32px] mt-[7px] mb-6 tracking-[.02em]">Seat the players</h1>
+    <div class="kicker">New playtest</div>
+    <h1 class="font-cinzel font-semibold text-[32px] mt-[7px] mb-6 tracking-[.02em]">Test a deck</h1>
 
     {% if not decks %}
     <div class="alert alert-info mb-[18px]">
@@ -21,59 +21,65 @@
         {% csrf_token %}
         <div class="editor-grid grid grid-cols-[minmax(0,1fr)_300px] gap-5 items-start">
             <div class="flex flex-col gap-5 min-w-0">
-                {% include "partials/form_errors.html" with errors_title="This match can’t start yet" %}
+                {% include "partials/form_errors.html" with errors_title="This playtest can’t start yet" %}
 
                 <div>
                     <label class="field-label mb-2">Format</label>
                     <select name="format" class="field" style="font-size:16px;font-weight:500">
                         {% for value, fmt in formats.items %}
-                        <option value="{{ value }}" data-max-seats="{{ fmt.max_seats }}" {% if value == form_format %}selected{% endif %}>{{ fmt.label }}</option>
+                        <option value="{{ value }}" {% if value == form_format %}selected{% endif %}>{{ fmt.label }}</option>
                         {% endfor %}
                     </select>
                     <div class="text-[12px] text-txt3 mt-2 font-light">
                         {% for key, fmt in formats.items %}
-                        <span class="text-txt2">{{ fmt.label }}</span>: {% if fmt.min_seats == fmt.max_seats %}{{ fmt.min_seats }}{% else %}{{ fmt.min_seats }}–{{ fmt.max_seats }}{% endif %} players, {{ fmt.starting_life }} life{% if not forloop.last %} &bull; {% endif %}
+                        <span class="text-txt2">{{ fmt.label }}</span>: {{ fmt.starting_life }} life{% if not forloop.last %} &bull; {% endif %}
                         {% endfor %}
                     </div>
+                </div>
+
+                <div>
+                    <label class="field-label mb-2">Deck to test</label>
+                    <select name="deck" class="field">
+                        <option value="">— pick a deck —</option>
+                        {% for deck in decks %}
+                        <option value="{{ deck.id }}" data-format="{{ deck.format }}" {% if form_deck == deck.id|stringformat:'s' %}selected{% endif %}>{{ deck.name }} ({{ deck.get_format_display }})</option>
+                        {% endfor %}
+                    </select>
                 </div>
 
                 <div class="panel-card overflow-hidden">
                     <div class="flex items-center gap-[9px] py-4 px-[18px] border-b border-line2">
                         <span translate="no" class="ms text-txt2 text-[20px]">groups</span>
-                        <span class="font-semibold text-[15px]">Seats</span>
-                        <span class="text-[12px] text-txt3">leave a seat without a deck to keep it empty</span>
+                        <span class="font-semibold text-[15px]">Opponents</span>
+                        <span class="text-[12px] text-txt3">one match against each, up to {{ max_opponents }}</span>
                     </div>
-                    <div class="flex flex-col gap-4 p-[18px]">
-                        {% for row in rows %}
-                        <div class="seat-row" data-seat-row="{{ row.index }}">
-                            <div class="field-label">Seat {{ row.index|add:1 }}</div>
-                            <select name="seat-{{ row.index }}-deck" class="field">
-                                <option value="">— empty —</option>
-                                {% if decks %}
-                                <optgroup label="Your decks">
-                                    {% for deck in decks %}
-                                    <option value="{{ deck.id }}" data-format="{{ deck.format }}" {% if row.deck == deck.id|stringformat:'s' %}selected{% endif %}>{{ deck.name }} ({{ deck.get_format_display }})</option>
-                                    {% endfor %}
-                                </optgroup>
-                                {% endif %}
-                                {% if metagame_decks %}
-                                <optgroup label="Metagame">
-                                    {% for value, meta in metagame_decks %}
-                                    <option value="{{ value }}" data-format="{{ meta.format }}" {% if row.deck == value %}selected{% endif %}>{{ meta.label }}{% if meta.unknown_cards %} ⚠{% endif %}</option>
-                                    {% endfor %}
-                                </optgroup>
-                                {% endif %}
-                            </select>
-                            <span class="chip"><span translate="no" class="ms text-[14px]">bolt</span>Jev</span>
-                        </div>
+                    <div class="flex flex-col">
+                        {% if decks %}
+                        <div class="py-2 px-[18px] border-b border-line2 field-label">Your decks</div>
+                        {% for deck in decks %}
+                        <label class="flex items-center gap-2 py-2 px-[18px] border-b border-line2 text-[13px]" data-format="{{ deck.format }}">
+                            <input type="checkbox" name="opponents" value="{{ deck.id }}" {% if deck.id|stringformat:'s' in form_opponents %}checked{% endif %} />
+                            <span translate="no" class="text-txt2">{{ deck.name }}</span>
+                        </label>
                         {% endfor %}
+                        {% endif %}
+                        {% if metagame_decks %}
+                        <div class="py-2 px-[18px] border-b border-line2 field-label">Metagame</div>
+                        {% for value, meta in metagame_decks %}
+                        <label class="flex items-center gap-2 py-2 px-[18px] border-b border-line2 text-[13px]" data-format="{{ meta.format }}">
+                            <input type="checkbox" name="opponents" value="{{ value }}" {% if value in form_opponents %}checked{% endif %} />
+                            <span translate="no" class="text-txt2">{{ meta.label }}</span>{% if meta.unknown_cards %}<span class="text-gold">⚠</span>{% endif %}
+                        </label>
+                        {% endfor %}
+                        {% endif %}
+                        <div class="py-4 px-[18px] text-[13px] text-txt3" data-no-opponents hidden>No deck of this format to play against yet: import one, or sync the metagame.</div>
                     </div>
                 </div>
 
                 <div>
                     <label class="field-label mb-2">Seed</label>
                     <input type="text" name="seed" value="{{ form_seed }}" placeholder="random" class="field" inputmode="numeric" />
-                    <div class="text-[12px] text-txt3 mt-2 font-light">The same seed and the same answers replay the same game.</div>
+                    <div class="text-[12px] text-txt3 mt-2 font-light">Each match is seeded from it: the same seed and the same answers replay the same games.</div>
                 </div>
             </div>
 
@@ -83,9 +89,9 @@
                         <span translate="no" class="ms text-[18px]">smart_toy</span>JEV PLAYS EVERY SEAT
                     </div>
                     <div class="text-[12.5px] text-txt3 font-light leading-[1.55]">
-                        Both seats are played by <span class="text-txt2">Jev</span>, TypeSafe's model (through OpenRouter): it picks each of Forge's options and logs how sure it was
+                        Your deck and each opponent are played by <span class="text-txt2">Jev</span>, TypeSafe's model (through OpenRouter): it picks each of Forge's options and logs how sure it was
                         (<span class="font-mono2">{{ jev_model }}</span>, set on the server). When it is unsure or unreachable, Forge's AI takes that one decision.
-                        {% if not jev_available %}<span class="text-gold">No OPENROUTER_API_KEY is set, so no match can start.</span>{% endif %}
+                        {% if not jev_available %}<span class="text-gold">No OPENROUTER_API_KEY is set, so no playtest can start.</span>{% endif %}
                     </div>
                 </div>
 
@@ -98,34 +104,34 @@
                         <li>Two players: Duel Commander and the constructed formats. The sideboard stays out of the game.</li>
                         <li>A deck with a card Forge does not know is refused, naming the card.</li>
                         <li>Mana payment, combat damage assignment and a few other choices are always Forge's AI.</li>
-                        <li>The game is a draw at the bridge's turn cap (<span class="font-mono2">MAX_TURNS</span>).</li>
+                        <li>A game is a draw at the bridge's turn cap (<span class="font-mono2">MAX_TURNS</span>).</li>
                         <li>Metagame decks are the top decks of each format (<span class="font-mono2">manage.py sync_metagame</span>); ⚠ marks a deck with cards Forge does not know.</li>
                     </ul>
                 </div>
 
                 <button type="submit" class="btn btn-grad btn-block">
-                    <span translate="no" class="ms text-[20px]">play_arrow</span>Start the match
+                    <span translate="no" class="ms text-[20px]">play_arrow</span>Start the playtest
                 </button>
             </div>
         </div>
     </form>
 </div>
 <script>
-  // Offer only the decks and seats of the chosen format; the
-  // server still checks all of it.
+  // Offer only the decks of the chosen format; the server still checks all of it.
   (() => {
     const select = document.querySelector('select[name="format"]');
     const apply = () => {
-      const chosen = select.selectedOptions[0];
-      const fmt = chosen.value, seats = Number(chosen.dataset.maxSeats);
+      const fmt = select.value;
       document.querySelectorAll("option[data-format]").forEach((o) => { o.hidden = o.dataset.format !== fmt; });
-      document.querySelectorAll("[data-seat-row]").forEach((row) => {
-        row.hidden = Number(row.dataset.seatRow) >= seats;
-        // A hidden seat or a hidden deck must not stay selected and be posted unseen.
-        row.querySelectorAll('select[name$="-deck"]').forEach((select) => {
-          if (row.hidden || (select.selectedOptions[0] && select.selectedOptions[0].hidden)) select.value = "";
-        });
+      const deck = document.querySelector('select[name="deck"]');
+      // A hidden deck or opponent must not stay selected and be posted unseen.
+      if (deck.selectedOptions[0] && deck.selectedOptions[0].hidden) deck.value = "";
+      let shown = 0;
+      document.querySelectorAll("label[data-format]").forEach((row) => {
+        row.hidden = row.dataset.format !== fmt;
+        if (row.hidden) row.querySelector("input").checked = false; else shown += 1;
       });
+      document.querySelector("[data-no-opponents]").hidden = shown > 0;
     };
     select.addEventListener("change", apply);
     apply();

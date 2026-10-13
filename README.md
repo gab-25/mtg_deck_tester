@@ -50,16 +50,20 @@ hands the decision back to Forge's AI.
   deck on demand (**Check with Forge**), never on page view.
 - **Metagame decks**: `manage.py sync_metagame` imports the top decks of every format
   (EDHTop16 for Commander, MTGTop8 for the rest) as shared opponents, shown on the
-  *Metagame* page and offered in the new-match form with their meta share; a deck with
+  *Metagame* page and offered as opponents in the new-playtest form with their meta share; a deck with
   cards Forge does not know is flagged ⚠.
 - **Partner commanders**: Partner, Partner with, Friends forever and Backgrounds are
   accepted at import and sent to Forge as the deck's commanders.
-- **Live game log and summary**: a match runs in the background; its page shows the
+- **Playtests**: pick the deck to test and a list of opponents (your decks and the
+  metagame's, up to 10): the deck plays one match against each, all in the background.
+  The playtest page shows each opponent's result (won, lost, draw) as the matches end,
+  with a link to every match.
+- **Live game log and summary**: each match's page shows the
   table and Forge's log as it grows (HTMX polling), each Jev decision with its
   confidence, each fallback with its reason, and at the end a deterministic summary per
   seat: result, life over time, turns, spells cast, lands played, the agent's decisions
-  against Forge AI's, confidence and fallbacks by reason. A running match can be
-  stopped.
+  against Forge AI's, confidence and fallbacks by reason. A running match, or a whole
+  playtest, can be stopped.
 - **Reproducible**: a match has a seed. The same seed and the same answers replay the
   same game, so a match is as reproducible as Jev.
 - **Scryfall cache in the database**: card JSON is cached in Postgres
@@ -118,7 +122,7 @@ playtest/               # App: matches between agents
 ├── workers.py          #   The worker pool answering Forge's decisions
 ├── agents/             #   Jev, LLM and random agents; Jev and OpenRouter clients
 ├── summary.py          #   The deterministic match summary
-└── forms.py            #   The new-match form
+└── forms.py            #   The new-playtest form: a deck to test and its opponents
 theme/static/           # Precompiled stylesheet, vendored fonts and icons
 tests/                  # Hermetic suite; fakeforge.py is an in-memory bridge
 docs/                   # Project documentation (see Documentation above)

@@ -22,12 +22,14 @@ POST form ──► cheap validation ──► row created (status = pending) �
 
 1. **The view validates what it can synchronously** and re-renders the form with
    status 422 on errors (`decks.importer.decklist_errors`,
-   `playtest.forms.parse_match_form`).
-2. **It creates the row** (`Deck` with `status=pending`; `Match` + its `Seat`s in one
-   transaction) and calls `mtg_deck_tester.jobs.start_job(target, id)`. A match first
-   starts its game on the Forge bridge (`playtest.runner.start_game`): when Forge
-   does not know a card (or the bridge is unreachable) the rows are deleted and the
-   form is re-rendered naming the cards, so a refused deck never becomes a match.
+   `playtest.forms.parse_playtest_form`).
+2. **It creates the rows** (`Deck` with `status=pending`; for a playtest, the
+   `Playtest` session and one `Match` per opponent with its two `Seat`s, in one
+   transaction) and calls `mtg_deck_tester.jobs.start_job(target, id)` for each. A
+   playtest first starts every match's game on the Forge bridge
+   (`playtest.runner.start_game`): when Forge does not know a card (or the bridge is
+   unreachable) the games already started are aborted, the session is deleted and the
+   form is re-rendered naming the cards, so a refused deck never becomes a playtest.
 3. **`start_job` runs the job in a daemon thread** (`RUN_JOBS_IN_BACKGROUND=1`, the
    default) or inline (tests set it to `False` in `settings_test.py`). The thread
    closes its own DB connection when done. There is no queue and no worker process:
@@ -42,9 +44,10 @@ POST form ──► cheap validation ──► row created (status = pending) �
    - Meanwhile the **worker pool** (`playtest/workers.py`, `FORGE_WORKERS` threads
      started once per process with the first match) answers the bridge's decisions
      for every running match. Without a pool the runner answers its own.
-5. **The page polls**. The deck list and match list re-fetch their grid partial while
+5. **The page polls**. The deck list and playtest list re-fetch their grid partial while
    anything is busy (`has_busy` in the context; the view returns the partial when
-   `request.htmx` is set). The match page polls `matches/<id>/live`, which renders
+   `request.htmx` is set). A playtest page polls `playtests/<id>/live` (one row per
+   opponent with its result); a match page polls `matches/<id>/live`, which renders
    the scoreboard and the log.
 
 Every log line emitted inside a job is prefixed with `[deck <id>]` or
@@ -76,7 +79,8 @@ jobs can be told apart on the console.
 | `scryfall_cards` | `decks.ScryfallCard` | Raw Scryfall JSON keyed by `card_en_<slug>`, shared by every user. `{"error": "not_found"}` caches a miss. |
 | `scryfall_bulk_loads` | `decks.BulkDataLoad` | One row per `load_oracle_cards` run (for `--if-newer`). |
 | `metagame_decks` | `decks.MetagameDeck` | The top decks of each format, replaced by every `sync_metagame`; shared and read-only, with source, archetype, meta share, rank, cards and `coverage` — Forge's check at sync (`{"unresolved", "unsupported_cards"}`, empty when the bridge was unreachable). |
-| `matches` | `playtest.Match` | UUID primary key, `seed`, `forge_game_id`, `turn`, status (`pending`/`running`/`finished`/`failed`/`stopped`), winner (a `Seat`), `end_reason` (Forge's, verbatim), `started_at`, `summary` (JSON). |
+| `playtests` | `playtest.Playtest` | A test session: UUID primary key, owner, format, the deck under test (`deck`, `SET_NULL`, with `deck_name`), `seed`. Its matches (one per opponent) are deleted with it. |
+| `matches` | `playtest.Match` | UUID primary key, `playtest` (empty for matches from before sessions; seat 0 is the deck under test, seat 1 the opponent), `seed` (the session's plus the opponent's index), `forge_game_id`, `turn`, status (`pending`/`running`/`finished`/`failed`/`stopped`), winner (a `Seat`), `end_reason` (Forge's, verbatim), `started_at`, `summary` (JSON). |
 | `seats` | `playtest.Seat` | Position, agent (always `jev` for new matches; `llm`, `random` and `forge_ai` exist for tests, #44 and older seats), a model id (older seats only; new seats use `JEV_MODEL`), the deck it plays — a user `deck` or a `metagame_deck` — `coverage` (`{"unsupported_cards": [...]}` from the bridge) and final `life`. `deck` is `SET_NULL` on delete; `deck_name` keeps the name. |
 | `match_events` | `playtest.MatchEvent` | The bridge's log: `seq`, `turn`, `step` (Forge's phase), `seat_position`, `kind` (`log`/`decision`/`fallback`/`forge_ai`/`game_over`), `text`, `payload` (Forge's log category, Jev confidence and probabilities, fallback reasons), `reasoning`. |
 

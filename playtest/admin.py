@@ -2,7 +2,7 @@
 
 from django.contrib import admin
 
-from .models import Match, MatchEvent, Seat
+from .models import Match, MatchEvent, Playtest, Seat
 
 
 class SeatInline(admin.TabularInline):
@@ -23,3 +23,10 @@ class MatchEventAdmin(admin.ModelAdmin):
     list_display = ("match", "seq", "turn", "seat_position", "kind", "text")
     list_filter = ("kind",)
     search_fields = ("text", "reasoning")
+
+
+@admin.register(Playtest)
+class PlaytestAdmin(admin.ModelAdmin):
+    list_display = ("id", "owner", "format", "deck_name", "seed", "created_at")
+    list_filter = ("format",)
+    readonly_fields = ("created_at",)

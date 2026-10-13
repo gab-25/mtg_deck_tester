@@ -34,6 +34,8 @@ The default `DATABASE_URL` is the Compose Postgres on localhost; set
 - `decks/` — decklist parsing, Scryfall fetch + cache, legality, format registry →
   `docs/deck-import.md`.
 - `playtest/forge.py` — the HTTP client of the Forge bridge → `docs/engine.md`.
+- `playtest/views.py`, `playtest/forms.py` — a playtest session: the deck to test
+  plays one match against each chosen opponent.
 - `playtest/runner.py` — starts a match's game on the bridge, copies its events into
   `MatchEvent` rows, stores the result and the summary (`playtest/summary.py`).
 - `playtest/workers.py` — the worker pool answering the bridge's decisions with each

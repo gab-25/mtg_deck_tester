@@ -76,12 +76,15 @@ them on the match page.
 
 ## A match, end to end
 
-1. **The view starts the game.** `create_match` stores the `Match` and its `Seat`s,
-   then calls `runner.start_game`, which sends both decklists, the seed and the
-   controllers, and stores the bridge's game id and each seat's coverage
-   (`{"unsupported_cards": [...]}`). On `ForgeDeckError` the rows are deleted and the
-   form names the cards (422); on any other `ForgeError` the same with 503. A deck
-   Forge cannot play never becomes a match.
+1. **The view starts the games.** The user picks a deck to test and up to ten
+   opponents (`playtest.forms.MAX_OPPONENTS`): `create_match` stores a `Playtest`
+   session and one `Match` per opponent (the tested deck in seat 0, seeds
+   `seed + index`), then calls `runner.start_game` for each, which sends both
+   decklists, the seed and the controllers, and stores the bridge's game id and each
+   seat's coverage (`{"unsupported_cards": [...]}`). If Forge refuses any deck
+   (`ForgeDeckError`) the games already started are aborted, the session is deleted
+   and the form names every unknown card (422); on any other error the same with 503.
+   A deck Forge cannot play never becomes a playtest.
 2. **The job follows it.** `runner.run_match` (a background job) marks the match
    running and copies the bridge's events into `MatchEvent` rows as they arrive,
    keeping `Match.turn` current. The bridge may be unreachable for up to a minute
@@ -92,8 +95,9 @@ them on the match page.
    life and the summary. Status: `finished`; `stopped` when aborted by the user;
    `failed` when Forge failed or the game was `orphaned`.
 
-A running match can be stopped from its page (`matches/<id>/stop`) and deleting one
-aborts its game first. Stopping also marks the match `stopped` itself, so a match
+A running match can be stopped from its page (`matches/<id>/stop`), a whole session
+from its own (`playtests/<id>/stop`), and deleting either aborts the games still
+running. Stopping also marks the match `stopped` itself, so a match
 whose runner died with its process (there is no recovery at startup) stops polling.
 
 ## The worker pool

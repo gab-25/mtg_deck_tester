@@ -2,7 +2,7 @@
 
 :func:`start_game` sends the seats' decklists to the bridge, which refuses a
 deck with a card Forge does not know (:class:`~.forge.ForgeDeckError`) before
-any game starts; the new-match view calls it, so a refused match is never
+any game starts; the new-playtest view calls it, so a refused match is never
 created. :func:`run_match`, the background job, then copies the bridge's
 events into ``MatchEvent`` rows as they arrive and, when the game is over,
 stores the winner, the end reason and the summary.

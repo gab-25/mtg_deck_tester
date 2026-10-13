@@ -108,7 +108,7 @@ def test_deck_detail_groups_the_cards(client, user):
     assert response.status_code == 200
     assert b"Creatures" in response.content
     assert b"Lands" in response.content
-    assert b"Play a match" in response.content
+    assert b"Test this deck" in response.content
 
 
 @pytest.mark.django_db

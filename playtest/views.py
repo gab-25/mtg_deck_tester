@@ -15,20 +15,50 @@ from mtg_deck_tester.jobs import start_job
 
 from . import forge
 from .agents import openrouter, typesafe
-from .forms import DEFAULT_MATCH_FORMAT, METAGAME_PREFIX, SEAT_ROWS, parse_match_form
-from .models import Match, Seat
+from .forms import DEFAULT_MATCH_FORMAT, MAX_OPPONENTS, METAGAME_PREFIX, SEAT_AGENT, parse_playtest_form
+from .models import Match, Playtest, Seat
 from .runner import run_match, start_game
-from .summary import event_row, fallback_executions, fallback_reason, table_names
+from .summary import event_row, fallback_executions, fallback_reason
 
 logger = logging.getLogger(__name__)
 
 
 def _grid_context(user) -> dict:
-    """Context for the match grid, which polls itself while a match runs."""
-    matches = list(
-        Match.objects.filter(owner=user).select_related("winner").prefetch_related("seats")
+    """Context for the playtest list, which polls itself while a match runs."""
+    playtests = list(
+        Playtest.objects.filter(owner=user).prefetch_related("matches__seats", "matches__winner")
     )
-    return {"matches": matches, "has_busy": any(m.is_busy for m in matches)}
+    # Matches from before test sessions, listed on their own.
+    matches = list(
+        Match.objects.filter(owner=user, playtest=None).select_related("winner").prefetch_related("seats")
+    )
+    sessions = [session_view(playtest) for playtest in playtests]
+    return {
+        "sessions": sessions,
+        "matches": matches,
+        "has_busy": any(s["busy"] for s in sessions) or any(m.is_busy for m in matches),
+    }
+
+
+def session_view(playtest) -> dict:
+    """A session with each match, its opponent and the tally of results."""
+    rows = []
+    for match in sorted(playtest.matches.all(), key=lambda m: m.seed):
+        seats = {seat.position: seat for seat in match.seats.all()}
+        rows.append({"match": match, "opponent": seats.get(1), "result": match.result})
+    tally = {}
+    for row in rows:
+        tally[row["result"]] = tally.get(row["result"], 0) + 1
+    return {
+        "playtest": playtest,
+        "rows": rows,
+        "tally": [(result, tally[result]) for result in RESULT_ORDER if result in tally],
+        "busy": any(row["match"].is_busy for row in rows),
+    }
+
+
+# How a session's tally lists results.
+RESULT_ORDER = ("won", "lost", "draw", "running", "pending", "stopped", "failed")
 
 
 @login_required
@@ -41,20 +71,15 @@ def match_list(request):
 
 def _form_context(user, post=None, **extra) -> dict:
     post = post or {}
-    decks = Deck.objects.filter(owner=user, status=Deck.Status.READY)
-    rows = [
-        {
-            "index": i,
-            "deck": post.get(f"seat-{i}-deck", ""),
-        }
-        for i in range(SEAT_ROWS)
-    ]
+    chosen = set(post.getlist("opponents")) if hasattr(post, "getlist") else set(post.get("opponents", []))
     return {
-        "decks": decks,
-        "rows": rows,
+        "decks": Deck.objects.filter(owner=user, status=Deck.Status.READY),
         "formats": playable_formats(),
         "form_format": post.get("format", DEFAULT_MATCH_FORMAT),
+        "form_deck": post.get("deck", ""),
+        "form_opponents": chosen,
         "form_seed": post.get("seed", ""),
+        "max_opponents": MAX_OPPONENTS,
         "metagame_decks": [
             (f"{METAGAME_PREFIX}{meta.id}", meta)
             for meta in MetagameDeck.objects.filter(status=MetagameDeck.Status.READY).order_by("format", "rank")
@@ -68,58 +93,100 @@ def _form_context(user, post=None, **extra) -> dict:
 @login_required
 @require_http_methods(["GET"])
 def new_match(request):
-    # "Play a match" on a deck page pre-fills the first seat with that deck.
-    prefill = {"format": request.GET.get("format", DEFAULT_MATCH_FORMAT)}
-    if request.GET.get("deck"):
-        prefill["seat-0-deck"] = request.GET["deck"]
+    # "Test this deck" on a deck page pre-fills the deck to test.
+    prefill = {"format": request.GET.get("format", DEFAULT_MATCH_FORMAT), "deck": request.GET.get("deck", "")}
     return render(request, "playtest/match_new.html", _form_context(request.user, prefill))
+
+
+def _new_session(user, form) -> Playtest:
+    """The session and one pending match per opponent: the deck under test in seat 0."""
+    with transaction.atomic():
+        playtest = Playtest.objects.create(
+            owner=user, format=form.format, deck=form.deck, deck_name=form.deck.name, seed=form.seed
+        )
+        for index, opponent in enumerate(form.opponents):
+            match = Match.objects.create(owner=user, playtest=playtest, format=form.format, seed=form.seed + index)
+            Seat.objects.bulk_create([
+                Seat(match=match, position=0, deck=form.deck, deck_name=form.deck.name, agent=SEAT_AGENT),
+                Seat(match=match, position=1, deck=opponent.deck, metagame_deck=opponent.metagame_deck,
+                     deck_name=opponent.name, agent=SEAT_AGENT),
+            ])
+    return playtest
 
 
 @login_required
 @require_http_methods(["POST"])
 def create_match(request):
-    form, errors = parse_match_form(request.POST, request.user)
+    """Starts a test session: the deck plays one match against each opponent."""
+    form, errors = parse_playtest_form(request.POST, request.user)
     if errors:
         context = _form_context(request.user, request.POST, errors=errors)
         return render(request, "playtest/match_new.html", context, status=422)
 
-    with transaction.atomic():
-        match = Match.objects.create(owner=request.user, format=form.format, seed=form.seed)
-        Seat.objects.bulk_create(
-            Seat(
-                match=match,
-                position=position,
-                deck=choice.deck,
-                metagame_deck=choice.metagame_deck,
-                deck_name=choice.name,
-                agent=choice.agent,
-            )
-            for position, choice in enumerate(form.seats)
-        )
-    # Forge checks the decks now: a deck it cannot play never becomes a match.
-    try:
-        start_game(match)
-    except forge.ForgeDeckError as exc:
-        seats = {seat_name: position for position, seat_name in enumerate(_seat_names(match))}
-        match.delete()
-        errors = [
-            f"Seat {seats.get(name, 0) + 1} ({name}): Forge does not know {', '.join(cards)}."
-            for name, cards in exc.unresolved.items()
-        ]
-        return render(request, "playtest/match_new.html", _form_context(request.user, request.POST, errors=errors), status=422)
-    except Exception as exc:  # noqa: BLE001 - a bridge error, or an answer we cannot read
-        if not isinstance(exc, forge.ForgeError):
-            logger.exception("Could not start the game")
-        _abort(match)
-        match.delete()
-        errors = [f"The match could not start: {exc}"]
-        return render(request, "playtest/match_new.html", _form_context(request.user, request.POST, errors=errors), status=503)
-    start_job(run_match, match.id)
-    return redirect("match_detail", match_id=match.id)
+    playtest = _new_session(request.user, form)
+    matches = list(playtest.matches.order_by("seed"))
+    # Forge checks the decks now: a deck it cannot play never becomes a session.
+    errors, status = [], 422
+    for match in matches:
+        try:
+            start_game(match)
+        except forge.ForgeDeckError as exc:
+            errors += [f"{name}: Forge does not know {', '.join(cards)}." for name, cards in exc.unresolved.items()]
+        except Exception as exc:  # noqa: BLE001 - a bridge error, or an answer we cannot read
+            if not isinstance(exc, forge.ForgeError):
+                logger.exception("Could not start the game")
+            errors.append(f"The playtest could not start: {exc}")
+            status = 503
+            break
+    if errors:
+        for match in matches:
+            match.refresh_from_db()
+            _abort(match)
+        playtest.delete()
+        context = _form_context(request.user, request.POST, errors=list(dict.fromkeys(errors)))
+        return render(request, "playtest/match_new.html", context, status=status)
+    for match in matches:
+        start_job(run_match, match.id)
+    return redirect("playtest_detail", playtest_id=playtest.id)
 
 
-def _seat_names(match) -> list[str]:
-    return table_names(list(match.seats.all()))
+def _playtest_context(playtest) -> dict:
+    return {"session": session_view(playtest), "playtest": playtest}
+
+
+@login_required
+@require_http_methods(["GET"])
+def playtest_detail(request, playtest_id):
+    playtest = get_owned_or_404(Playtest, request.user, playtest_id)
+    return render(request, "playtest/playtest_detail.html", _playtest_context(playtest))
+
+
+@login_required
+@require_http_methods(["GET"])
+def playtest_live(request, playtest_id):
+    """The session's results, polled by HTMX while a match runs."""
+    playtest = get_owned_or_404(Playtest, request.user, playtest_id)
+    return render(request, "playtest/partials/playtest_live.html", _playtest_context(playtest))
+
+
+@login_required
+@require_http_methods(["POST"])
+def stop_playtest(request, playtest_id):
+    playtest = get_owned_or_404(Playtest, request.user, playtest_id)
+    for match in playtest.matches.all():
+        _stop(match)
+    return redirect("playtest_detail", playtest_id=playtest.id)
+
+
+@login_required
+@require_http_methods(["POST"])
+def delete_playtest(request, playtest_id):
+    playtest = get_owned_or_404(Playtest, request.user, playtest_id)
+    for match in playtest.matches.all():
+        if match.is_busy:
+            _abort(match)
+    playtest.delete()
+    return redirect("match_list")
 
 
 # Forge's log categories left out of the match page (still stored): every
@@ -202,19 +269,23 @@ def _abort(match) -> None:
         logger.warning("Could not abort game %s: %s", match.forge_game_id, exc)
 
 
+def _stop(match) -> None:
+    """Stops a running match: the bridge aborts the game and the runner records it."""
+    if not match.is_busy:
+        return
+    _abort(match)
+    # The runner records the end when it follows the game; if none does any
+    # more (the process restarted), this keeps the match from polling forever.
+    Match.objects.filter(pk=match.pk, status__in=[Match.Status.PENDING, Match.Status.RUNNING]).update(
+        status=Match.Status.STOPPED, end_reason="aborted", finished_at=timezone.now()
+    )
+
+
 @login_required
 @require_http_methods(["POST"])
 def stop_match(request, match_id):
-    """Stops a running match: the bridge aborts the game and the runner records it."""
     match = get_owned_or_404(Match, request.user, match_id)
-    _abort(match)
-    if match.is_busy:
-        # The runner records the end when it follows the game; if none does
-        # any more (the process restarted), this keeps the match from
-        # polling forever.
-        Match.objects.filter(pk=match.pk, status__in=[Match.Status.PENDING, Match.Status.RUNNING]).update(
-            status=Match.Status.STOPPED, end_reason="aborted", finished_at=timezone.now()
-        )
+    _stop(match)
     return redirect("match_detail", match_id=match.id)
 
 
@@ -222,6 +293,10 @@ def stop_match(request, match_id):
 @require_http_methods(["POST"])
 def delete_match(request, match_id):
     match = get_owned_or_404(Match, request.user, match_id)
-    _abort(match)
+    if match.is_busy:
+        _abort(match)
+    playtest_id = match.playtest_id
     match.delete()
+    if playtest_id:
+        return redirect("playtest_detail", playtest_id=playtest_id)
     return redirect("match_list")
