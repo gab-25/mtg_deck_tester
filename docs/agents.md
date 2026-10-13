@@ -1,7 +1,7 @@
 # Agents
 
 An agent is whatever plays a seat. It never decides what is legal: Forge lists the
-options of each decision (see [Forge engine](engine.md)), and the agent picks one of
+options of each decision (see [Forge](forge.md)), and the agent picks one of
 them by index, or delegates the decision to Forge's AI.
 
 **Every seat of a new match is Jev** (`playtest.forms.SEAT_AGENT`): the new-playtest form

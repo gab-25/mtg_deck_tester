@@ -19,7 +19,7 @@ services:
   # (https://github.com/gab-25/mtg_forge_engine), pulled from its GitHub
   # registry image. The card database loads in about a minute before /health
   # answers. No authentication: keep it off the internet.
-  engine:
+  forge:
     image: ghcr.io/gab-25/mtg_forge_engine:latest
     environment:
       # Decisions left unanswered this long go to Forge's AI; keep it above a
@@ -36,11 +36,11 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      engine:
+      forge:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://mtg:mtg@db:5432/mtg_tester
-      ENGINE_URL: http://engine:8080
+      FORGE_URL: http://forge:8080
       # Threads answering Forge's decisions: the most model calls in flight.
       FORGE_WORKERS: ${FORGE_WORKERS:-4}
       # Provide your OpenRouter key to enable Jev seats:

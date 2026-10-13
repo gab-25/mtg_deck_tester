@@ -6,7 +6,7 @@ MTG Deck Tester is one Django project (`mtg_deck_tester`) with three apps:
 |---|---|
 | `mtg_deck_tester/` | Settings, root URLs, the layout templates and the home page, plus the plumbing every app shares: background jobs (`jobs.py`), the ownership check (`access.py`), per-job log stamping (`logging_context.py`). |
 | `decks/` | Decks and the Scryfall card cache: decklist parsing, card fetching, legality, the format registry. See [Deck import](deck-import.md). |
-| `playtest/` | Matches: the client of the Forge bridge (the rules engine), the runner and the worker pool that connect it to the database, the agents that play, and the match summary. See [Forge engine](engine.md) and [Agents](agents.md). |
+| `playtest/` | Matches: the client of the Forge bridge (the rules engine), the runner and the worker pool that connect it to the database, the agents that play, and the match summary. See [Forge](forge.md) and [Agents](agents.md). |
 | `theme/` | Static assets only: the precompiled stylesheet, vendored fonts, favicons. No Python beyond its `AppConfig`. |
 
 ## Request → background job → stored result

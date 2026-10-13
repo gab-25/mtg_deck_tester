@@ -83,13 +83,13 @@ hands the decision back to Forge's AI.
   for every seat, and logged as such.
 - **The end**: a winner, or a draw at the bridge's turn cap (`MAX_TURNS`).
 
-See [Forge engine](docs/engine.md) for the decision protocol.
+See [Forge](docs/forge.md) for the decision protocol.
 
 ## Documentation
 
 - [Architecture](docs/architecture.md) — how the apps fit together, the request →
   background job → stored result flow, the data model and the boundaries.
-- [Forge engine](docs/engine.md) — the bridge's contract, the client, the runner, the
+- [Forge](docs/forge.md) — the bridge's contract, the client, the runner, the
   worker pool, reproducibility and the summary.
 - [Agents](docs/agents.md) — the agent interface, the Jev agent, the
   Jev and OpenRouter clients and the fallbacks to Forge's AI.
@@ -140,7 +140,7 @@ docker compose up --build
 docker compose exec web python manage.py createsuperuser
 ```
 
-This also pulls and starts the Forge bridge (`engine`, the
+This also pulls and starts the Forge bridge (`forge`, the
 `ghcr.io/gab-25/mtg_forge_engine` image); `web` waits for its health check, about a
 minute while the card database loads. Then open <http://localhost:8000>.
 
@@ -149,7 +149,7 @@ minute while the card database loads. Then open <http://localhost:8000>.
 ```bash
 uv sync
 cp .env.example .env                  # then edit it
-docker compose up -d engine           # the Forge bridge on localhost:8080 (ENGINE_URL's default)
+docker compose up -d forge            # the Forge bridge on localhost:8080 (FORGE_URL's default)
 uv run python manage.py createsuperuser
 uv run python -m mtg_deck_tester      # migrate + runserver
 ```
@@ -203,7 +203,7 @@ local development; real environment variables win):
 | Variable | Meaning | Default |
 |---|---|---|
 | `DATABASE_URL` | Postgres or SQLite URL | `postgresql://mtg:mtg@localhost:5432/mtg_tester` |
-| `ENGINE_URL` | The Forge bridge (Compose sets `http://engine:8080`) | `http://localhost:8080` |
+| `FORGE_URL` | The Forge bridge (Compose sets `http://forge:8080`) | `http://localhost:8080` |
 | `FORGE_WORKERS` | Threads answering Forge's decisions: the most model calls in flight; `0` lets each match's runner answer its own | `4` |
 | `OPENROUTER_API_KEY` | Jev's key: required to start a match | — |
 | `JEV_MODEL` | Jev model for every seat (users cannot change it) | `~typesafe/jev-latest` |
@@ -230,13 +230,13 @@ decisions: keep an eye on your OpenRouter spend.
 
 ```bash
 uv run pytest
-ENGINE_URL=http://localhost:8080 uv run pytest -m forge   # opt-in: against a real bridge
+FORGE_URL=http://localhost:8080 uv run pytest -m forge   # opt-in: against a real bridge
 ```
 
 The suite is hermetic: in-memory SQLite, no Scryfall, OpenRouter or Forge calls (a
 guard fails any test that reaches the network), and no API key. Matches play against
 `tests/fakeforge.py`, an in-memory bridge; only the tests marked `forge` reach a real
-one, and they skip without `ENGINE_URL`. It also checks that templates only use classes
+one, and they skip without `FORGE_URL`. It also checks that templates only use classes
 the precompiled stylesheet contains and icons the vendored font subset can render.
 
 ## License

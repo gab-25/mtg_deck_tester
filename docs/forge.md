@@ -1,4 +1,4 @@
-# Forge engine
+# Forge
 
 The rules are not written here. [Forge](https://github.com/Card-Forge/forge), an
 open-source rules engine with nearly every card scripted, plays every game. It runs in
@@ -61,7 +61,7 @@ them on the match page.
 
 `playtest/forge.py` is the only module that speaks HTTP to the bridge:
 
-- `ForgeClient(url=None)` (default `ENGINE_URL`, else `http://localhost:8080`) with
+- `ForgeClient(url=None)` (default `FORGE_URL`, else `http://localhost:8080`) with
   `health`, `create_game`, `check_deck`, `game`, `events`, `lease`, `answer`, `abort`.
   `client()` returns one; tests monkeypatch it with a fake.
 - Every failure is a `ForgeError`; unknown cards raise `ForgeDeckError`, whose

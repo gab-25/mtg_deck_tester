@@ -42,9 +42,9 @@ def _client(replies=None, error=None):
 
 
 def test_the_url_comes_from_forge_url(monkeypatch):
-    monkeypatch.setenv("ENGINE_URL", "http://engine:8080/")
-    assert forge.base_url() == "http://engine:8080"
-    monkeypatch.delenv("ENGINE_URL")
+    monkeypatch.setenv("FORGE_URL", "http://forge:8080/")
+    assert forge.base_url() == "http://forge:8080"
+    monkeypatch.delenv("FORGE_URL")
     assert forge.base_url() == forge.DEFAULT_URL
 
 
