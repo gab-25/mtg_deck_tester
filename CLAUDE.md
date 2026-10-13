@@ -14,7 +14,8 @@ from `README.md` (features, rules, configuration); details live in `docs/`.
 uv sync                                    # install deps (dev group included)
 uv run pytest                              # full suite, hermetic, ~seconds
 FORGE_URL=http://localhost:8080 uv run pytest -m forge  # opt-in: against a real bridge
-uv run python -m mtg_deck_tester           # migrate + runserver (HOST/PORT/RELOAD)
+uv run python manage.py migrate            # apply pending migrations
+uv run python manage.py runserver          # local dev server on :8000, auto-reload
 uv run python manage.py makemigrations     # after model/choices changes
 uv run python manage.py load_oracle_cards  # fill the card cache from Scryfall bulk data
 uv run python manage.py sync_metagame      # import the top decks of each format (network)

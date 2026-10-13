@@ -149,8 +149,9 @@ minute while the card database loads. Then open <http://localhost:8000>.
 uv sync
 cp .env.example .env                  # then edit it
 docker compose up -d forge            # the Forge bridge on localhost:8080 (FORGE_URL's default)
+uv run python manage.py migrate
 uv run python manage.py createsuperuser
-uv run python -m mtg_deck_tester      # migrate + runserver
+uv run python manage.py runserver     # http://localhost:8000
 ```
 
 ## Local card database
@@ -210,7 +211,6 @@ local development; real environment variables win):
 | `SECRET_KEY` / `DEBUG` | Django basics | dev key / on |
 | `CSRF_TRUSTED_ORIGINS` | Comma-separated origins behind a proxy | — |
 | `RUN_JOBS_IN_BACKGROUND` | Run imports and matches off the request thread | `1` |
-| `HOST` / `PORT` / `RELOAD` | Local server (`python -m mtg_deck_tester`) | `0.0.0.0` / `8000` / off |
 | `LOG_LEVEL` | Console log level | `INFO` |
 
 The bridge has its own settings — `DECISION_TIMEOUT` (an unanswered decision goes to
