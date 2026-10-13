@@ -30,7 +30,7 @@ dev = [
 testpaths = ["tests"]
 DJANGO_SETTINGS_MODULE = "mtg_deck_tester.settings_test"
 markers = [
-    "forge: plays against a real Forge bridge at FORGE_URL (opt-in: uv run pytest -m forge)",
+    "forge: plays against a real Forge bridge at ENGINE_URL (opt-in: uv run pytest -m forge)",
 ]
 filterwarnings = [
     # WhiteNoise warns that STATIC_ROOT is empty; expected in tests (no collectstatic).

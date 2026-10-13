@@ -1,8 +1,8 @@
 """Opt-in: matches against a real Forge bridge.
 
-Run with the bridge up (``docker compose up -d mtg-forge-engine``)::
+Run with the bridge up (``docker compose up -d engine``)::
 
-    FORGE_URL=http://localhost:8080 uv run pytest -m forge
+    ENGINE_URL=http://localhost:8080 uv run pytest -m forge
 """
 
 import os
@@ -17,7 +17,7 @@ from .factories import make_deck, scryfall_card
 pytestmark = [
     pytest.mark.forge,
     pytest.mark.django_db,
-    pytest.mark.skipif(not os.environ.get("FORGE_URL"), reason="needs a Forge bridge at FORGE_URL"),
+    pytest.mark.skipif(not os.environ.get("ENGINE_URL"), reason="needs a Forge bridge at ENGINE_URL"),
 ]
 
 RED = [("Mountain", 20), ("Goblin Guide", 4), ("Monastery Swiftspear", 4), ("Lightning Bolt", 4), ("Lava Spike", 4),

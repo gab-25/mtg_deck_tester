@@ -1,7 +1,7 @@
 """HTTP client for the Forge bridge (mtg_forge_engine), the rules engine.
 
 Forge plays the game: it knows the rules and the cards, and asks the seats'
-clients one decision at a time. This module only moves JSON. ``FORGE_URL``
+clients one decision at a time. This module only moves JSON. ``ENGINE_URL``
 points at the bridge; tests replace :func:`client` with a fake
 (``tests/fakeforge.py``), so the suite never needs the container.
 """
@@ -34,7 +34,7 @@ class ForgeDeckError(ForgeError):
 
 
 def base_url() -> str:
-    return (os.environ.get("FORGE_URL") or DEFAULT_URL).rstrip("/")
+    return (os.environ.get("ENGINE_URL") or DEFAULT_URL).rstrip("/")
 
 
 def decklist_text(cards: list, *, has_commander: bool) -> str:

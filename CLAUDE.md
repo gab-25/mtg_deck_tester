@@ -13,18 +13,18 @@ from `README.md` (features, rules, configuration); details live in `docs/`.
 ```bash
 uv sync                                    # install deps (dev group included)
 uv run pytest                              # full suite, hermetic, ~seconds
-FORGE_URL=http://localhost:8080 uv run pytest -m forge  # opt-in: against a real bridge
+ENGINE_URL=http://localhost:8080 uv run pytest -m forge  # opt-in: against a real bridge
 uv run python -m mtg_deck_tester           # migrate + runserver (HOST/PORT/RELOAD)
 uv run python manage.py makemigrations     # after model/choices changes
 uv run python manage.py load_oracle_cards  # fill the card cache from Scryfall bulk data
 uv run python manage.py sync_metagame      # import the top decks of each format (network)
 docker compose up --build                  # Postgres + the Forge bridge + gunicorn on :8000
 docker compose up -d db                    # just Postgres, for local runs
-docker compose up -d mtg-forge-engine      # just the Forge bridge, on localhost:8080
+docker compose up -d engine                # just the Forge bridge, on localhost:8080
 ```
 
 The default `DATABASE_URL` is the Compose Postgres on localhost; set
-`DATABASE_URL=sqlite:///./mtg.db` to run without it. `FORGE_URL` defaults to
+`DATABASE_URL=sqlite:///./mtg.db` to run without it. `ENGINE_URL` defaults to
 `http://localhost:8080`. Tests always use in-memory SQLite
 (`mtg_deck_tester/settings_test.py`).
 

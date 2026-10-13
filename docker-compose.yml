@@ -16,12 +16,11 @@ services:
       retries: 5
 
   # The rules engine: Forge behind an HTTP decision protocol
-  # (https://github.com/gab-25/mtg_forge_engine). The first build compiles
-  # Forge and takes several minutes; the card database then loads in about a
-  # minute before /health answers. No authentication: keep it off the internet.
-  mtg-forge-engine:
-    build: https://github.com/gab-25/mtg_forge_engine.git#main
-    image: mtg-forge-engine
+  # (https://github.com/gab-25/mtg_forge_engine), pulled from its GitHub
+  # registry image. The card database loads in about a minute before /health
+  # answers. No authentication: keep it off the internet.
+  engine:
+    image: ghcr.io/gab-25/mtg_forge_engine:latest
     environment:
       # Decisions left unanswered this long go to Forge's AI; keep it above a
       # Jev request with its retries.
@@ -37,11 +36,11 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      mtg-forge-engine:
+      engine:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://mtg:mtg@db:5432/mtg_tester
-      FORGE_URL: http://mtg-forge-engine:8080
+      ENGINE_URL: http://engine:8080
       # Threads answering Forge's decisions: the most model calls in flight.
       FORGE_WORKERS: ${FORGE_WORKERS:-4}
       # Provide your OpenRouter key to enable Jev and LLM seats:

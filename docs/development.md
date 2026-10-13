@@ -11,7 +11,7 @@ the working directory.
 uv sync                                   # dependencies, dev group included
 cp .env.example .env                      # then edit it
 docker compose up -d db                   # optional: just Postgres, on localhost:5432
-docker compose up -d mtg-forge-engine     # the Forge bridge, on localhost:8080
+docker compose up -d engine               # the Forge bridge, on localhost:8080
 uv run python manage.py createsuperuser
 uv run python -m mtg_deck_tester          # migrate + runserver on HOST:PORT
 ```
@@ -24,7 +24,7 @@ The default `DATABASE_URL` points at the Compose Postgres
 (`postgresql://mtg:mtg@localhost:5432/mtg_tester`). For a database-free setup use
 SQLite instead, e.g. `DATABASE_URL=sqlite:///./mtg.db` (`*.db` is gitignored).
 
-Matches need the Forge bridge. `FORGE_URL` defaults to `http://localhost:8080`, where
+Matches need the Forge bridge. `ENGINE_URL` defaults to `http://localhost:8080`, where
 Compose publishes it; its first build compiles Forge (several minutes) and its card
 database loads in about a minute before `/health` answers. Without it decks import
 and pages work, but a new match is refused with "Forge bridge unreachable".
@@ -41,14 +41,14 @@ docker compose exec web python manage.py createsuperuser
 ```
 
 - `db`: `postgres:16-alpine`, data in the `pgdata` volume, published on 5432.
-- `mtg-forge-engine`: the bridge, built from
-  `https://github.com/gab-25/mtg_forge_engine.git#main`, published on
+- `engine`: the bridge, the `ghcr.io/gab-25/mtg_forge_engine:latest` image
+  (`docker compose pull engine` to update it), published on
   `127.0.0.1:8080` only (it has no authentication). `DECISION_TIMEOUT`, `MAX_TURNS`
   and `MAX_CONCURRENT_GAMES` pass through from your shell.
 - `web`: the `Dockerfile` image — `uv sync --frozen --no-dev`, `collectstatic` at
   build time, `DEBUG=0`, gunicorn on port 8000 as an unprivileged user.
   `docker-entrypoint.sh` runs `migrate` before starting the server. It waits for
-  the bridge's health check and reaches it at `FORGE_URL=http://mtg-forge-engine:8080`.
+  the bridge's health check and reaches it at `ENGINE_URL=http://engine:8080`.
 - `FORGE_WORKERS`, `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `JEV_MODEL` and
   `JEV_MIN_CONFIDENCE` are passed through from your shell.
 
@@ -62,7 +62,7 @@ by CI — run the suite locally before opening one.
 ```bash
 uv run pytest                     # whole suite, a few seconds
 uv run pytest tests/test_runner.py -k jev
-FORGE_URL=http://localhost:8080 uv run pytest -m forge   # opt-in: against a real bridge
+ENGINE_URL=http://localhost:8080 uv run pytest -m forge   # opt-in: against a real bridge
 ```
 
 The suite is **hermetic**:
@@ -77,7 +77,7 @@ The suite is **hermetic**:
   `requests.get` / `requests.post` on the module under test, `openrouter.chat` or
   `typesafe.system_one`, or pass a fake `chat` / `ask`. `tests/conftest.py` makes any
   request that reaches the transport fail the test; only tests marked `forge` are
-  let through, and they skip without `FORGE_URL`.
+  let through, and they skip without `ENGINE_URL`.
 - **The fake bridge.** The `fake_forge` fixture routes every `playtest.forge.client()`
   call to one `tests/fakeforge.py::FakeForge`: scripted two-seat games (mulligans,
   lands, Shocks, an attacker and a blocker a turn) whose events, decisions and log
