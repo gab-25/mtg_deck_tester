@@ -81,14 +81,24 @@ rules apply to the Commander formats only.
   the table in turn order; the top of the stack resolves only when every player still
   in the game passes in succession.
 - **Mana**: lands and rocks make the colors Scryfall lists for them (Sol Ring makes
-  two). Costs are checked with an exact max-flow, and paid **automatically**, keeping
-  the most colors open — no agent decides how to pay, so "holding up an Island" is not
-  a decision anyone makes.
+  two). Sources with a cost (fetch-style "pay life", painlands, Treasures, "only if you
+  control a Forest") are spent only when the free ones cannot pay. Costs are checked
+  with an exact max-flow, and paid **automatically**, keeping the most colors open — no
+  agent decides how to pay, so "holding up an Island" is not a decision anyone makes.
 - **Spells and abilities**: one land per turn; sorcery-speed cards in your main phase
   with an empty stack; instants and flash any time you have priority. Targets are
-  chosen on cast and checked again on resolution. Triggered abilities (enters, dies,
-  attacks, upkeep, end step) go on the stack in APNAP order. Static abilities
-  (anthems, granted keywords) are applied as a derived view.
+  chosen on cast and checked again on resolution; "its controller" and "its power"
+  read the target as it last existed. Alternative costs (pitching a card, paying life,
+  returning a land, free with a commander), additional sacrifices, flashback and
+  cycling are separate actions naming what they use. Triggered abilities (enters,
+  dies, attacks, leaves, upkeep, end step, beginning of combat, combat damage to a
+  player, a spell cast, another creature or a land entering, life gained, a card
+  drawn) go on the stack in APNAP order. Static abilities (anthems, granted keywords)
+  are applied as a derived view.
+- **Choices during resolution** — which card a tutor finds, what a Thoughtseize
+  takes, what stays on top after a scry, whether to pay for a counter-unless or do a
+  "you may" — are decisions of the player who makes them, among options the kernel
+  lists.
 - **Combat**: attackers and blockers are declared one at a time, each attacker at one
   opponent, each defender blocking what attacks them. Flying, reach, menace, first
   and double strike, trample, deathtouch, lifelink, vigilance, haste, defender,
@@ -101,23 +111,27 @@ rules apply to the Commander formats only.
   match that reaches its round limit is a draw.
 - **Opening hands**: a deterministic London mulligan for everyone (keep 2–5 lands, at
   most two mulligans, the first free with three or more players).
-- **Guards**: caps on rounds, decisions per turn, stack depth, activations,
-  state-based-action iterations, declaration steps, options per decision (255),
-  model calls per seat and match wall clock. Each one ends cleanly with an event.
+- **Guards**: caps on rounds, decisions per turn, triggers per turn, stack depth,
+  activations, state-based-action iterations, declaration steps, options per decision
+  (255), model calls per seat and match wall clock. Each one ends cleanly with an
+  event.
 
-Not supported: layers, replacement and copy effects, planeswalkers, auras and
-equipment, alternative costs, and choosing how to pay mana.
+Not supported: layers, replacement and copy effects (beyond a countered spell going
+elsewhere), planeswalkers, auras and equipment, kicker, storm, delve, conditions
+("if you control …"), and choosing how to pay mana.
 
 ## How cards are compiled
 
 1. **Deterministic pre-pass** (`engine/cardrules.py`): cost, types, power/toughness,
-   colors, keywords, "enters tapped" and the mana a card makes come straight from the
+   colors, keywords, "enters tapped", the mana a card makes (with its cost),
+   alternative and additional costs, flashback and cycling come straight from the
    cached Scryfall JSON. What is left of the rules text is the *residual*: empty means
-   supported with no model call; a match on a blocklist (library search, copies,
-   "instead", "for each"…) means unsupported with no model call.
+   supported with no model call; a match on a blocklist (copies, "instead", "for
+   each"…) means unsupported with no model call.
 2. **Clause splitter** (`engine/clauses.py`): code reads the trigger, the cost, the
-   modes and the atomic clauses, and refuses what it cannot read (options, conditions,
-   back-references, other zones).
+   modes and the atomic clauses ("you may" and "if you do" included), and refuses what
+   it cannot read (conditions, unbound references, other zones) unless an operation's
+   grammar reads the clause whole.
 3. **Judge** (`judge.py`): one Jev request per card. For each clause Jev picks the
    operation and the selector, each asked twice with the options in opposite orders.
    The op's fields are then read off the clause by its grammar, and the program goes
@@ -128,7 +142,8 @@ equipment, alternative costs, and choosing how to pay mana.
    is compiled once; a card the judge could not be asked about is retried next time.
 
 `manage.py card_coverage --deck <id>` (or `card_coverage <decklist file>`) prints a
-deck's coverage report.
+deck's coverage report; `manage.py dsl_gaps [--format]` lists what keeps the metagame
+decks' cards out of the DSL, weighted by copies.
 
 ## Documentation
 

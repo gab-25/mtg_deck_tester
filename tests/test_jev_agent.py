@@ -193,3 +193,17 @@ def test_the_instructions_name_the_format_of_the_match():
     jev = StubJev()
     JevAgent(seed=1, ask=jev).choose(player_view(state, 0), legal_actions(state, 0))
     assert "(Duel Commander)" in jev.requests[0][1]["action"]["instructions"]
+
+
+def test_an_effect_choice_reaches_jev_with_its_prompt_and_estimates():
+    from playtest.agents.jev_agent import jev_state
+    from playtest.engine.state import ChoiceOption, PendingChoice
+
+    game, state = _table()
+    state.pending_choice = PendingChoice(
+        0, "search", "Fetch: search your library", [ChoiceOption("c00", "Find Island", 7, 1), ChoiceOption("c01", "Find nothing", -1)]
+    )
+    view = player_view(state, 0)
+    options = legal_actions(state, 0)
+    assert '"choosing":"Fetch: search your library"' in jev_state(view)
+    assert describe_option(view, options[0]) == "Find Island — estimated value 7"

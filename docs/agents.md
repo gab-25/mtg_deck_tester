@@ -46,7 +46,10 @@ which the match page and the summary read.
 ties broken by name and id: land → commander → removal on the best target →
 highest-MV creature → other useful spell → counter an opponent's spell → safe or
 lethal attacks at the opponent it pays most to attack (even trades when it
-outnumbers the blockers) → blocks to survive and favourable trades → pass.
+outnumbers the blockers) → blocks to survive and favourable trades → cycle what it
+will not cast soon → pass. It pays alternative costs only when it cannot pay the
+mana cost, weighs a sacrificed permanent as its removal value, and answers an
+effect's choice with the kernel's highest estimate.
 
 Its evaluations are **pure public helpers over the view** — `combat_outcome`,
 `attack_facts`, `lethal_on_board`, `block_facts`, `removal_value`,
@@ -66,7 +69,10 @@ One Jev request per decision:
   described by their label **plus facts computed in code** ("lethal if unblocked",
   "dies to: X", "kills Y", "you take 5 combat damage (life 7 -> 2)");
 - the options are **shuffled with the agent's seeded RNG** before each request and
-  mapped back by key, because Jev leans toward the first option.
+  mapped back by key, because Jev leans toward the first option;
+- when an effect asks a choice while it resolves (a search, a discard, a scry, a
+  "you may"), the state carries its prompt (`choosing`) and each option the
+  kernel's estimate ("estimated value 7").
 
 `gate()` is the one place an uncertain decision is handed over: below
 `JEV_MIN_CONFIDENCE` (default 0.2) the heuristic agent decides, with a

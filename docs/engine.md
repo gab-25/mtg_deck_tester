@@ -17,13 +17,14 @@ only picks one of them.
 | `manacost.py` | `ManaCost` (generic, pips, X) and `parse_mana_cost` / `parse_mana_symbols`. Phyrexian and `{2/W}` pips are paid with their color (never cheaper than on paper). |
 | `cardrules.py` | The deterministic pre-pass: `characteristics(raw_json) -> CardFacts` (types, cost, P/T, colors, keywords, enters tapped, mana production, the *residual* rules text and its class: empty / blocked / needs the judge). See [Card compilation](card-compilation.md). |
 | `clauses.py` | `split_abilities`: residual text → abilities (trigger, cost, modes) → atomic clauses with their candidate numbers and selector phrases. |
-| `dsl.py` | The closed effect language: 18 ops, selectors, triggers, each with a one-line description; per-op grammars (`parse_clause`); `validate_program`; the `CardProgram` dataclasses; `describe_ability` for views and logs. |
+| `dsl.py` | The closed effect language: 29 ops, selectors (derived ones included), triggers, each with a one-line description; per-op grammars (`parse_clause`); `validate_program`; the `CardProgram` dataclasses; `describe_ability` for views and logs. |
+| `gaps.py` | `card_gaps(raw)`: every reason a card is not compilable (blocklist, splitter, grammars), for `manage.py dsl_gaps`. |
 | `coverage.py` | `coverage_report(entries)`: how much of a deck can be simulated, weighted by quantity. |
-| `cards.py` | `CardSpec` (printed facts + compiled `program`, or `None` when unsupported), `card(...)` to build one by hand, `DeckSpec` (library and an optional commander). |
-| `state.py` | `Step`, `GameRules`, `Card` (stable id), `Permanent` (fresh id on every zone change, CR 400.7), `StackItem`, `Player`, `GameState`, `assert_invariants`. |
-| `mana.py` | Payment feasibility by exact max-flow and automatic payment (`sources`, `can_pay`, `choose_payment`, `pay`). |
-| `effects.py` | Derived characteristics (static abilities), selectors and targets, the 18 operations (`apply_op`), resolution with target re-checks. |
-| `zones.py` | Entering and leaving the battlefield, the command zone, a player leaving the game. |
+| `cards.py` | `CardSpec` (printed facts, mana abilities, casting options + compiled `program`, or `None` when unsupported), `card(...)` to build one by hand, `DeckSpec` (library and an optional commander). |
+| `state.py` | `Step`, `GameRules`, `Card` (stable id), `Permanent` (fresh id on every zone change, CR 400.7), `StackItem`, `Player`, `PendingChoice` / `ChoiceOption`, `GameState` (with the seeded effects RNG), `assert_invariants`. |
+| `mana.py` | Payment feasibility by exact max-flow and automatic payment (`sources`, `can_pay`, `choose_payment`, `pay`), free sources before ones with a cost. |
+| `effects.py` | Derived characteristics (static abilities), selectors and targets, the operations (`apply_op`), choices during resolution (`EffectContext.ask`), last known information, the artifact tokens, resolution with target re-checks. |
+| `zones.py` | Entering and leaving the battlefield, queuing triggers (`queue_triggers`, `queue_event_triggers`), the command zone, a player leaving the game. |
 | `actions.py` | `Action`, `ActionKind`, `legal_actions(state, seat)`. |
 | `rules.py` | `apply(state, seat, action)`, stack resolution, state-based actions, combat damage, untap/cleanup, the London mulligan. **Its module docstring is the rules summary given to the LLM agent.** |
 | `limits.py` | `Limits`: every cap of the kernel. |
@@ -78,12 +79,16 @@ commander also pays its own tax.
 
 ### Mana
 
-`mana.sources` lists the untapped permanents that make mana for free (`{T}: Add`,
-read by the pre-pass from Scryfall's `produced_mana`) plus floating mana.
+`mana.sources` lists the untapped permanents with a mana ability (`{T}: Add`, read
+by the pre-pass and always within Scryfall's `produced_mana`) plus floating mana.
+An ability may have a cost — pay life, take damage, sacrifice the source (a
+Treasure), or "only if you control a Forest or a Plains": such sources are ranked
+after the free ones and their cost is paid when the colors they supply are used.
 `can_pay` is a max-flow from sources to colors to pips; `choose_payment` drops the
 most valuable sources first while the rest still pays, then swaps a spent source
 for an unspent one when that keeps more colors open. A source that makes more than
-needed floats the rest. **Payment is automatic, never an agent decision.**
+needed floats the rest. **Payment is automatic, never an agent decision**; so is
+an activation's "discard a card" cost (the least valuable card).
 
 ## The contract of `legal_actions`
 
@@ -99,17 +104,36 @@ Tested as such:
 
 Spells with targets enumerate the target combinations when there are at most
 `max_enumerated_targets` (8); otherwise the cast commits and `CHOOSE_TARGET`
-decisions follow. `rules.apply` re-checks that an action is one of
+decisions follow. Each way to pay a spell is its own action: its mana cost, each
+alternative cost with the cards it pitches or the land it returns, flashback from
+the graveyard, each permanent an additional or activation cost could sacrifice
+(`Action.via`, `Action.paid_with`). `CYCLE` cycles a card from hand.
+
+**Choices during resolution.** When an effect needs a choice — the card a search
+finds, what Thoughtseize takes, what a scry or a Brainstorm keeps, whether to pay
+for a "counter unless", whether a "you may" happens — the kernel sets
+`state.pending_choice` and asks the deciding seat's agent; `legal_actions` then
+offers exactly the `CHOOSE` options, each with a label and the kernel's estimate
+(`score`, a fact for the agent, never binding). Outside a `Game`, the first option
+is taken. `rules.apply` re-checks that an action is one of
 `legal_actions` and raises `IllegalAction` otherwise: whatever an agent answers,
 the kernel never applies an illegal action.
 
 ## Card effects
 
 A card's `program` (see [Card compilation](card-compilation.md)) is a list of
-abilities: spell effects, triggers (enters, dies, attacks, upkeep, end step),
-activated abilities with a cost, and static abilities. Targets are chosen on cast
-and checked again on resolution: a spell whose every target is gone fizzles; if only
-some are, the rest still happens. Static abilities (anthems, granted keywords) are a
+abilities: spell effects, triggers, activated abilities with a cost, and static
+abilities. Triggers on the card itself (enters, dies or goes to a graveyard,
+leaves, attacks, deals combat damage to a player, upkeep, end step, beginning of
+combat) and on events anywhere (a spell cast by you / an opponent / anyone,
+filtered by kind; another creature, a creature or a land entering under your
+control; you attack, gain life, draw; an opponent draws) are queued where the event
+happens and go on the stack at the next priority, APNAP. "That player" is the
+player the event was about. Targets are chosen on cast and checked again on
+resolution: a spell whose every target is gone fizzles; if only some are, the rest
+still happens. When resolution starts, each target's last known information
+(controller, power, toughness, mana value) is recorded: "its controller gains life
+equal to its power" reads it after the target was exiled. Static abilities (anthems, granted keywords) are a
 derived view — `effects.power`, `toughness`, `keywords` — never written onto the
 permanents.
 
@@ -121,7 +145,8 @@ event says so.
 ## Guards
 
 `Limits` caps rounds, decisions per turn (past it everyone passes until the turn
-ends, with a `decision_limit` event), stack depth, activations per permanent per
+ends, with a `decision_limit` event), triggers per turn (past it new triggers are
+dropped, so a trigger loop ends), stack depth, activations per permanent per
 turn, state-based-action iterations, declaration steps, options per decision (255,
 Jev's limit), agent calls per metered seat and the match wall clock. Every cap ends
 cleanly with an event: a match runs in a daemon thread, where a hang would leave it
@@ -136,10 +161,11 @@ Metered agents (`metered = True`, the Jev agent) are handed to their `fallback` 
 `player_view` returns plain data: format, round, step, active seat; the seat's own
 life, available mana and colors, hand (with each card's compiled effects rendered as
 short text, never the oracle text), battlefield, command zone and commander cost,
-graveyard names, library count; for each living opponent their life, hand and
-library counts, battlefield and commander damage; the stack; and, while a target is
-being chosen, what it is for. Permanents show their current power, toughness and
-keywords. Hidden information never leaves the engine.
+graveyard names, library count, the flashback cards in its graveyard; for each
+living opponent their life, hand and library counts, battlefield and commander
+damage; the stack; while a target is being chosen, what it is for; and, while an
+effect asks a choice, its prompt and options (`choice`). Permanents show their
+current power, toughness and keywords. Hidden information never leaves the engine.
 
 ## From stored decks to `DeckSpec`
 

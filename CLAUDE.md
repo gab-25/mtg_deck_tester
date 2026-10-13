@@ -14,6 +14,7 @@ uv run python -m mtg_deck_tester           # migrate + runserver (HOST/PORT/RELO
 uv run python manage.py makemigrations     # after model/choices changes
 uv run python manage.py load_oracle_cards  # fill the card cache from Scryfall bulk data
 uv run python manage.py card_coverage --deck <id>  # how much of a deck the playtest simulates
+uv run python manage.py dsl_gaps --format modern   # what keeps metagame cards out of the DSL
 uv run python manage.py sync_metagame      # import the top decks of each format (network)
 docker compose up --build                  # Postgres + gunicorn image on :8000
 docker compose up -d db                    # just Postgres, for local runs

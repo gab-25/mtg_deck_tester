@@ -29,14 +29,26 @@ Mana:
 Spells and abilities:
 
 * Cards do what their compiled program says (damage, life, cards, removal,
-  counterspells, tokens, pump, counters, mana, library searches, scry,
-  surveil…). When an effect needs a choice (which card to find, what to keep
-  on top), the player makes it. Targets are chosen when a
-  spell is cast and checked again when it resolves: a spell whose every
-  target is gone does nothing.
-* Triggered abilities ("when this enters", "when this dies", "whenever this
-  attacks", "at the beginning of your upkeep / end step") go on the stack
-  before the next player gets priority, active player's first.
+  counterspells, tokens and Treasure/Clue/Food/Blood, pump, counters, mana,
+  library searches, scry, surveil, looking at the top cards, hand
+  disruption…). When an effect needs a choice (which card to find or take,
+  what to keep on top, whether to pay for a "counter unless", whether to do
+  a "you may"), the player makes it. Targets are chosen when a spell is cast
+  and checked again when it resolves: a spell whose every target is gone
+  does nothing. "Its controller" and "its power" read the target as it last
+  existed.
+* Alternative costs (pay life and exile a card of a color from your hand,
+  return a land, free while you control a commander), additional
+  sacrifices, flashback (cast from the graveyard, then exiled) and cycling
+  are their own actions, naming the cards they use. Spells that "can't be
+  countered" are not.
+* Triggered abilities ("when this enters / dies / leaves", "whenever this
+  attacks / deals combat damage to a player", "at the beginning of your
+  upkeep / end step / combat", "whenever you cast …", "whenever another
+  creature / a land you control enters", "whenever you attack / gain life /
+  draw", "whenever an opponent draws") go on the stack before the next player
+  gets priority, active player's first. At most a fixed number of triggers
+  per turn: past it they are dropped.
 * A card the compiler could not read plays as a blank: a permanent is a
   vanilla object with its printed body and keywords, and an instant or
   sorcery cannot be cast at all.
@@ -62,8 +74,9 @@ Losing:
 * Opening hands use a deterministic London mulligan: keep 2–5 lands, at most
   two mulligans (the first is free with three or more players).
 
-Not supported: layers, replacement effects, copy effects, planeswalkers,
-auras and equipment, alternative costs, and choosing how to pay mana.
+Not supported: layers, replacement effects (beyond a countered spell going
+elsewhere), copy effects, planeswalkers, auras and equipment, kicker, storm,
+delve, conditions ("if you control …"), and choosing how to pay mana.
 """
 
 from .actions import Action, ActionKind, ability_sets, commander_cost, legal_actions

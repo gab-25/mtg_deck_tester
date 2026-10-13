@@ -103,6 +103,9 @@ def jev_state(view: dict) -> str:
         ],
         "stack": [{"name": s["name"], "seat": s["controller"] + 1, "targets": s["targets"]} for s in view["stack"]],
     }
+    if view.get("choice"):
+        # An effect is asking: what it asks is the decision.
+        state["choosing"] = view["choice"]["prompt"]
     return json.dumps(state, separators=(",", ":"))
 
 
@@ -113,6 +116,11 @@ def option_facts(view: dict, action: Action) -> list[str]:
     """Facts about an action that Jev could not compute itself."""
     perms = heuristic.permanents(view)
     facts: list[str] = []
+    if action.kind == ActionKind.CHOOSE:
+        # The kernel's own estimate of each answer (never binding).
+        scores = {o["key"]: o["score"] for o in (view.get("choice") or {}).get("options", [])}
+        if action.ref in scores:
+            facts.append(f"estimated value {scores[action.ref]}")
     if action.kind == ActionKind.DECLARE_ATTACKER:
         attacker = perms.get(action.permanent, {})
         info = heuristic.attack_facts(view, attacker, action.defender)
