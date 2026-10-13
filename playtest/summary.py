@@ -27,7 +27,7 @@ def table_names(seats: list) -> list[str]:
     ]
 
 
-def _row(event):
+def event_row(event):
     """Accepts stored ``MatchEvent`` rows and bridge event dicts alike."""
     if isinstance(event, dict):
         return event.get("turn") or 0, event["kind"], event.get("seat"), event.get("text") or "", event.get("payload") or {}
@@ -41,6 +41,24 @@ def _by_prefix(text: str, names: list[tuple[str, int]], prefix: str = "") -> tup
         if text.startswith(head):
             return seat, text[len(head):]
     return None
+
+
+def fallback_executions(rows) -> set[int]:
+    """The indexes of the ``forge_ai`` events that carry out a fallback.
+
+    When a decision falls back, Forge's AI takes it and the bridge logs that
+    too: the seat's next event after a ``fallback`` is its ``forge_ai``
+    twin. It is the same decision, so it is counted (and shown) once.
+    """
+    paired, waiting = set(), {}
+    for index, (_, kind, seat, _, _) in enumerate(rows):
+        if kind == "fallback":
+            waiting[seat] = True
+        elif kind == "forge_ai" and waiting.pop(seat, False):
+            paired.add(index)
+        elif kind == "decision":
+            waiting.pop(seat, None)
+    return paired
 
 
 def fallback_reason(payload: dict) -> str:
@@ -58,7 +76,7 @@ def summarize_match(events, seats: list, fmt: str, game: dict) -> dict:
     ``fmt`` the format key and ``game`` the bridge's final game
     (``status``, ``winner``, ``end_reason``, ``turn``).
     """
-    rows = [_row(e) for e in events]
+    rows = [event_row(e) for e in events]
     names = table_names(seats)
     by_length = sorted(((name, seat.position) for name, seat in zip(names, seats)), key=lambda x: -len(x[0]))
     starting = FORMATS[fmt].starting_life
@@ -87,13 +105,16 @@ def summarize_match(events, seats: list, fmt: str, game: dict) -> dict:
     confidences: dict[int, list[float]] = {position: [] for position in stats}
     automatic: dict[str, int] = {}
     current_turn = 0
+    executions = fallback_executions(rows)
 
     def close_turns(upto: int) -> None:
         for seat in stats.values():
             while len(seat["life_by_turn"]) < upto:
                 seat["life_by_turn"].append(life[seat["seat"]])
 
-    for turn, kind, seat, text, payload in rows:
+    for index, (turn, kind, seat, text, payload) in enumerate(rows):
+        if index in executions:
+            continue
         if turn > current_turn:
             close_turns(turn - 1)
             current_turn = turn

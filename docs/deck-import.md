@@ -72,8 +72,8 @@ The deck's stored `color_identity` is the union of its commanders' identities, a
 
 The stored `color_identity` of a constructed deck is the union of its main deck's
 identities. `Deck.main_cards`, `sideboard_cards`, `total_cards` (main deck) and
-`sideboard_total` split the stored cards; only the main deck is ever played or
-counted for coverage.
+`sideboard_total` split the stored cards; the sideboard is sent to Forge under its
+own header, but only the main deck is played.
 
 A missing `legalities` or `color_identity` field (cards cached by older versions)
 never fails a deck: legality counts as legal, and color identity falls back to the
@@ -114,10 +114,8 @@ Any `None` makes the import fail with the list of unresolved names.
 ```
 
 The raw JSON stays in `scryfall_cards`; only this processed copy is on the deck.
-The card compiler reads the raw JSON back with `fetch_card_raw(name, cache)` (same
-key, same network fallback), because it needs fields the processed copy drops
-(`oracle_id`, `keywords`, `colors`). A
-new field added here reaches newly imported decks only — existing decks need a data
+`fetch_card_data` gets the raw JSON through `fetch_card_raw(name, cache)` (same key,
+same network fallback), which returns it unprocessed. A new field added here reaches newly imported decks only — existing decks need a data
 migration or a safe default where the field is read.
 
 ## The card cache
@@ -130,10 +128,6 @@ interface:
   This is what the import job uses.
 - `FileCardCache(dir)` — one JSON file per key under `<dir>/cards/`, for using the
   importer without a database (tests).
-
-Both also keep the compiled card rules (`get_rule` / `set_rule`, keyed by oracle id
-and DSL version — `card_rules` in the database, `<dir>/rules/` on disk); see
-[Card compilation](card-compilation.md).
 
 ### Bulk loading
 
@@ -198,11 +192,15 @@ MTGGoldfish is not used: its `robots.txt` disallows `/deck/download*`.
   changed) leaves that format's previous snapshot untouched;
 - imports every list through `import_decklist`, the same path and rules as user
   decks; a deck that fails is kept as `failed` with its error;
-- compiles each main deck with the judge and stores its coverage report;
+- checks each imported deck against the Forge bridge (`POST /decks/check`) and stores
+  the cards Forge does not know and the ones it cannot play fully as its `coverage`;
+  when the bridge is unreachable the coverage stays empty and the command says
+  "not checked";
 - replaces the format's decks in one transaction. Seats that played a replaced deck
   keep its name (`Seat.metagame_deck` is `SET_NULL`).
 
 The new-match form lists the ready metagame decks of the chosen format as
-`archetype — share — coverage`, with ⚠ under `LOW_COVERAGE_PERCENT` (70); the
-`/metagame` page shows every format's snapshot. Source parsers are tested on pages
+`archetype — share — N cards unknown to Forge`, with ⚠ when Forge does not know a
+card (the bridge would refuse the match); the `/metagame` page shows every format's
+snapshot. Source parsers are tested on pages
 recorded under `tests/fixtures/metagame/`.

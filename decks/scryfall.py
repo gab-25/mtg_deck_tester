@@ -159,10 +159,6 @@ def process_cached_card(card: dict) -> dict:
 def fetch_card_raw(card_name: str, cache) -> dict | None:
     """The raw Scryfall JSON of a card, from the cache or the network.
 
-    The card compiler needs fields the processed card in ``Deck.cards`` drops
-    (``oracle_id``, ``keywords``, ``colors``); for an imported deck the raw
-    card is already cached, so this costs no Scryfall call.
-
     Keyed on the front face, so "Sink into Stupor" and "Sink into Stupor //
     Soporific Springs" share the one entry they both resolve to. Returns None
     for a card Scryfall does not know (cached) or could not be reached for

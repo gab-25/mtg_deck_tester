@@ -233,7 +233,9 @@ def test_the_log_shows_confidence_fallback_reasons_and_folds_forge_ai_decisions(
     rows = [
         ("decision", 0, "attack: Attack with Bear", {"kind": "attack", "choice": 1, "confidence": 0.82, "probabilities": probabilities, "model": "typesafe/jev-1.13"}),
         ("fallback", 0, "block: decided by Forge AI (delegate)", {"kind": "block", "reason": "delegate", "fallback_kind": "low_confidence", "confidence": 0.11, "probabilities": probabilities}),
+        ("forge_ai", 0, "declareBlockers: decided by Forge AI", {"method": "declareBlockers"}),
         ("fallback", 1, "priority: decided by Forge AI (timeout)", {"kind": "priority", "reason": "timeout"}),
+        ("forge_ai", 1, "chooseSpellAbilityToPlay: decided by Forge AI", {"method": "chooseSpellAbilityToPlay"}),
         ("forge_ai", 0, "assignCombatDamage: decided by Forge AI", {"method": "assignCombatDamage"}),
         ("forge_ai", 0, "payManaCost: decided by Forge AI", {"method": "payManaCost"}),
         ("forge_ai", 0, "payManaCost: decided by Forge AI", {"method": "payManaCost"}),
@@ -246,6 +248,8 @@ def test_the_log_shows_confidence_fallback_reasons_and_folds_forge_ai_decisions(
     assert "low_confidence" in page and "Jev leaned to: Attack with Bear" in page
     assert "timeout" in page
     assert "assignCombatDamage, payManaCost (3×)" in page
+    # A fallback's own Forge-AI decision is not repeated.
+    assert "chooseSpellAbilityToPlay" not in page and "declareBlockers" not in page
     assert "Untap step" not in page
 
 
@@ -294,10 +298,9 @@ def test_hidden_seats_and_decks_are_cleared_not_just_hidden(client):
 def _metagame(fmt="modern", **fields):
     from decks.models import MetagameDeck
 
-    from .factories import cache_raw_cards, constructed_cards
+    from .factories import constructed_cards
 
     cards = constructed_cards(fmt)
-    cache_raw_cards(cards)
     defaults = {"source": "mtgtop8", "archetype": "Goblins", "meta_share": 8.4, "rank": 1, "cards": cards,
                 "coverage": {"unresolved": ["Odd Goblin"], "unsupported_cards": []}}
     defaults.update(fields)

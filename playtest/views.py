@@ -17,7 +17,7 @@ from .agents import openrouter, typesafe
 from .forms import DEFAULT_MATCH_FORMAT, METAGAME_PREFIX, SEAT_ROWS, agent_choices, parse_match_form
 from .models import Match, Seat
 from .runner import run_match, start_game
-from .summary import fallback_reason, table_names
+from .summary import event_row, fallback_executions, fallback_reason, table_names
 
 logger = logging.getLogger(__name__)
 
@@ -133,9 +133,11 @@ def log_rows(events, names: dict[int, str]) -> list[dict]:
     decisions with their confidence, fallbacks with their reason, and runs of
     Forge-AI decisions folded into one line."""
     rows = []
-    for event in events:
+    # A fallback's forge_ai twin is the same decision: the fallback line says it.
+    executions = fallback_executions([event_row(event) for event in events])
+    for index, event in enumerate(events):
         payload = event.payload or {}
-        if event.kind == "log" and payload.get("type") in QUIET_LOG:
+        if index in executions or (event.kind == "log" and payload.get("type") in QUIET_LOG):
             continue
         if event.kind == "forge_ai":
             last = rows[-1] if rows else None

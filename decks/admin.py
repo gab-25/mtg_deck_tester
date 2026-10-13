@@ -2,7 +2,7 @@
 
 from django.contrib import admin
 
-from .models import CardRule, Deck, MetagameDeck, ScryfallCard
+from .models import Deck, MetagameDeck, ScryfallCard
 
 
 @admin.register(Deck)
@@ -18,14 +18,6 @@ class ScryfallCardAdmin(admin.ModelAdmin):
     list_display = ("key", "created_at")
     search_fields = ("key",)
     readonly_fields = ("created_at",)
-
-
-@admin.register(CardRule)
-class CardRuleAdmin(admin.ModelAdmin):
-    list_display = ("oracle_id", "dsl_version", "status", "reason_kind", "model", "compiled_at")
-    list_filter = ("status", "reason_kind", "dsl_version")
-    search_fields = ("oracle_id", "reason")
-    readonly_fields = ("compiled_at",)
 
 
 @admin.register(MetagameDeck)

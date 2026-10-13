@@ -1,14 +1,15 @@
 # Agents
 
-An agent is whatever plays a seat. The engine never trusts it: it offers a list of
-legal actions, the agent picks one, and anything not on the list fails the game.
+An agent is whatever plays a seat. It never decides what is legal: Forge lists the
+options of each decision (see [Forge engine](engine.md)), and the agent picks one of
+them by index, or delegates the decision to Forge's AI.
 
 | `Seat.Agent` | Class | Network | Notes |
 |---|---|---|---|
-| `heuristic` (default) | `HeuristicAgent` | none | Fixed rules; the Jev agent's fallback; drives every test. |
+| `forge_ai` (default) | — | none | Forge's own computer player: the seat is created with `controller: "forge_ai"` and never reaches a worker. |
 | `jev` | `JevAgent` | OpenRouter | One Jev `choice` per decision; logs its confidence. |
 | `llm` | `LLMAgent` | OpenRouter | One chat completion per decision; logs its reason. |
-| `random` | `RandomAgent` | none | The free baseline. |
+| `random` | `RandomAgent` | none | The free baseline, seeded per seat. |
 
 ## The interface
 
@@ -17,44 +18,29 @@ legal actions, the agent picks one, and anything not on the list fails the game.
 ```python
 @dataclass(frozen=True)
 class Decision:
-    action: Action
+    choice: int | None          # the picked option's index; None delegates to Forge's AI
     reasoning: str = ""         # why, in the agent's own words (LLM)
-    fallback_reason: str = ""   # set when another agent chose instead
-    fallback_agent: str = ""    # "heuristic", "random"
-    fallback_kind: str = ""     # "error" or "low_confidence"
-    confidence: float | None = None              # Jev
-    probabilities: tuple[tuple[str, float], ...] = ()  # top actions by label
+    fallback_reason: str = ""   # set when it delegates: why, in words
+    fallback_kind: str = ""     # "low_confidence", "error" or "budget"
+    confidence: float | None = None                    # Jev
+    probabilities: tuple[tuple[str, float], ...] = ()  # top options by label
     model: str = ""             # the versioned model id that answered
 
+    delegate: bool              # property: choice is None
+    def meta(self) -> dict: ... # what the bridge stores on the event
+
+def delegate(kind, reason, **extra) -> Decision: ...
+
 class Agent(Protocol):
-    def choose(self, view: dict, options: list[Action]) -> Decision: ...
+    def choose(self, view: dict, options: list[dict], *, kind: str = "", prompt: str = "") -> Decision: ...
 ```
 
-- `view` is `player_view(state, seat)` (see [Game engine](engine.md#what-a-seat-can-see)).
-- `options` is `legal_actions(...)`: never empty, at most 255, the do-nothing action
-  first. The engine does not call the agent when there is a single option.
-- The returned `action` must be one of `options` (the `label` is not compared).
-
-The engine logs a `decision` event (or `pass`) for every decision with a reason or a
-confidence, and an `agent_fallback` event whenever `fallback_reason` is set; both
-carry `Decision.payload()` — confidence, top probabilities, model, fallback kind —
-which the match page and the summary read.
-
-## Heuristic agent
-
-`playtest/agents/heuristic.py` — deterministic ordered rules, first match wins,
-ties broken by name and id: land → commander → removal on the best target →
-highest-MV creature → other useful spell → counter an opponent's spell → safe or
-lethal attacks at the opponent it pays most to attack (even trades when it
-outnumbers the blockers) → blocks to survive and favourable trades → cycle what it
-will not cast soon → pass. It pays alternative costs only when it cannot pay the
-mana cost, weighs a sacrificed permanent as its removal value, and answers an
-effect's choice with the kernel's highest estimate.
-
-Its evaluations are **pure public helpers over the view** — `combat_outcome`,
-`attack_facts`, `lethal_on_board`, `block_facts`, `removal_value`,
-`incoming_damage`, `action_value` — so the Jev agent reuses them to annotate each
-option.
+- `view`, `options` (`index`, `label`, `facts`), `kind` and `prompt` are the bridge's
+  decision as is. The bridge never asks when there is a single option.
+- The worker answers `{"choice": i, "meta": ...}` or `{"delegate": true, "meta": ...}`;
+  `meta` carries `confidence`, `probabilities`, `model`, `reason`,
+  `fallback_reason` and `fallback_kind`, and lands on the bridge's `decision` or
+  `fallback` event, which the match page and the summary read.
 
 ## Jev agent
 
@@ -62,28 +48,36 @@ option.
 
 One Jev request per decision:
 
-- **state**: the view filtered to what a decision needs (life, mana, hand with
-  rendered effects, battlefields, stack); no ids, no history, no oracle text;
-- **one `choice` named `action`**, whose instructions name the format, the active
-  player and the step; its options are exactly the legal actions, keyed `a0…aN`,
-  described by their label **plus facts computed in code** ("lethal if unblocked",
-  "dies to: X", "kills Y", "you take 5 combat damage (life 7 -> 2)");
+- **state** (`jev_state`): the view filtered to what a decision needs — turn, phase,
+  active player; your life, hand with card text, library count, mana available,
+  lands played, commanders with their tax; every battlefield with P/T, tapped,
+  summoning sick, damage, counters and what an aura is attached to; opponents' hand
+  and library counts; the stack and combat. Graveyards and exile are counts unless
+  the decision is about them (a `choose_cards` or `target` prompt naming a graveyard
+  or exile). No ids, no history.
+- **one `choice` named `action`**: its instructions name the seat, the format, the
+  turn, whose turn and phase it is and the goal, plus a line per decision kind
+  (`KIND_LINES`) and Forge's prompt. Its options are exactly the bridge's, keyed
+  `o<index>`, each described by its label **plus Forge's facts** (`describe_option`);
+  the model computes nothing.
 - the options are **shuffled with the agent's seeded RNG** before each request and
-  mapped back by key, because Jev leans toward the first option;
-- when an effect asks a choice while it resolves (a search, a discard, a scry, a
-  "you may"), the state carries its prompt (`choosing`) and each option the
-  kernel's estimate ("estimated value 7").
+  mapped back by key, because Jev leans toward the first option and Forge's first is
+  always "Pass" or "Done".
 
 `gate()` is the one place an uncertain decision is handed over: below
-`JEV_MIN_CONFIDENCE` (default 0.2) the heuristic agent decides, with a
-`low_confidence` fallback that keeps Jev's distribution. Jev's confidence measures
-how peaked its distribution is, not the chosen option's probability; on 222
-measured decisions its median was ~0.4. A missing key, a transport error or a
-malformed answer hands the decision to the heuristic agent too (`error`), never to
-the random agent.
+`JEV_MIN_CONFIDENCE` (default 0.2) the agent delegates with `low_confidence`, keeping
+Jev's confidence and top options in the fallback's meta. Jev's confidence measures
+how peaked its distribution is, not the chosen option's probability. Measured on
+Forge decisions (a Modern Burn seat against Forge's AI, 23 decisions, jev-1.13):
+median 0.38, quartiles 0.20 / 0.82; 0.2 hands over 17% of decisions (near-ties
+between two burn spells), 0.4 would hand over half — the same shape as on the old
+Python kernel (222 decisions, median ~0.4). A missing key, a transport error, a malformed answer
+or one naming no offered option delegates with `error`.
 
-The agent is `metered`: the game hands it to its fallback past `max_agent_calls`
-(400) for the seat or `max_wall_clock_seconds` (300) for the match.
+**Metering** happens in the worker (`playtest.workers.decide`) for agents marked
+`metered` (Jev and LLM): past `MAX_AGENT_CALLS` (400) for the seat or
+`MAX_MATCH_SECONDS` (1800) for the match, the seat delegates without calling the
+model (`budget`).
 
 ## Jev client
 
@@ -100,19 +94,17 @@ against OpenRouter's `POST /api/v1/systemone`, which serves Jev in TypeSafe's na
 | Limits | `choice()` refuses more than 255 options |
 
 `read_choice(answer, options)` checks an answer names an offered option. Every
-failure is a `TypeSafeError`. The card judge uses the same client
-([Card compilation](card-compilation.md)).
+failure is a `TypeSafeError`.
 
 ## LLM agent
 
 `playtest/agents/llm_agent.py` — `LLMAgent(model=None, *, seed=None, chat=None)`.
-Each decision is one chat completion: a system message with a short brief, the
-engine rules (the docstring of `playtest/engine/rules.py`) and the reply format
-`{"choice": <number>, "reason": "<one short sentence>"}`; a user message with the
-format, the view as JSON and the numbered options. `parse_choice` reads the first
-`{...}` block. On a `ChatError` or an invalid reply it falls back to its internal
-`RandomAgent`. It is kept as it is; whether it moves onto the heuristic fallback or
-is removed is decided in #44.
+Each decision is one chat completion: a system message with a short brief and the
+reply format `{"choice": <number>, "reason": "<one short sentence>"}`; a user message
+with the format, the same state Jev sees, the decision kind, Forge's prompt and the
+numbered options with their facts. `parse_choice` reads the first `{...}` block. On a
+`ChatError` or an invalid reply it delegates (`error`). Whether it stays is decided
+in #44.
 
 ## OpenRouter client
 
@@ -120,18 +112,18 @@ is removed is decided in #44.
 against `/chat/completions`. Default model `OPENROUTER_MODEL`, else
 `google/gemini-2.5-flash`; per-seat `Seat.model`. Failures raise `ChatError`.
 
-Without `OPENROUTER_API_KEY` the new-match form refuses Jev and LLM seats, the
-home page shows the model players as off, and the card judge leaves cards that need
-it unsupported (retried once a key is set).
+Without `OPENROUTER_API_KEY` the new-match form refuses Jev and LLM seats.
 
 ## Adding an agent
 
-1. Write a class with `choose(view, options) -> Decision` under `playtest/agents/`.
-   Return one of `options`; explain fallbacks in `fallback_reason`. Set
-   `metered = True` and a `fallback` attribute if it calls a model.
+1. Write a class with `choose(view, options, *, kind="", prompt="") -> Decision`
+   under `playtest/agents/`. Return an offered option's index, or `delegate(...)`
+   with a reason. Set `metered = True` if it calls a model.
 2. Add a value to `playtest.models.Seat.Agent` (a migration) and an icon in
    `Seat.agent_icon`.
-3. Build it in `playtest.runner.build_agent` from the `Seat` and the match seed.
-4. Extend `playtest/forms.py` and `match_new.html` if it needs configuration.
+3. Build it in `playtest.workers.build_agent` from the `Seat` and the match seed.
+4. List it in `PLAYABLE_AGENTS` (`playtest/forms.py`), and extend `match_new.html`
+   if it needs configuration.
 5. Test it without network: pass a fake `ask` / `chat`, or monkeypatch
-   `requests.post` (`tests/test_jev_agent.py`, `tests/test_agents.py`).
+   `typesafe.system_one` / `requests.post`, and play it against the `fake_forge`
+   fixture (`tests/test_jev_agent.py`, `tests/test_runner.py`).

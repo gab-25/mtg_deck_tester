@@ -13,7 +13,7 @@ from .models import Seat
 METAGAME_PREFIX = "metagame:"
 # Seats that ask a model through OpenRouter.
 MODEL_AGENTS = {Seat.Agent.LLM, Seat.Agent.JEV}
-# The agents a new match may seat (the heuristic agent played the old Python engine).
+# The agents a new match may seat, in the order the form lists them.
 PLAYABLE_AGENTS = [Seat.Agent.FORGE_AI, Seat.Agent.JEV, Seat.Agent.RANDOM, Seat.Agent.LLM]
 
 # Rows the form shows; the format decides how many of them may be filled.

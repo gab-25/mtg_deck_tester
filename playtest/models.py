@@ -78,7 +78,6 @@ class Seat(models.Model):
     class Agent(models.TextChoices):
         FORGE_AI = "forge_ai", "Forge AI"
         RANDOM = "random", "Random"
-        HEURISTIC = "heuristic", "Heuristic"
         JEV = "jev", "Jev"
         LLM = "llm", "LLM"
 
@@ -121,7 +120,6 @@ class Seat(models.Model):
         return {
             self.Agent.FORGE_AI: "memory",
             self.Agent.RANDOM: "casino",
-            self.Agent.HEURISTIC: "rule",
             self.Agent.JEV: "bolt",
             self.Agent.LLM: "psychology",
         }.get(self.agent, "casino")

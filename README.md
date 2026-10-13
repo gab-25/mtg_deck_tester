@@ -1,19 +1,20 @@
 # MTG Deck Tester
 
 A **Django** web app where **AI agents playtest competitive Magic: The Gathering decks**:
-Standard, Pioneer, Modern, Legacy, Vintage, Pauper, Commander (cEDH included) and Duel
-Commander. Import your decks from a plain-text list (cards resolved through the
-**Scryfall** API), seat them at a table — or pit them against the top decks of the format — and
-let the agents play the game out under real rules: the stack and priority, colored mana,
-blockers, and each card's own effects. Pages are **HTMX** over a precompiled stylesheet,
-data lives in **Postgres**.
+Standard, Pioneer, Modern, Legacy, Vintage, Pauper and Duel Commander (Commander decks,
+cEDH included, import and check too). Import your decks from a plain-text list (cards
+resolved through the **Scryfall** API), seat them at a table — or pit them against the
+top decks of the format — and let the agents play the game out under the real rules.
+Pages are **HTMX** over a precompiled stylesheet, data lives in **Postgres**.
 
-Card effects are **compiled once** from oracle text into a small, closed effect language,
-and the seats are played by a deterministic heuristic agent or by
+The rules are **Forge**'s: [Forge](https://github.com/Card-Forge/forge), an open-source
+rules engine with nearly every card scripted, plays every game from its own container
+([`mtg_forge_engine`](https://github.com/gab-25/mtg_forge_engine), the *bridge*) and asks
+each seat one decision at a time. The seats are played by
 [Jev](https://docs.typesafe.ai/introduction), TypeSafe AI's System One model, which picks
-among the legal actions and says how sure it is. No model is ever the rules engine: the
-rules live in deterministic Python that decides which actions are legal; a model only
-picks one of them.
+among Forge's options and says how sure it is, by a language model, at random, or by
+Forge's own AI. No model is ever the rules engine: Forge lists the legal options; an
+agent only picks one of them, or hands the decision back to Forge's AI.
 
 ## Features
 
@@ -35,33 +36,29 @@ picks one of them.
 
   A constructed deck lists its sideboard under a `Sideboard` header; the sideboard is
   imported and checked, but a match is a single game played with the main deck.
-- **Agents**: each seat gets its own agent — `heuristic` (fixed rules, no network),
-  `jev` (Jev picks each action through OpenRouter; its confidence and runner-up actions
-  are logged), `llm` (a language model of your choice through OpenRouter, with its
-  written reason), or `random` (a free baseline). A Jev seat that is unsure (below
-  `JEV_MIN_CONFIDENCE`) or unreachable hands the decision to the heuristic agent, and a
-  match never stalls on a model.
-- **Compiled card effects**: before a match, every card is compiled into a program of
-  operations (damage, life, cards, removal, counterspells, tokens, pump, counters,
-  mana…) and cached forever in `card_rules`. A card the compiler cannot express is
-  *unsupported* and plays as a blank — see [How cards are compiled](#how-cards-are-compiled).
-- **Coverage**: every seat shows how much of its deck the simulation could play, with
-  warnings for an unsupported commander and for dead spells, and the list of
-  unsupported cards with their reasons. The deck page shows it too once every card is
-  in the cache.
+- **Agents**: each seat gets its own agent — `forge_ai` (Forge's own computer player,
+  no network), `jev` (Jev picks each of Forge's options through OpenRouter; its
+  confidence and runner-up options are logged), `llm` (a language model of your choice
+  through OpenRouter, with its written reason), or `random` (a free baseline). A Jev
+  seat that is unsure (below `JEV_MIN_CONFIDENCE`) or unreachable hands the decision to
+  Forge's AI, with the reason logged, so a match never stalls on a model.
+- **Coverage**: Forge either knows a card or the match is refused, naming the card.
+  Each seat lists the cards Forge knows but cannot play fully. The deck page checks a
+  deck on demand (**Check with Forge**), never on page view.
 - **Metagame decks**: `manage.py sync_metagame` imports the top decks of every format
   (EDHTop16 for Commander, MTGTop8 for the rest) as shared opponents, shown on the
-  *Metagame* page and offered in the new-match form with their meta share and
-  coverage (⚠ under 70%).
-- **Partner commanders**: Partner, Partner with, Friends forever and Backgrounds;
-  each commander pays its own tax and deals its own commander damage.
+  *Metagame* page and offered in the new-match form with their meta share; a deck with
+  cards Forge does not know is flagged ⚠.
+- **Partner commanders**: Partner, Partner with, Friends forever and Backgrounds are
+  accepted at import and sent to Forge as the deck's commanders.
 - **Live game log and summary**: a match runs in the background; its page shows the
-  table and the log as they happen (HTMX polling), each Jev decision with its
-  confidence, and at the end a deterministic summary per seat (damage by source,
-  spells cast, commander tax, lands, dead spells, decision confidence).
-- **Reproducible**: a match has a seed. The same seed with heuristic or random agents
-  replays the same game, event for event: there are no model calls during a game
-  except the seats' own decisions.
+  table and Forge's log as it grows (HTMX polling), each Jev decision with its
+  confidence, each fallback with its reason, and at the end a deterministic summary per
+  seat: result, life over time, turns, spells cast, lands played, the agent's decisions
+  against Forge AI's, confidence and fallbacks by reason. A running match can be
+  stopped.
+- **Reproducible**: a match has a seed. The same seed with random or Forge-AI seats
+  replays the same game; Jev seats are as reproducible as Jev.
 - **Scryfall cache in the database**: card JSON is cached in Postgres
   (`scryfall_cards`) and shared by every deck. Card images are not stored: the
   browser loads them straight from Scryfall's CDN (`cards.scryfall.io`). The card table can be
@@ -71,90 +68,26 @@ picks one of them.
 
 ## Rules
 
-The kernel (`playtest/engine/`) plays 2-player constructed games, 2–4 player Commander
-and 2-player Duel Commander. Everything below applies to every format; the commander
-rules apply to the Commander formats only.
+- **Forge enforces the comprehensive rules** and every card's own script: turns and
+  priority, the stack, mana, combat, state-based actions, layers, replacement effects.
+- **Playable formats**: Duel Commander and the six constructed formats, two seats.
+  Multiplayer Commander decks import and can be checked against Forge, but cannot be
+  played until the bridge seats more than two players.
+- **Always Forge's AI**: mana payment, combat damage assignment and the other
+  decisions the bridge does not expose (scry, coin flips, …) are decided by Forge's AI
+  for every seat, and logged as such.
+- **The end**: a winner, or a draw at the bridge's turn cap (`MAX_TURNS`).
 
-- **Turns and priority**: untap, upkeep, draw, main, combat (beginning, attackers,
-  blockers, first-strike damage, damage, end), second main, end step, cleanup. The
-  first player of a two-player game skips their first draw. Priority passes around
-  the table in turn order; the top of the stack resolves only when every player still
-  in the game passes in succession.
-- **Mana**: lands and rocks make the colors Scryfall lists for them (Sol Ring makes
-  two). Sources with a cost (fetch-style "pay life", painlands, Treasures, "only if you
-  control a Forest") are spent only when the free ones cannot pay. Costs are checked
-  with an exact max-flow, and paid **automatically**, keeping the most colors open — no
-  agent decides how to pay, so "holding up an Island" is not a decision anyone makes.
-- **Spells and abilities**: one land per turn; sorcery-speed cards in your main phase
-  with an empty stack; instants and flash any time you have priority. Targets are
-  chosen on cast and checked again on resolution; "its controller" and "its power"
-  read the target as it last existed. Alternative costs (pitching a card, paying life,
-  returning a land, free with a commander), additional sacrifices, flashback and
-  cycling are separate actions naming what they use. Triggered abilities (enters,
-  dies, attacks, leaves, upkeep, end step, beginning of combat, combat damage to a
-  player, a spell cast, another creature or a land entering, life gained, a card
-  drawn) go on the stack in APNAP order. Static abilities (anthems, granted keywords)
-  are applied as a derived view.
-- **Choices during resolution** — which card a tutor finds, what a Thoughtseize
-  takes, what stays on top after a scry, whether to pay for a counter-unless or do a
-  "you may" — are decisions of the player who makes them, among options the kernel
-  lists.
-- **Combat**: attackers and blockers are declared one at a time, each attacker at one
-  opponent, each defender blocking what attacks them. Flying, reach, menace, first
-  and double strike, trample, deathtouch, lifelink, vigilance, haste, defender,
-  hexproof, indestructible and ward (with a mana cost) are supported.
-- **Commander**: the commander starts in the command zone, costs 2 more per previous
-  cast, returns to the command zone instead of dying or being exiled, and deals
-  commander damage (21 eliminates, Commander only).
-- **Losing**: 0 life, drawing from an empty library, or the commander-damage limit. A
-  player who loses leaves with everything they own. The last player standing wins; a
-  match that reaches its round limit is a draw.
-- **Opening hands**: a deterministic London mulligan for everyone (keep 2–5 lands, at
-  most two mulligans, the first free with three or more players).
-- **Guards**: caps on rounds, decisions per turn, triggers per turn, stack depth,
-  activations, state-based-action iterations, declaration steps, options per decision
-  (255), model calls per seat and match wall clock. Each one ends cleanly with an
-  event.
-
-Not supported: layers, replacement and copy effects (beyond a countered spell going
-elsewhere), planeswalkers, auras and equipment, kicker, storm, delve, conditions
-("if you control …"), and choosing how to pay mana.
-
-## How cards are compiled
-
-1. **Deterministic pre-pass** (`engine/cardrules.py`): cost, types, power/toughness,
-   colors, keywords, "enters tapped", the mana a card makes (with its cost),
-   alternative and additional costs, flashback and cycling come straight from the
-   cached Scryfall JSON. What is left of the rules text is the *residual*: empty means
-   supported with no model call; a match on a blocklist (copies, "instead", "for
-   each"…) means unsupported with no model call.
-2. **Clause splitter** (`engine/clauses.py`): code reads the trigger, the cost, the
-   modes and the atomic clauses ("you may" and "if you do" included), and refuses what
-   it cannot read (conditions, unbound references, other zones) unless an operation's
-   grammar reads the clause whole.
-3. **Judge** (`judge.py`): one Jev request per card. For each clause Jev picks the
-   operation and the selector, each asked twice with the options in opposite orders.
-   The op's fields are then read off the clause by its grammar, and the program goes
-   through the validator (`engine/dsl.py`), which rejects and never coerces. A `NONE`
-   answer, a disagreement, low confidence or a rejected program make the card
-   unsupported, with a reason naming the clause.
-4. **Cache**: results are stored in `card_rules` by oracle id and DSL version, so a card
-   is compiled once; a card the judge could not be asked about is retried next time.
-
-`manage.py card_coverage --deck <id>` (or `card_coverage <decklist file>`) prints a
-deck's coverage report; `manage.py dsl_gaps [--format]` lists what keeps the metagame
-decks' cards out of the DSL, weighted by copies.
+See [Forge engine](docs/engine.md) for the decision protocol.
 
 ## Documentation
 
 - [Architecture](docs/architecture.md) — how the apps fit together, the request →
   background job → stored result flow, the data model and the boundaries.
-- [Game engine](docs/engine.md) — the rules kernel: steps and priority, the stack,
-  mana, combat, card effects, guards, per-seat views, and how to add a rule.
-- [Card compilation](docs/card-compilation.md) — the pre-pass, the clause splitter,
-  the effect DSL, the Jev judge, the compiled-rules cache and coverage.
-- [Agents](docs/agents.md) — the agent interface, the heuristic, Jev, LLM and random
-  agents, the Jev and OpenRouter clients and the fallbacks.
+- [Forge engine](docs/engine.md) — the bridge's contract, the client, the runner, the
+  worker pool, reproducibility and the summary.
+- [Agents](docs/agents.md) — the agent interface, the Jev, LLM and random agents, the
+  Jev and OpenRouter clients and the fallbacks to Forge's AI.
 - [Deck import](docs/deck-import.md) — parsing (sideboards included), Scryfall
   fetching, the card cache, legality checks per format family and the format
   registry.
@@ -171,34 +104,20 @@ mtg_deck_tester/        # Django project: settings, URLs, layout templates, home
 └── logging_context.py  #   Stamps "[match <id>]" / "[deck <id>]" on job logs
 decks/                  # App: decks and the Scryfall cache
 ├── rules/              #   Decklist parsing, card types, Commander and constructed legality (pure)
-├── formats.py          #   Every format's parameters and family
+├── formats.py          #   Every format's parameters, family and name on the Forge bridge
 ├── scryfall.py         #   Card data fetching
 ├── cache.py            #   Database and filesystem cache backends
+├── metagame/           #   Metagame sources and sync
 └── importer.py         #   parse → fetch → validate, and the import job
 playtest/               # App: matches between agents
-├── engine/             #   The rules kernel (pure Python, no Django)
-│   ├── cardrules.py    #     Deterministic pre-pass over Scryfall JSON
-│   ├── clauses.py      #     Rules text -> abilities and atomic clauses
-│   ├── dsl.py          #     The closed effect language and its validator
-│   ├── coverage.py     #     Per-deck coverage report
-│   ├── manacost.py     #     Mana cost parsing
-│   ├── mana.py         #     Max-flow payment feasibility and auto-tapping
-│   ├── state.py        #     Steps, cards, permanents, stack, players
-│   ├── actions.py      #     The legal actions offered to an agent
-│   ├── effects.py      #     DSL operations, targets, static abilities
-│   ├── zones.py        #     Zone changes, the command zone, leaving the game
-│   ├── rules.py        #     Applying actions, the stack, state-based actions, combat
-│   ├── limits.py       #     The kernel's guards
-│   ├── events.py       #     What the engine reports (the match log)
-│   ├── view.py         #     What a seat may see (no hidden information)
-│   └── game.py         #     Setup, turns, priority, triggers, asking agents
-├── agents/             #   Heuristic, Jev, LLM and random agents; Jev and OpenRouter clients
-├── judge.py            #   Compiles cards with Jev, through the card_rules cache
+├── forge.py            #   HTTP client of the Forge bridge
+├── runner.py           #   Starts a game on the bridge, stores its events and result
+├── workers.py          #   The worker pool answering Forge's decisions
+├── agents/             #   Jev, LLM and random agents; Jev and OpenRouter clients
 ├── summary.py          #   The deterministic match summary
-├── forms.py            #   The new-match form
-└── runner.py           #   Stored decks -> compile -> engine -> stored events and result
+└── forms.py            #   The new-match form
 theme/static/           # Precompiled stylesheet, vendored fonts and icons
-tests/
+tests/                  # Hermetic suite; fakeforge.py is an in-memory bridge
 docs/                   # Project documentation (see Documentation above)
 CLAUDE.md               # Notes for Claude Code
 ```
@@ -210,20 +129,23 @@ The project uses [`uv`](https://docs.astral.sh/uv/).
 ### Docker Compose
 
 ```bash
-export OPENROUTER_API_KEY="..."       # optional: enables the card judge, Jev and LLM seats
+export OPENROUTER_API_KEY="..."       # optional: enables Jev and LLM seats
 export OPENROUTER_MODEL="..."         # optional: default LLM (google/gemini-2.5-flash)
 export JEV_MODEL="..."                # optional: Jev model (~typesafe/jev-latest)
 docker compose up --build
 docker compose exec web python manage.py createsuperuser
 ```
 
-Then open <http://localhost:8000>.
+This also builds and starts the Forge bridge (`mtg-forge-engine`); its first build
+compiles Forge and takes several minutes, and `web` waits for its health check. Then
+open <http://localhost:8000>.
 
 ### Locally
 
 ```bash
 uv sync
 cp .env.example .env                  # then edit it
+docker compose up -d mtg-forge-engine # the Forge bridge on localhost:8080 (FORGE_URL's default)
 uv run python manage.py createsuperuser
 uv run python -m mtg_deck_tester      # migrate + runserver
 ```
@@ -265,10 +187,9 @@ uv run python manage.py sync_metagame --format modern --limit 5
 Commander comes from [EDHTop16](https://edhtop16.com), Duel Commander and the
 constructed formats from [MTGTop8](https://www.mtgtop8.com). Each run replaces that
 format's decks (a source that fails keeps the previous ones), imports them with the
-same rules as your decks, and compiles them to measure their coverage — set
-`OPENROUTER_API_KEY` first, or cards that need the judge count as unsupported. Load the
-local card database first so the import needs few Scryfall calls. Run it weekly, e.g.
-from cron, after `load_oracle_cards`.
+same rules as your decks, and, when the Forge bridge runs, checks each one for cards
+Forge does not know. Load the local card database first so the import needs few
+Scryfall calls. Run it weekly, e.g. from cron, after `load_oracle_cards`.
 
 ## Configuration
 
@@ -278,32 +199,42 @@ local development; real environment variables win):
 | Variable | Meaning | Default |
 |---|---|---|
 | `DATABASE_URL` | Postgres or SQLite URL | `postgresql://mtg:mtg@localhost:5432/mtg_tester` |
-| `OPENROUTER_API_KEY` | Enables Jev (the card judge and Jev seats) and LLM seats; without it, cards that need the judge are unsupported | — |
+| `FORGE_URL` | The Forge bridge (Compose sets `http://mtg-forge-engine:8080`) | `http://localhost:8080` |
+| `FORGE_WORKERS` | Threads answering Forge's decisions: the most model calls in flight; `0` lets each match's runner answer its own | `4` |
+| `OPENROUTER_API_KEY` | Enables Jev and LLM seats | — |
 | `OPENROUTER_MODEL` | Default model for LLM seats | `google/gemini-2.5-flash` |
-| `JEV_MODEL` | Jev model, for the judge and Jev seats | `~typesafe/jev-latest` |
-| `JEV_MIN_CONFIDENCE` | Below this confidence a Jev seat hands the decision to the heuristic agent | `0.2` |
+| `JEV_MODEL` | Jev model for Jev seats | `~typesafe/jev-latest` |
+| `JEV_MIN_CONFIDENCE` | Below this confidence a Jev seat hands the decision to Forge's AI | `0.2` |
+| `MAX_AGENT_CALLS` | Model calls per seat; past it the seat delegates to Forge's AI | `400` |
+| `MAX_MATCH_SECONDS` | Match wall clock; past it model seats delegate to Forge's AI | `1800` |
 | `SECRET_KEY` / `DEBUG` | Django basics | dev key / on |
 | `CSRF_TRUSTED_ORIGINS` | Comma-separated origins behind a proxy | — |
 | `RUN_JOBS_IN_BACKGROUND` | Run imports and matches off the request thread | `1` |
 | `HOST` / `PORT` / `RELOAD` | Local server (`python -m mtg_deck_tester`) | `0.0.0.0` / `8000` / off |
 | `LOG_LEVEL` | Console log level | `INFO` |
 
+The bridge has its own settings — `DECISION_TIMEOUT` (an unanswered decision goes to
+Forge's AI), `MAX_TURNS` (the turn cap), `MAX_CONCURRENT_GAMES` and `ORPHAN_TIMEOUT` —
+described in [its README](https://github.com/gab-25/mtg_forge_engine#run); Compose
+passes the first three through.
+
 Jev is reached through OpenRouter (`/api/v1/systemone`), so one key covers everything;
-no TypeSafe account is needed. A Jev or LLM seat asks its model once per real decision
-(the engine passes on its own when passing is the only option), and a match can take a
-few hundred decisions: a seat is handed to the heuristic agent past 400 calls or five
-minutes per match. Keep an eye on the round limit and on your OpenRouter spend.
+no TypeSafe account is needed. A Jev or LLM seat asks its model once per decision Forge
+exposes (a single-option decision is never asked), and a match can take a few hundred
+decisions: keep an eye on your OpenRouter spend.
 
 ## Tests
 
 ```bash
 uv run pytest
+FORGE_URL=http://localhost:8080 uv run pytest -m forge   # opt-in: against a real bridge
 ```
 
-The suite is hermetic: in-memory SQLite, no Scryfall and no OpenRouter calls (a guard
-fails any test that reaches the network), and no API key. It also
-checks that templates only use classes the precompiled stylesheet contains and icons
-the vendored font subset can render.
+The suite is hermetic: in-memory SQLite, no Scryfall, OpenRouter or Forge calls (a
+guard fails any test that reaches the network), and no API key. Matches play against
+`tests/fakeforge.py`, an in-memory bridge; only the tests marked `forge` reach a real
+one, and they skip without `FORGE_URL`. It also checks that templates only use classes
+the precompiled stylesheet contains and icons the vendored font subset can render.
 
 ## License
 

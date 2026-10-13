@@ -27,9 +27,11 @@ logger = logging.getLogger(__name__)
 
 # Default confidence under which Forge's AI decides instead; override with
 # JEV_MIN_CONFIDENCE. Jev's confidence measures how peaked its distribution is,
-# not the chosen option's probability. Measured on the Python kernel's
-# decisions (222, jev-1.13, 2026-10-12): median ~0.4, near-ties below 0.2.
-# Forge's menus are similar in shape (one action per option, "Pass" first).
+# not the chosen option's probability. Measured on Forge's decisions (a Modern
+# Burn seat against Forge's AI, 23 decisions, jev-1.13, 2026-10-13): median
+# 0.38, quartiles 0.20 / 0.82; 0.2 hands over 17% of decisions (the near-ties
+# between two burn spells), 0.4 would hand over half. The Python kernel's
+# decisions measured the same (222, median ~0.4).
 DEFAULT_MIN_CONFIDENCE = 0.2
 # How many of Jev's top options a decision keeps for the log.
 TOP_PROBABILITIES = 3

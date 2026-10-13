@@ -16,6 +16,9 @@ import uuid
 from playtest.forge import ForgeDeckError, ForgeError
 
 HEADERS = {"commander", "deck", "sideboard"}
+# The Forge method that takes a decision of each kind when it falls back.
+AI_METHODS = {"mulligan": "mulliganKeepHand", "priority": "chooseSpellAbilityToPlay",
+              "attack": "declareAttackers", "block": "declareBlockers"}
 LINE = re.compile(r"^(\d+)\s+(.+)$")
 
 
@@ -125,6 +128,9 @@ class FakeGame:
         answer = yield decision
         if answer["choice"] is None:
             self._event("fallback", seat, f"{kind}: decided by Forge AI (delegate)", {"kind": kind, "reason": "delegate", **answer["meta"]})
+            # Like the bridge, Forge's AI then logs the decision it takes.
+            method = AI_METHODS[kind]
+            self._event("forge_ai", seat, f"{method}: decided by Forge AI", {"method": method})
             return self.rng.randrange(len(options))
         choice = answer["choice"]
         self._event("decision", seat, f"{kind}: {options[choice][0]}", {"kind": kind, "choice": choice, **answer["meta"]})

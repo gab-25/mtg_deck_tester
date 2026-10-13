@@ -70,3 +70,21 @@ def test_saved_decks_get_their_image_urls_from_the_cached_card_json(django_user_
         # the playtest migrations that depend on it too.
         executor = MigrationExecutor(connection)
         executor.migrate(executor.loader.graph.leaf_nodes())
+
+
+@pytest.mark.django_db(transaction=True)
+def test_heuristic_seats_become_forge_ai_seats(django_user_model):
+    apps = _migrate(("playtest", "0006_forge_matches"))
+    try:
+        owner = django_user_model.objects.create_user(username="old")
+        Match = apps.get_model("playtest", "Match")
+        Seat = apps.get_model("playtest", "Seat")
+        match = Match.objects.create(owner_id=owner.id, seed=1)
+        Seat.objects.create(match=match, position=0, deck_name="A", agent="heuristic")
+        Seat.objects.create(match=match, position=1, deck_name="B", agent="random")
+        apps = _migrate(("playtest", "0007_heuristic_seats_to_forge_ai"))
+        agents = list(apps.get_model("playtest", "Seat").objects.order_by("position").values_list("agent", flat=True))
+        assert agents == ["forge_ai", "random"]
+    finally:
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())

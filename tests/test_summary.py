@@ -65,3 +65,16 @@ def test_the_summary_is_identical_for_identical_events():
     second = summarize_match(json.loads(json.dumps(GAME["events"])), seats, "modern", dict(GAME["game"]))
     assert first == second
     assert json.loads(json.dumps(first)) == first
+
+
+def test_a_fallback_and_the_forge_ai_decision_carrying_it_out_count_once():
+    events = [
+        {"seq": 0, "turn": 1, "seat": 0, "kind": "fallback", "text": "", "payload": {"reason": "delegate", "fallback_kind": "low_confidence"}},
+        {"seq": 1, "turn": 1, "seat": None, "kind": "log", "text": "Turn 1 (Red)", "payload": {"type": "TURN"}},
+        {"seq": 2, "turn": 1, "seat": 1, "kind": "decision", "text": "", "payload": {}},
+        {"seq": 3, "turn": 1, "seat": 0, "kind": "forge_ai", "text": "", "payload": {"method": "chooseSpellAbilityToPlay"}},
+        {"seq": 4, "turn": 1, "seat": 0, "kind": "forge_ai", "text": "", "payload": {"method": "assignCombatDamage"}},
+    ]
+    summary = summarize_match(events, _seats("jev", "random"), "modern", {"turn": 1})
+    assert summary["seats"][0]["decisions"] == {"agent": 0, "forge_ai": 2, "agent_share": 0}
+    assert summary["automatic"] == {"assignCombatDamage": 1}
