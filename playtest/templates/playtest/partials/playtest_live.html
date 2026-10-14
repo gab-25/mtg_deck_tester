@@ -19,7 +19,7 @@ itself (outerHTML swap); once every match ended polling stops.
         </div>
         <div class="flex flex-col">
             {% for row in session.rows %}
-            <a href="{% url 'match_detail' row.match.id %}" class="flex items-center justify-between gap-3 py-4 px-[18px] border-b border-line2 text-[13px] no-underline">
+            <a href="{% url 'match_detail' row.match.playtest_id row.match.id %}" class="flex items-center justify-between gap-3 py-4 px-[18px] border-b border-line2 text-[13px] no-underline">
                 <div class="flex items-center gap-3 min-w-0">
                     <span class="text-txt3">vs</span>
                     <span translate="no" class="text-txt font-semibold">{{ row.opponent.deck_name|default:"—" }}</span>

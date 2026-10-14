@@ -40,7 +40,7 @@ def client(client, user, monkeypatch):
 @pytest.mark.django_db
 def test_every_page_requires_login(client):
     client.logout()
-    for url in ["/", "/decks", "/decks/new", "/matches", "/matches/new"]:
+    for url in ["/", "/decks", "/decks/new", "/playtests", "/playtests/new"]:
         response = client.get(url)
         assert response.status_code == 302
         assert response["Location"].startswith("/login")

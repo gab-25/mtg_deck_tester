@@ -2,14 +2,14 @@
 The playtest-list region: polls itself while a match is running, like the deck grid.
 {% endcomment %}
 <div id="match-grid-region" class="flex flex-col gap-5"
-    {% if has_busy %}hx-get="{% url 'match_list' %}" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
+    {% if has_busy %}hx-get="{% url 'playtest_list' %}" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
     {% if sessions %}
     {% include "playtest/partials/playtest_cards.html" %}
     {% else %}
     <div class="text-center py-[70px] px-5 text-txt3">
         <span translate="no" class="ms text-[44px] opacity-50">swords</span>
         <div class="mt-3 text-[15px]">
-            No playtests yet. <a href="{% url 'new_match' %}" class="text-violet2 no-underline">Test a deck</a>.
+            No playtests yet. <a href="{% url 'new_playtest' %}" class="text-violet2 no-underline">Test a deck</a>.
         </div>
     </div>
     {% endif %}

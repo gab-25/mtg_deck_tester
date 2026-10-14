@@ -15,7 +15,7 @@
             <a href="{% url 'new_deck' %}" class="btn btn-line">
                 <span translate="no" class="ms text-[20px]">add</span>Import deck
             </a>
-            <a href="{% url 'new_match' %}" class="btn btn-grad">
+            <a href="{% url 'new_playtest' %}" class="btn btn-grad">
                 <span translate="no" class="ms text-[20px]">swords</span>Test a deck
             </a>
         </div>
@@ -38,13 +38,13 @@
 
     <div class="flex items-center justify-between mb-3">
         <div class="kicker">Recent playtests</div>
-        <a href="{% url 'match_list' %}" class="text-[13px] text-violet2 no-underline">All playtests</a>
+        <a href="{% url 'playtest_list' %}" class="text-[13px] text-violet2 no-underline">All playtests</a>
     </div>
     <div class="mb-[26px]">
         {% if sessions %}
         {% include "playtest/partials/playtest_cards.html" %}
         {% else %}
-        <div class="text-txt3 text-[13px]">No playtests yet. <a href="{% url 'new_match' %}" class="text-violet2 no-underline">Test a deck</a>.</div>
+        <div class="text-txt3 text-[13px]">No playtests yet. <a href="{% url 'new_playtest' %}" class="text-violet2 no-underline">Test a deck</a>.</div>
         {% endif %}
     </div>
 

@@ -25,7 +25,7 @@ max-width stays inline — a utility would lose to the unlayered component rule.
         </div>
         <div class="flex gap-[9px] flex-wrap items-center">
             {% if deck.status == 'ready' %}
-            <a href="{% url 'new_match' %}?deck={{ deck.id }}&format={{ deck.format }}" class="btn btn-grad btn-sm">
+            <a href="{% url 'new_playtest' %}?deck={{ deck.id }}&format={{ deck.format }}" class="btn btn-grad btn-sm">
                 <span translate="no" class="ms text-[18px]">swords</span>Test this deck
             </a>
             {% endif %}

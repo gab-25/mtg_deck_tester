@@ -1,9 +1,10 @@
-"""Match views: set up a match between agents, follow it, read its log."""
+"""Playtest views: set up a session, follow it and its matches, read a match's log."""
 
 import logging
 
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
+from django.http import Http404, HttpResponse
 from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
@@ -55,7 +56,7 @@ RESULT_ORDER = ("won", "lost", "draw", "running", "pending", "stopped", "failed"
 
 @login_required
 @require_http_methods(["GET"])
-def match_list(request):
+def playtest_list(request):
     context = _grid_context(request.user)
     template = "playtest/partials/match_grid.html" if request.htmx else "playtest/match_list.html"
     return render(request, template, context)
@@ -84,10 +85,17 @@ def _form_context(user, post=None, **extra) -> dict:
 
 @login_required
 @require_http_methods(["GET"])
-def new_match(request):
+def new_playtest(request):
     # "Test this deck" on a deck page pre-fills the deck to test.
     prefill = {"format": request.GET.get("format", DEFAULT_MATCH_FORMAT), "deck": request.GET.get("deck", "")}
     return render(request, "playtest/match_new.html", _form_context(request.user, prefill))
+
+
+@login_required
+@require_http_methods(["GET"])
+def new_playtest_opponents(request):
+    """The opponent step of the form for the chosen deck (HTMX)."""
+    return HttpResponse("")
 
 
 def _new_session(user, form) -> Playtest:
@@ -108,7 +116,7 @@ def _new_session(user, form) -> Playtest:
 
 @login_required
 @require_http_methods(["POST"])
-def create_match(request):
+def create_playtest(request):
     """Starts a test session: the deck plays one match against each opponent."""
     form, errors = parse_playtest_form(request.POST, request.user)
     if errors:
@@ -178,7 +186,7 @@ def delete_playtest(request, playtest_id):
         if match.is_busy:
             _abort(match)
     playtest.delete()
-    return redirect("match_list")
+    return redirect("playtest_list")
 
 
 # Forge's log categories left out of the match page (still stored): every
@@ -235,18 +243,26 @@ def _live_context(match) -> dict:
     }
 
 
+def _match_or_404(user, playtest_id, match_id) -> Match:
+    """The user's match, found only under its own playtest."""
+    match = get_owned_or_404(Match, user, match_id)
+    if match.playtest_id != playtest_id:
+        raise Http404("No such match in this playtest")
+    return match
+
+
 @login_required
 @require_http_methods(["GET"])
-def match_detail(request, match_id):
-    match = get_owned_or_404(Match, request.user, match_id)
+def match_detail(request, playtest_id, match_id):
+    match = _match_or_404(request.user, playtest_id, match_id)
     return render(request, "playtest/match_detail.html", _live_context(match))
 
 
 @login_required
 @require_http_methods(["GET"])
-def match_live(request, match_id):
+def match_live(request, playtest_id, match_id):
     """The scoreboard and log region, polled by HTMX while the match runs."""
-    match = get_owned_or_404(Match, request.user, match_id)
+    match = _match_or_404(request.user, playtest_id, match_id)
     return render(request, "playtest/partials/match_live.html", _live_context(match))
 
 
@@ -274,16 +290,16 @@ def _stop(match) -> None:
 
 @login_required
 @require_http_methods(["POST"])
-def stop_match(request, match_id):
-    match = get_owned_or_404(Match, request.user, match_id)
+def stop_match(request, playtest_id, match_id):
+    match = _match_or_404(request.user, playtest_id, match_id)
     _stop(match)
-    return redirect("match_detail", match_id=match.id)
+    return redirect("match_detail", playtest_id=playtest_id, match_id=match.id)
 
 
 @login_required
 @require_http_methods(["POST"])
-def delete_match(request, match_id):
-    match = get_owned_or_404(Match, request.user, match_id)
+def delete_match(request, playtest_id, match_id):
+    match = _match_or_404(request.user, playtest_id, match_id)
     if match.is_busy:
         _abort(match)
     playtest_id = match.playtest_id

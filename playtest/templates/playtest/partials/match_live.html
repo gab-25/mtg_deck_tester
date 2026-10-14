@@ -3,7 +3,7 @@ Scoreboard, coverage, summary and log. While the match runs the region polls
 itself (outerHTML swap); the finished render drops the trigger and polling stops.
 {% endcomment %}
 <div id="match-live-region" class="flex flex-col gap-5"
-    {% if match.is_busy %}hx-get="{% url 'match_live' match.id %}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+    {% if match.is_busy %}hx-get="{% url 'match_live' match.playtest_id match.id %}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
 
     <div class="flex items-center gap-3 flex-wrap">
         {% include "playtest/partials/match_status.html" with match=match %}
