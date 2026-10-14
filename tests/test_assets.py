@@ -1,6 +1,6 @@
 """Guards that the templates only use assets the vendored bundles actually ship.
 
-The stylesheet (`theme/static/css/styles.css`, written by hand) and the icon font
+The stylesheets (`theme/static/css/*.css`, written by hand) and the icon font
 (`materialsymbols-subset.woff2`, a prebuilt subset) are committed to the repo:
 there is no CSS build and no subsetting script here. So a template can reference
 a class or an icon that simply does not exist, and nothing fails — the markup
@@ -18,7 +18,14 @@ TEMPLATE_DIRS = [
     ROOT / "decks" / "templates",
     ROOT / "playtest" / "templates",
 ]
-STYLESHEET = ROOT / "theme" / "static" / "css" / "styles.css"
+CSS_DIR = ROOT / "theme" / "static" / "css"
+# Every page links these, in this order: tokens and reset before what uses them.
+STYLESHEETS = ["styles.css", "layout.css", "components.css"]
+LINKS = ROOT / "mtg_gauntlet" / "templates" / "partials" / "stylesheets.html"
+
+
+def _css() -> str:
+    return "\n".join((CSS_DIR / name).read_text() for name in STYLESHEETS)
 
 # Characters the committed icon-font subset actually carries. Note the absence
 # of "j" and "q": the subsetter dropped them, so every Material Symbols name
@@ -44,7 +51,7 @@ ICON_SPAN = re.compile(r'<span\b([^>]*\bclass="ms(?:\s[^"]*)?"[^>]*)>\s*([a-z_]+
 
 
 def _compiled_classes():
-    css = STYLESHEET.read_text()
+    css = _css()
     return {
         re.sub(r"\\(.)", r"\1", match)
         for match in re.findall(r"\.((?:[A-Za-z0-9_-]|\\.)+)", css)
@@ -99,7 +106,16 @@ def test_every_icon_is_opted_out_of_page_translation():
 
 
 def test_the_stylesheet_defines_the_design_tokens_and_no_tailwind():
-    css = STYLESHEET.read_text()
+    css = _css()
     for token in ("--bg:", "--surface:", "--accent:", "--teal:", "--gold:", "--danger:"):
         assert token in css
     assert "tailwind" not in css.lower() and "--tw-" not in css
+
+
+def test_every_stylesheet_is_linked_in_order():
+    assert sorted(p.name for p in CSS_DIR.glob("*.css")) == sorted(STYLESHEETS)
+    links = re.findall(r"\{% static 'css/([^']+)' %\}", LINKS.read_text())
+    assert links == STYLESHEETS
+    for page in ("base.html", "registration/login.html"):
+        src = (ROOT / "mtg_gauntlet" / "templates" / page).read_text()
+        assert '{% include "partials/stylesheets.html" %}' in src and "css/styles.css" not in src

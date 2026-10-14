@@ -107,15 +107,20 @@ The suite is **hermetic**:
 
 ## Templates, styles and icons
 
-The stylesheet is **written by hand** and the icon font is a **prebuilt subset**,
+The stylesheets are **written by hand** and the icon font is a **prebuilt subset**,
 both committed to the repo: there is no CSS build and no font subsetting step here.
-`theme/static/css/styles.css` opens with its sections (reset, tokens, layout,
-components, utilities, responsive); colors, fonts and radii are custom properties
-in `:root`. `tests/test_assets.py` guards what that implies:
+`theme/static/css/` holds three files, linked in this order by
+`partials/stylesheets.html`:
 
-- **Classes**: every `class="…"` token in a template must be defined in
-  `theme/static/css/styles.css`; a class with no rule does nothing. Add the rule to
-  the stylesheet (reusing the tokens) when a template needs a new class.
+- `styles.css`: the tokens (colors, fonts, radii as custom properties in `:root`), the reset and the base typography;
+- `layout.css`: the app shell (sidebar, main column), page furniture, the login page and their responsive rules;
+- `components.css`: everything else, with the components' responsive rules last so they win.
+
+A rule overriding another file's class must live in a later file. `tests/test_assets.py` guards what that implies:
+
+- **Classes**: every `class="…"` token in a template must be defined in one of
+  the stylesheets; a class with no rule does nothing. Add the rule to the right
+  file (reusing the tokens) when a template needs a new class.
   `KNOWN_UNCOMPILED` stays empty. Build class names whole, never by concatenation
   (`card-face--{{ n }}` hides the class from the check).
 - **Icons**: icons are Material Symbols ligatures (`<span class="ms" …>name</span>`)

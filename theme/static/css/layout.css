@@ -1,0 +1,201 @@
+/*
+ * MTG Gauntlet — layout: the app shell (sidebar and main column), page
+ * furniture (breadcrumb, page head), the login page, and the responsive and
+ * print rules. Loaded after styles.css, before components.css.
+ */
+
+/* 4. Layout: the app shell and its sidebar --------------------------------- */
+
+.app {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 22px 14px;
+  background: var(--sidebar);
+  border-right: 1px solid var(--border);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px;
+  color: var(--text);
+  text-decoration: none;
+}
+.brand:hover { color: var(--text); }
+.brand-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 13.5px;
+  letter-spacing: 0.14em;
+}
+
+.nav { display: flex; flex-direction: column; gap: 2px; }
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 42px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font-weight: 500;
+  text-decoration: none;
+}
+.nav-item:hover { color: var(--text); background: var(--line-soft); }
+.nav-item.is-active { background: var(--accent-tint); color: var(--text); font-weight: 600; }
+.nav-count { margin-left: auto; font-family: var(--font-mono); font-size: 11.5px; color: var(--text-3); }
+.nav-item.is-active .nav-count { color: var(--text-2); }
+
+.sidebar-foot { margin-top: auto; display: flex; flex-direction: column; gap: 14px; }
+
+.engine-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.engine-row { display: flex; align-items: center; gap: 8px; font-size: 13px; min-width: 0; white-space: nowrap; }
+.engine-value { margin-left: auto; font-family: var(--font-mono); font-size: 12px; }
+.engine-url {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.account { display: flex; align-items: center; gap: 10px; padding: 0 6px; }
+.account-name { font-size: 13.5px; font-weight: 600; }
+.avatar {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+
+.main { min-width: 0; padding: 30px 40px 72px; }
+.page {
+  max-width: 1120px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.page-narrow { max-width: 760px; }
+
+.app-foot { padding: 22px 0 0; text-align: center; font-size: 12px; color: var(--text-3); }
+
+/* 5. Page furniture ------------------------------------------------------- */
+
+.breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.breadcrumb a { color: var(--text-2); text-decoration: none; }
+.breadcrumb a:hover { color: var(--text); }
+.breadcrumb [aria-current="page"] { color: var(--text); }
+
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+}
+.page-head-main { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.kicker {
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--accent-soft);
+}
+.kicker-plain { letter-spacing: 0.04em; text-transform: none; font-weight: 500; font-size: 12.5px; color: var(--text-2); }
+.page-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 32px;
+  letter-spacing: 0.02em;
+  overflow-wrap: anywhere;
+}
+.page-title .vs { color: var(--text-3); font-size: 22px; padding: 0 6px; }
+.page-sub { color: var(--text-2); font-size: 14.5px; max-width: 760px; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
+
+/* Login: a page of its own, outside the app shell. */
+.login {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+}
+.login-card {
+  width: 100%;
+  max-width: 420px;
+  padding: 32px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.login-title { font-family: var(--font-display); font-weight: 600; font-size: 23px; letter-spacing: 0.05em; }
+
+/* 15. Responsive and print: the shell and page furniture -------------------- */
+/* (components.css ends with the same breakpoints for the components.) */
+
+@media (max-width: 900px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .sidebar {
+    position: static;
+    height: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .sidebar > .btn-primary { width: auto; margin-left: auto; min-height: 40px; }
+  .nav { order: 3; flex-basis: 100%; flex-direction: row; overflow-x: auto; }
+  .nav-item { flex: none; min-height: 40px; }
+  .sidebar-foot { display: none; }
+  .main { padding: 22px 16px 56px; }
+  .page-title { font-size: 26px; }
+}
+
+@media print {
+  .sidebar, .actions { display: none; }
+  .app { display: block; }
+  body { background: #fff; color: #000; }
+}

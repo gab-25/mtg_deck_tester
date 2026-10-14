@@ -57,9 +57,10 @@ The default `DATABASE_URL` is the Compose Postgres on localhost; set
 - `decks/formats.py` is the single source for format parameters (its `forge_format`
   is the bridge's name). Adding a format, a `Seat.Agent` or any status/choice value
   needs a migration.
-- Templates may only use CSS classes defined in `theme/static/css/styles.css`, a
-  hand-written stylesheet (design tokens in `:root`, semantic component classes; no
-  Tailwind, no build), and icon names the vendored Material Symbols subset can render
+- Templates may only use CSS classes defined in the hand-written stylesheets in
+  `theme/static/css/` — `styles.css` (tokens in `:root`, reset, base), `layout.css`
+  (app shell, page furniture), `components.css`, linked in that order by
+  `partials/stylesheets.html`; no Tailwind, no build — and icon names the vendored Material Symbols subset can render
   (no `j`/`q`), each icon with `translate="no"`. `tests/test_assets.py` enforces both;
   keep `KNOWN_UNCOMPILED` empty. Every page extends `base.html` (the sidebar); its
   section comes from the route name (`nav_section`).

@@ -9,7 +9,7 @@
     {# Loads htmx (bundled by django-htmx) and, in DEBUG, its error-logging extension. #}
     {% htmx_script %}
     {% include "partials/design_head.html" %}
-    <link rel="stylesheet" href="{% static 'css/styles.css' %}" />
+    {% include "partials/stylesheets.html" %}
 </head>
 <body>
 {% with nav_active=request.resolver_match.url_name|nav_section %}

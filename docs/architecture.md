@@ -109,8 +109,10 @@ else's row. Login is required everywhere except the login page.
   found only under its own playtest), `/metagame?format=`.
 - Numbers shown per deck and per opponent come from `playtest/stats.py`: pure
   functions over matches already loaded, seen from seat 0, finished matches only.
-- Styling is a **hand-written** stylesheet (`theme/static/css/styles.css`): design
-  tokens in `:root` and semantic component classes, no Tailwind and no build step.
+- Styling is **hand-written** CSS in `theme/static/css/`: `styles.css` (design tokens
+  in `:root`, reset, base), `layout.css` (app shell, page furniture, login) and
+  `components.css`, linked in that order by `partials/stylesheets.html`. No Tailwind
+  and no build step.
   Icons are Material Symbols ligatures from a vendored font subset. See
   [Development](development.md#templates-styles-and-icons) for the constraints this
   puts on templates.

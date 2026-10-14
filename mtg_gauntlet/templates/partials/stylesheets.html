@@ -1,0 +1,8 @@
+{% load static %}
+{% comment %}
+The stylesheets, in the order they build on each other: tokens and reset,
+then the app shell, then the components (tests/test_assets.py checks it).
+{% endcomment %}
+<link rel="stylesheet" href="{% static 'css/styles.css' %}" />
+<link rel="stylesheet" href="{% static 'css/layout.css' %}" />
+<link rel="stylesheet" href="{% static 'css/components.css' %}" />
