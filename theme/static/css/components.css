@@ -352,7 +352,6 @@ a.list-row:hover { background: var(--line-soft); color: var(--text); }
   font-weight: 600;
   list-style: none;
 }
-.details > summary::-webkit-details-marker { display: none; }
 .details[open] > summary { margin-bottom: 10px; }
 
 .summary-list { display: flex; flex-direction: column; gap: 10px; font-size: 13.5px; }

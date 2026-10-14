@@ -13,7 +13,6 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 * { margin: 0; }
-html { -webkit-text-size-adjust: 100%; }
 body { min-height: 100vh; line-height: 1.5; -webkit-font-smoothing: antialiased; }
 img, svg, video { display: block; max-width: 100%; }
 img { height: auto; }
@@ -102,7 +101,6 @@ body {
   word-wrap: normal;
   direction: ltr;
   font-feature-settings: "liga";
-  -webkit-font-feature-settings: "liga";
   user-select: none;
   -webkit-font-smoothing: antialiased;
   flex: none;
