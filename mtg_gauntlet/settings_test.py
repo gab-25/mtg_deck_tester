@@ -13,6 +13,10 @@ DATABASES = {
     }
 }
 
-# Run deck imports and matches inline (no background thread) so tests are
-# deterministic.
+# Run deck imports inline (no background thread) so tests are deterministic.
 RUN_JOBS_IN_BACKGROUND = False
+
+# Celery tasks run inline too: no broker, no worker.
+CELERY_TASK_ALWAYS_EAGER = True
+CELERY_TASK_EAGER_PROPAGATES = True
+CELERY_BROKER_URL = "memory://"
