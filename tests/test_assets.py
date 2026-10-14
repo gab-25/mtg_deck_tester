@@ -119,3 +119,10 @@ def test_every_stylesheet_is_linked_in_order():
     for page in ("base.html", "registration/login.html"):
         src = (ROOT / "mtg_gauntlet" / "templates" / page).read_text()
         assert '{% include "partials/stylesheets.html" %}' in src and "css/styles.css" not in src
+
+
+def test_page_titles_opt_out_of_translation():
+    # Titles hold proper names (decks, the app): translate="no" keeps them as written.
+    for page in ("base.html", "registration/login.html"):
+        src = (ROOT / "mtg_gauntlet" / "templates" / page).read_text()
+        assert '<title translate="no">' in src and "<script src=" not in src

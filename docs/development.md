@@ -128,8 +128,8 @@ A rule overriding another file's class must live in a later file. `tests/test_as
   lacks the glyphs `j` and `q`, so names such as `query_stats` render as text. Check
   a new icon in the browser too.
 - **Translation**: every icon span needs `translate="no"`, or a browser page
-  translator rewrites the ligature name. `theme/static/js/untranslated-title.js` does
-  the same job for the tab title.
+  translator rewrites the ligature name. Page titles and proper names (decks,
+  cards, the app) carry it too.
 
 Fonts are vendored under `theme/static/vendor/` (no CDN). Card images are the only
 remote assets, loaded from `cards.scryfall.io`.
