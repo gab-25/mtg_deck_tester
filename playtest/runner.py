@@ -129,6 +129,8 @@ def follow(match: Match, client) -> dict:
                 since = batch["next"]
                 continue
             game = client.game(match.forge_game_id)
+        except forge.ForgeGameNotFound:
+            raise  # no outage to wait out: the game is gone
         except forge.ForgeError:
             outage_since = outage_since or time.monotonic()
             if time.monotonic() - outage_since > MAX_OUTAGE_SECONDS:

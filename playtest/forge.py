@@ -33,6 +33,13 @@ class ForgeDeckError(ForgeError):
         super().__init__(f"Forge does not know these cards — {named}")
 
 
+class ForgeGameNotFound(ForgeError):
+    """The bridge does not know the game: it restarted (it keeps no state) or never had it."""
+
+    def __init__(self):
+        super().__init__("The Forge bridge no longer knows this game (it restarted?).")
+
+
 def base_url() -> str:
     return (os.environ.get("FORGE_URL") or DEFAULT_URL).rstrip("/")
 
@@ -108,11 +115,17 @@ class ForgeClient:
         return self._json(response, "check deck")
 
     def game(self, game_id: str) -> dict:
-        return self._json(self._call("GET", f"/games/{game_id}"), "game")
+        response = self._call("GET", f"/games/{game_id}")
+        if response.status_code == 404:
+            raise ForgeGameNotFound()
+        return self._json(response, "game")
 
     def events(self, game_id: str, since: int = 0) -> dict:
         """``{"events": [...], "next": n}``: the game's log from event ``since`` on."""
-        return self._json(self._call("GET", f"/games/{game_id}/events", params={"since": since}), "events")
+        response = self._call("GET", f"/games/{game_id}/events", params={"since": since})
+        if response.status_code == 404:
+            raise ForgeGameNotFound()
+        return self._json(response, "events")
 
     def lease(self, wait: float = 30, game_id: str | None = None) -> dict | None:
         """The oldest pending decision (of ``game_id``, or of any game), or None after ``wait`` seconds."""
