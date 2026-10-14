@@ -10,8 +10,8 @@ from django.views.decorators.http import require_http_methods
 
 from decks.formats import playable_formats
 from decks.models import Deck, MetagameDeck
-from mtg_deck_tester.access import get_owned_or_404
-from mtg_deck_tester.jobs import start_job
+from mtg_gauntlet.access import get_owned_or_404
+from mtg_gauntlet.jobs import start_job
 
 from . import forge
 from .agents import typesafe

@@ -1,4 +1,4 @@
-"""MTG Deck Tester - AI agents playtest Magic: The Gathering Commander decks."""
+"""MTG Gauntlet - AI agents playtest Magic: The Gathering Commander decks."""
 
 import tomllib
 from pathlib import Path

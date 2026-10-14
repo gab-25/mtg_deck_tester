@@ -27,7 +27,7 @@ database loads in about a minute before `/health` answers. Without it decks impo
 and pages work, but a new match is refused with "Forge bridge unreachable".
 
 Everything is configured through environment variables; a `.env` file is loaded by
-`mtg_deck_tester/__init__.py` (real environment variables win). The full table is in
+`mtg_gauntlet/__init__.py` (real environment variables win). The full table is in
 the README's *Configuration* section.
 
 ## Running with Docker
@@ -63,7 +63,7 @@ FORGE_URL=http://localhost:8080 uv run pytest -m forge   # opt-in: against a rea
 
 The suite is **hermetic**:
 
-- `pytest.ini_options` selects `mtg_deck_tester.settings_test`: in-memory SQLite,
+- `pytest.ini_options` selects `mtg_gauntlet.settings_test`: in-memory SQLite,
   independent of `.env` and `DATABASE_URL`.
 - `RUN_JOBS_IN_BACKGROUND = False`: imports and matches run inline, so a test can
   POST a form and assert on the finished row. No worker pool starts: each match's
@@ -151,7 +151,7 @@ with a test in `tests/test_migrations.py`.
 
 ## Logging
 
-Console logging is set up in `settings.LOGGING` for the `mtg_deck_tester`, `decks`
+Console logging is set up in `settings.LOGGING` for the `mtg_gauntlet`, `decks`
 and `playtest` loggers at `LOG_LEVEL` (default `INFO`). Lines from a background job
 carry a `[deck <id>]` / `[match <id>]` prefix. Use `logging.getLogger(__name__)` in
 new modules of these packages.

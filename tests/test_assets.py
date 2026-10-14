@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE_DIRS = [
-    ROOT / "mtg_deck_tester" / "templates",
+    ROOT / "mtg_gauntlet" / "templates",
     ROOT / "decks" / "templates",
     ROOT / "playtest" / "templates",
 ]

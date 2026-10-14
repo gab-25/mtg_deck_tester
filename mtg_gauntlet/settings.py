@@ -1,4 +1,4 @@
-"""Django settings for the MTG Deck Tester web service.
+"""Django settings for the MTG Gauntlet web service.
 
 Configuration comes from environment variables (loaded from a ``.env`` file in
 local development — see ``__init__.py``). The database connection string is the
@@ -56,28 +56,28 @@ MIDDLEWARE = [
     "django_htmx.middleware.HtmxMiddleware",
 ]
 
-ROOT_URLCONF = "mtg_deck_tester.urls"
+ROOT_URLCONF = "mtg_gauntlet.urls"
 
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
         # Project-wide templates (layout, login, shared partials); each app
         # keeps its own under <app>/templates/<app>/.
-        "DIRS": [BASE_DIR / "mtg_deck_tester" / "templates"],
+        "DIRS": [BASE_DIR / "mtg_gauntlet" / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
-                "mtg_deck_tester.context_processors.app_version",
+                "mtg_gauntlet.context_processors.app_version",
             ],
         },
     },
 ]
 
-WSGI_APPLICATION = "mtg_deck_tester.wsgi.application"
-ASGI_APPLICATION = "mtg_deck_tester.asgi.application"
+WSGI_APPLICATION = "mtg_gauntlet.wsgi.application"
+ASGI_APPLICATION = "mtg_gauntlet.asgi.application"
 
 DEFAULT_DATABASE_URL = "postgresql://mtg:mtg@localhost:5432/mtg_tester"
 
@@ -170,7 +170,7 @@ LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "filters": {
-        "job": {"()": "mtg_deck_tester.logging_context.JobFilter"},
+        "job": {"()": "mtg_gauntlet.logging_context.JobFilter"},
     },
     "formatters": {
         "simple": {
@@ -186,7 +186,7 @@ LOGGING = {
         },
     },
     "loggers": {
-        "mtg_deck_tester": _APP_LOGGER,
+        "mtg_gauntlet": _APP_LOGGER,
         "decks": _APP_LOGGER,
         "playtest": _APP_LOGGER,
     },

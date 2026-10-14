@@ -1,4 +1,4 @@
-# Production image for MTG Deck Tester (Django + gunicorn + WhiteNoise).
+# Production image for MTG Gauntlet (Django + gunicorn + WhiteNoise).
 FROM python:3.14-slim
 
 # Install uv (fast Python package manager).
@@ -14,7 +14,7 @@ ENV PYTHONUNBUFFERED=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     DEBUG=0 \
-    DJANGO_SETTINGS_MODULE=mtg_deck_tester.settings \
+    DJANGO_SETTINGS_MODULE=mtg_gauntlet.settings \
     WEB_CONCURRENCY=3 \
     PATH="/app/.venv/bin:$PATH"
 
@@ -30,7 +30,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 
 # Application source.
-COPY mtg_deck_tester ./mtg_deck_tester
+COPY mtg_gauntlet ./mtg_gauntlet
 COPY decks ./decks
 COPY playtest ./playtest
 COPY theme ./theme
@@ -46,7 +46,7 @@ USER appuser
 EXPOSE 8000
 
 ENTRYPOINT ["./docker-entrypoint.sh"]
-CMD ["gunicorn", "mtg_deck_tester.wsgi:application", \
+CMD ["gunicorn", "mtg_gauntlet.wsgi:application", \
      "--bind", "0.0.0.0:8000", \
      "--access-logfile", "-", \
      "--error-logfile", "-"]

@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title translate="no">{% block title %}MTG Deck Tester{% endblock %}</title>
+    <title translate="no">{% block title %}MTG Gauntlet{% endblock %}</title>
     <script src="{% static 'js/untranslated-title.js' %}"></script>
     <link rel="stylesheet" href="{% static 'vendor/fontawesome/css/all.min.css' %}" />
     {# Loads htmx (bundled by django-htmx) and, in DEBUG, its error-logging extension. #}
@@ -21,7 +21,7 @@
         <header class="app-nav no-print">
             <a href="{% url 'home' %}" class="brand">
                 {% include "partials/brand_mark.html" with size=28 %}
-                <span translate="no" class="brand-name">MTG DECK TESTER</span>
+                <span translate="no" class="brand-name">MTG GAUNTLET</span>
                 <span translate="no" class="brand-badge"><span translate="no" class="ms text-[12px]">auto_awesome</span>AI</span>
             </a>
             <nav class="flex items-center gap-[13px] flex-wrap">
@@ -57,7 +57,7 @@
         </main>
 
         <footer class="no-print p-[22px] text-center text-[12px] text-txt3">
-            <span translate="no">MTG Deck Tester</span> <span class="opacity-70">v{{ app_version }}</span> &bull; card data from Scryfall &bull; played by AI
+            <span translate="no">MTG Gauntlet</span> <span class="opacity-70">v{{ app_version }}</span> &bull; card data from Scryfall &bull; played by AI
         </footer>
     </div>
 

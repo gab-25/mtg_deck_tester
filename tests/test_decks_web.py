@@ -52,7 +52,7 @@ def test_home_lists_recent_decks_and_matches(client, user):
     response = client.get("/")
     assert response.status_code == 200
     assert b"Green Bears" in response.content
-    assert b"MTG Deck Tester" in response.content
+    assert b"MTG Gauntlet" in response.content
 
 
 @pytest.mark.django_db

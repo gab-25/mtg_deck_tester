@@ -128,7 +128,7 @@ wheels = [
 ]
 
 [[package]]
-name = "mtg-deck-tester"
+name = "mtg-gauntlet"
 version = "0.3.0"
 source = { virtual = "." }
 dependencies = [
