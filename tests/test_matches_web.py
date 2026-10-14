@@ -584,3 +584,31 @@ def test_the_playtest_list_filters_by_deck_and_format(client, user):
     rows = client.get("/playtests?format=modern").content.decode()
     assert "No playtest matches" in rows
     assert client.get("/playtests?deck=junk&format=nope").status_code == 200
+
+
+@pytest.mark.django_db
+def test_the_playtest_page_shows_score_rows_and_run_again(client, user):
+    from playtest.models import Seat
+
+    tested, rival = make_deck(user, name="Tested", fmt="duel"), make_deck(user, name="Rival", fmt="duel")
+    playtest = make_playtest(user, deck=tested, deck_name="Tested", seed=4417)
+    match = make_match(user, playtest=playtest, seats=("Tested", "Rival"), status="finished", turn=9)
+    Seat.objects.filter(match=match, position=0).update(life=14)
+    Seat.objects.filter(match=match, position=1).update(deck=rival, life=0)
+    match.winner = match.seats.get(position=0)
+    match.save()
+    page = client.get(f"/playtests/{playtest.id}").content.decode()
+    assert "vs</span> the field" in page and "seed 4417" in page and "1–0–0" in page and "100%" in page
+    assert "1 of 1 matches done" in page and "Your deck" in page and "14 – 0" in page
+    assert f"/playtests/new?deck={tested.id}&amp;opponents={rival.id}" in page
+    assert f'href="/decks/{tested.id}"' in page.split('aria-label="Breadcrumb"', 1)[1]
+    assert 'class="segment won"' in page
+
+
+@pytest.mark.django_db
+def test_a_playtest_of_a_deleted_deck_still_renders(client, user):
+    playtest = make_playtest(user, deck_name="Gone")
+    make_match(user, playtest=playtest, seats=("Gone", "Rival"))
+    page = client.get(f"/playtests/{playtest.id}").content.decode()
+    assert "Gone" in page and "Run again" not in page and "Removed deck" in page
+    assert f'href="/playtests"' in page.split('aria-label="Breadcrumb"', 1)[1]

@@ -2,11 +2,13 @@
 
 import logging
 import uuid
+from urllib.parse import urlencode
 
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.http import Http404, HttpResponse
 from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
@@ -21,7 +23,7 @@ from .agents import typesafe
 from .forms import DEFAULT_MATCH_FORMAT, MAX_OPPONENTS, METAGAME_PREFIX, SEAT_AGENT, parse_playtest_form
 from .models import Match, Playtest, Seat
 from .runner import run_match, start_game
-from .stats import record
+from .stats import opponent_source, record
 from .summary import event_row, fallback_executions, fallback_reason
 
 logger = logging.getLogger(__name__)
@@ -211,8 +213,40 @@ def create_playtest(request):
     return redirect("playtest_detail", playtest_id=playtest.id)
 
 
+def _run_again_url(playtest, rows) -> str | None:
+    """The new-playtest form filled with this session's deck and its opponents still around."""
+    if playtest.deck_id is None:
+        return None
+    params = [("deck", playtest.deck_id)]
+    for row in rows:
+        seat = row["opponent"]
+        if seat is None:
+            continue
+        if seat.metagame_deck_id:
+            params.append(("opponents", f"{METAGAME_PREFIX}{seat.metagame_deck_id}"))
+        elif seat.deck_id:
+            params.append(("opponents", seat.deck_id))
+    return f"{reverse('new_playtest')}?{urlencode(params)}"
+
+
 def _playtest_context(playtest) -> dict:
-    return {"session": session_view(playtest), "playtest": playtest}
+    session = session_view(playtest)
+    for row in session["rows"]:
+        seats = {seat.position: seat for seat in row["match"].seats.all()}
+        row["source"] = opponent_source(row["opponent"]) if row["opponent"] else ""
+        lives = [seats.get(position) and seats[position].life for position in (0, 1)]
+        row["life"] = " – ".join(str(life) for life in lives) if None not in lives else "—"
+    done = sum(row["result"] in ("won", "lost", "draw") for row in session["rows"])
+    return {
+        "session": session,
+        "playtest": playtest,
+        "record": record(playtest.matches.all()),
+        "done": done,
+        "total": len(session["rows"]),
+        "playing": sum(row["result"] == "running" for row in session["rows"]),
+        "queued": sum(row["result"] == "pending" for row in session["rows"]),
+        "run_again_url": _run_again_url(playtest, session["rows"]),
+    }
 
 
 @login_required
