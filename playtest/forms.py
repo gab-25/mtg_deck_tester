@@ -23,7 +23,7 @@ MAX_OPPONENTS = 10
 # queue holds back every other session behind it.
 MAX_GAMES_PER_OPPONENT = 20
 MAX_GAMES = 50
-# The format the form starts on.
+# The format a submitted form without one falls back to.
 DEFAULT_MATCH_FORMAT = next(iter(playable_formats()))
 
 

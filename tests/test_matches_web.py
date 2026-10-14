@@ -539,6 +539,10 @@ def _checked(page):
     return re.findall(r'name="opponents" value="([^"]+)" checked', page)
 
 
+def _checkboxes(page):
+    return re.findall(r'name="opponents" value="([^"]+)"', page)
+
+
 @pytest.mark.django_db
 def test_new_playtest_preselects_the_deck_and_its_format_opponents(client, user):
     from .factories import make_constructed_deck
@@ -665,6 +669,21 @@ def test_only_a_format_alone_preselects_the_metagame(client, query):
 
     _metagame(DEFAULT_MATCH_FORMAT, archetype="Top Deck", rank=1)
     assert _checked(client.get(f"/playtests/new{query}").content.decode()) == []
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("query", ["", "?deck=junk", "?format=nope"])
+def test_without_a_deck_or_format_no_format_is_assumed(client, user, query):
+    from playtest.forms import DEFAULT_MATCH_FORMAT
+
+    make_deck(user, name="Mine", fmt=DEFAULT_MATCH_FORMAT)
+    _metagame(DEFAULT_MATCH_FORMAT, archetype="Top Deck", rank=1)
+    page = client.get(f"/playtests/new{query}").content.decode()
+    assert "Pick the deck to test first" in page
+    assert "Top Deck" not in page and _checkboxes(page) == []
+    assert 'name="format" value=""' in page and "life</span>" not in page
+    part = client.get(f"/playtests/new/opponents{query}").content.decode()
+    assert "Pick the deck to test first" in part
 
 
 @pytest.mark.django_db

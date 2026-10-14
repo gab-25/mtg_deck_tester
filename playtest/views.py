@@ -20,7 +20,6 @@ from mtg_gauntlet.access import get_owned_or_404
 from . import forge
 from .agents import typesafe
 from .forms import (
-    DEFAULT_MATCH_FORMAT,
     MAX_GAMES,
     MAX_GAMES_PER_OPPONENT,
     MAX_OPPONENTS,
@@ -126,8 +125,9 @@ TOP_METAGAME = 5
 def _form_context(user, data, preset_top=False, **extra) -> dict:
     """The new-playtest form for ``data`` (a query string or a refused POST).
 
-    The deck to test sets the format; without one, ``format`` does. Only
-    opponents of that format are offered, and only offered ones stay chosen.
+    The deck to test sets the format; without one, ``format`` does, and
+    without either no format is assumed: the opponent step waits for a deck.
+    Only opponents of that format are offered, and only offered ones stay chosen.
     """
     decks = list(Deck.objects.filter(owner=user, status=Deck.Status.READY))
     for deck in decks:
@@ -137,11 +137,11 @@ def _form_context(user, data, preset_top=False, **extra) -> dict:
     if deck is not None:
         fmt = deck.format
     else:
-        fmt = data.get("format") if data.get("format") in playable_formats() else DEFAULT_MATCH_FORMAT
+        fmt = data.get("format") if data.get("format") in playable_formats() else None
     metagame = [
         (f"{METAGAME_PREFIX}{meta.id}", meta)
         for meta in MetagameDeck.objects.filter(format=fmt, status=MetagameDeck.Status.READY).order_by("rank")
-    ]
+    ] if fmt else []
     mine = [(str(d.id), d) for d in decks if d.format == fmt]
     chosen = set(data.getlist("opponents")) if hasattr(data, "getlist") else set(data.get("opponents", []))
     # Only ?format= alone (the metagame page's "Test my deck against these").
@@ -150,13 +150,13 @@ def _form_context(user, data, preset_top=False, **extra) -> dict:
     chosen &= {value for value, _ in metagame + mine}
     refused = [obj.archetype for value, obj in metagame if value in chosen and obj.unknown_cards]
     refused += [obj.name for value, obj in mine if value in chosen and obj.unknown_cards]
-    playable = fmt in playable_formats()
+    playable = fmt is None or fmt in playable_formats()
     games = _games(data.get("games"))
     return {
         "decks": decks,
         "form_deck": deck,
-        "form_format": fmt,
-        "format_rules": FORMATS[fmt],
+        "form_format": fmt or "",
+        "format_rules": FORMATS[fmt] if fmt else None,
         "playable": playable,
         "playable_labels": [f.label for f in playable_formats().values()],
         "metagame": metagame,
