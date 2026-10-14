@@ -8,7 +8,7 @@ polls itself every 3 s and swaps itself out for nothing once the playtest ends.
     <div class="panel-head">
         <span class="dot warn" aria-hidden="true"></span>
         <span class="panel-title">Running now</span>
-        <span class="panel-sub"><span translate="no">{{ running.playtest.deck_name }}</span> · {{ running.playtest.get_format_display }} · {{ running.done }} of {{ running.total }} matches done</span>
+        <span class="panel-sub"><span translate="no">{{ running.playtest.deck_name }}</span> · {{ running.playtest.get_format_display }} · {{ running.done }} of {{ running.total }} game{{ running.total|pluralize }} done</span>
         <div class="actions">
             <form method="post" action="{% url 'stop_playtest' running.playtest.id %}" class="inline-form">
                 {% csrf_token %}
@@ -21,6 +21,18 @@ polls itself every 3 s and swaps itself out for nothing once the playtest ends.
         <div class="progress" aria-hidden="true"><div class="progress-fill" style="width:{{ running.percent }}%"></div></div>
     </div>
     <div class="panel-list">
+        {% if running.playtest.games_per_opponent > 1 %}
+        {% for matchup in running.matchups %}
+        <a class="list-row" href="{% url 'playtest_detail' running.playtest.id %}">
+            <span class="faint">vs</span>
+            <span translate="no">{{ matchup.opponent.deck_name|default:"—" }}</span>
+            <span class="list-row-end">
+                <span class="num faint">{{ matchup.record.played }} of {{ matchup.rows|length }} games done</span>
+                <span class="num">{{ matchup.record.score }}</span>
+            </span>
+        </a>
+        {% endfor %}
+        {% else %}
         {% for row in running.rows %}
         <a class="list-row" href="{% url 'match_detail' row.match.playtest_id row.match.id %}">
             <span class="faint">vs</span>
@@ -31,6 +43,7 @@ polls itself every 3 s and swaps itself out for nothing once the playtest ends.
             </span>
         </a>
         {% endfor %}
+        {% endif %}
     </div>
 </section>
 {% endif %}

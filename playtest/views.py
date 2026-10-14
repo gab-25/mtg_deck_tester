@@ -19,7 +19,15 @@ from mtg_gauntlet.access import get_owned_or_404
 
 from . import forge
 from .agents import typesafe
-from .forms import DEFAULT_MATCH_FORMAT, MAX_OPPONENTS, METAGAME_PREFIX, SEAT_AGENT, parse_playtest_form
+from .forms import (
+    DEFAULT_MATCH_FORMAT,
+    MAX_GAMES,
+    MAX_GAMES_PER_OPPONENT,
+    MAX_OPPONENTS,
+    METAGAME_PREFIX,
+    SEAT_AGENT,
+    parse_playtest_form,
+)
 from .models import Match, Playtest, Seat
 from .runner import start_game
 from .stats import opponent_source, record
@@ -63,20 +71,40 @@ def _uuid(value):
 
 
 def session_view(playtest) -> dict:
-    """A session with each match, its opponent and the tally of results."""
+    """A session with each match, its opponent and the tally of results, and
+    the same matches grouped by opponent (``matchups``) with each one's record."""
     rows = []
+    games = playtest.games_per_opponent or 1
     for match in sorted(playtest.matches.all(), key=lambda m: m.seed):
         seats = {seat.position: seat for seat in match.seats.all()}
-        rows.append({"match": match, "opponent": seats.get(1), "result": match.result})
+        index, game = divmod(match.seed - playtest.seed, games)
+        rows.append({"match": match, "opponent": seats.get(1), "result": match.result, "index": index, "game": game + 1})
     tally = {}
     for row in rows:
         tally[row["result"]] = tally.get(row["result"], 0) + 1
     return {
         "playtest": playtest,
         "rows": rows,
+        "matchups": _matchups(rows),
         "tally": [(result, tally[result]) for result in RESULT_ORDER if result in tally],
         "busy": any(row["match"].is_busy for row in rows),
     }
+
+
+def _matchups(rows) -> list[dict]:
+    """The rows of each opponent, in the order the form listed them."""
+    groups: dict[int, list] = {}
+    for row in rows:
+        groups.setdefault(row["index"], []).append(row)
+    return [
+        {
+            "opponent": group[0]["opponent"],
+            "rows": group,
+            "record": record(row["match"] for row in group),
+            **{result: sum(row["result"] == result for row in group) for result in ("running", "pending", "failed", "stopped")},
+        }
+        for _, group in sorted(groups.items())
+    ]
 
 
 # How a session's tally lists results.
@@ -123,6 +151,7 @@ def _form_context(user, data, preset_top=False, **extra) -> dict:
     refused = [obj.archetype for value, obj in metagame if value in chosen and obj.unknown_cards]
     refused += [obj.name for value, obj in mine if value in chosen and obj.unknown_cards]
     playable = fmt in playable_formats()
+    games = _games(data.get("games"))
     return {
         "decks": decks,
         "form_deck": deck,
@@ -137,12 +166,24 @@ def _form_context(user, data, preset_top=False, **extra) -> dict:
         "chosen_count": len(chosen),
         "refused": refused,
         "form_seed": data.get("seed", ""),
+        "form_games": games,
+        "chosen_games": len(chosen) * games,
         "max_opponents": MAX_OPPONENTS,
+        "max_games_per_opponent": MAX_GAMES_PER_OPPONENT,
+        "max_games": MAX_GAMES,
         "top_metagame": TOP_METAGAME,
         "jev_model": typesafe.MODEL,
         "jev_available": typesafe.api_key() is not None,
         **extra,
     }
+
+
+def _games(value) -> int:
+    """The games per opponent the form shows: a refused value comes back as typed when it is a number."""
+    try:
+        return max(1, int(str(value).strip()))
+    except (TypeError, ValueError):
+        return 1
 
 
 @login_required
@@ -163,35 +204,43 @@ def new_playtest_opponents(request):
 
 
 def _new_session(user, form) -> Playtest:
-    """The session and one pending match per opponent: the deck under test in seat 0."""
+    """The session and ``form.games`` pending matches per opponent: the deck under test in seat 0."""
     with transaction.atomic():
         playtest = Playtest.objects.create(
-            owner=user, format=form.format, deck=form.deck, deck_name=form.deck.name, seed=form.seed
+            owner=user, format=form.format, deck=form.deck, deck_name=form.deck.name, seed=form.seed,
+            games_per_opponent=form.games,
         )
         for index, opponent in enumerate(form.opponents):
-            match = Match.objects.create(owner=user, playtest=playtest, format=form.format, seed=form.seed + index)
-            Seat.objects.bulk_create([
-                Seat(match=match, position=0, deck=form.deck, deck_name=form.deck.name, agent=SEAT_AGENT),
-                Seat(match=match, position=1, deck=opponent.deck, metagame_deck=opponent.metagame_deck,
-                     deck_name=opponent.name, agent=SEAT_AGENT),
-            ])
+            for game in range(form.games):
+                seed = form.seed + index * form.games + game
+                match = Match.objects.create(owner=user, playtest=playtest, format=form.format, seed=seed)
+                Seat.objects.bulk_create([
+                    Seat(match=match, position=0, deck=form.deck, deck_name=form.deck.name, agent=SEAT_AGENT),
+                    Seat(match=match, position=1, deck=opponent.deck, metagame_deck=opponent.metagame_deck,
+                         deck_name=opponent.name, agent=SEAT_AGENT),
+                ])
     return playtest
 
 
 @login_required
 @require_http_methods(["POST"])
 def create_playtest(request):
-    """Starts a test session: the deck plays one match against each opponent."""
+    """Starts a test session: the deck plays ``games`` matches against each opponent."""
     form, errors = parse_playtest_form(request.POST, request.user)
     if errors:
         context = _form_context(request.user, request.POST, errors=errors)
         return render(request, "playtest/playtest_new.html", context, status=422)
 
     playtest = _new_session(request.user, form)
-    matches = list(playtest.matches.order_by("seed"))
-    # Forge checks the decks now: a deck it cannot play never becomes a session.
+    # Game by game across the opponents: the worker takes them in this order,
+    # so every matchup gets going before any plays its second game.
+    rows = sorted(session_view(playtest)["rows"], key=lambda row: (row["game"], row["index"]))
+    matches = [row["match"] for row in rows]
+    # Forge checks the decks now, with the first game of each opponent: a deck
+    # it cannot play never becomes a session. The other games start when the
+    # worker picks them up (runner.run_match).
     errors, status = [], 422
-    for match in matches:
+    for match in (row["match"] for row in rows if row["game"] == 1):
         try:
             start_game(match)
         except forge.ForgeDeckError as exc:
@@ -224,7 +273,7 @@ def _run_again_url(playtest, rows) -> str | None:
     """The new-playtest form filled with this session's deck and its opponents still around."""
     if playtest.deck_id is None:
         return None
-    params = [("deck", playtest.deck_id)]
+    params = [("deck", playtest.deck_id), ("games", playtest.games_per_opponent)]
     for row in rows:
         seat = row["opponent"]
         if seat is None:
@@ -243,6 +292,9 @@ def _playtest_context(playtest) -> dict:
         row["source"] = opponent_source(row["opponent"]) if row["opponent"] else ""
         lives = [seats.get(position) and seats[position].life for position in (0, 1)]
         row["life"] = " – ".join(str(life) for life in lives) if None not in lives else "—"
+    for matchup in session["matchups"]:
+        matchup["source"] = matchup["rows"][0]["source"]
+        matchup["done"] = matchup["record"].played
     done = sum(row["result"] in ("won", "lost", "draw") for row in session["rows"])
     return {
         "session": session,
@@ -252,7 +304,7 @@ def _playtest_context(playtest) -> dict:
         "total": len(session["rows"]),
         "playing": sum(row["result"] == "running" for row in session["rows"]),
         "queued": sum(row["result"] == "pending" for row in session["rows"]),
-        "run_again_url": _run_again_url(playtest, session["rows"]),
+        "run_again_url": _run_again_url(playtest, [matchup["rows"][0] for matchup in session["matchups"]]),
     }
 
 

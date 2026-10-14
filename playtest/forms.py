@@ -18,6 +18,11 @@ METAGAME_PREFIX = "metagame:"
 SEAT_AGENT = Seat.Agent.JEV
 # The most opponents one session plays: each match is a few hundred Jev calls.
 MAX_OPPONENTS = 10
+# The most games against one opponent, and in a whole session (opponents ×
+# games): the worker follows a bounded number of matches at once, and a long
+# queue holds back every other session behind it.
+MAX_GAMES_PER_OPPONENT = 20
+MAX_GAMES = 50
 # The format the form starts on.
 DEFAULT_MATCH_FORMAT = next(iter(playable_formats()))
 
@@ -41,6 +46,7 @@ class PlaytestForm:
     seed: int
     deck: Deck
     opponents: list[DeckChoice]
+    games: int = 1
 
 
 def _int(value, default=None):
@@ -89,6 +95,11 @@ def parse_playtest_form(post, user) -> tuple[PlaytestForm | None, list[str]]:
     if seed is None:
         errors.append("The seed must be a whole number.")
 
+    games = _int(post.get("games") or 1)
+    if games is None or not 1 <= games <= MAX_GAMES_PER_OPPONENT:
+        errors.append(f"Games per opponent must be between 1 and {MAX_GAMES_PER_OPPONENT}.")
+        games = None
+
     decks = {str(d.id): d for d in Deck.objects.filter(owner=user, status=Deck.Status.READY)}
     deck = decks.get(post.get("deck") or "")
     if deck is None:
@@ -102,10 +113,15 @@ def parse_playtest_form(post, user) -> tuple[PlaytestForm | None, list[str]]:
     elif len(values) > MAX_OPPONENTS:
         errors.append(f"Pick at most {MAX_OPPONENTS} opponents; {len(values)} chosen.")
     opponents = [o for o in (_opponent(v, decks, fmt, errors) for v in values[:MAX_OPPONENTS]) if o]
+    if games and values and len(values) * games > MAX_GAMES:
+        errors.append(
+            f"A playtest plays at most {MAX_GAMES} games; "
+            f"{len(values)} opponent{'s' if len(values) != 1 else ''} × {games} games is {len(values) * games}."
+        )
 
     if not typesafe.api_key():
         errors.append("Jev plays every seat and needs an OpenRouter API key: set OPENROUTER_API_KEY.")
 
     if errors:
         return None, errors
-    return PlaytestForm(format=fmt, seed=seed, deck=deck, opponents=opponents), []
+    return PlaytestForm(format=fmt, seed=seed, deck=deck, opponents=opponents, games=games), []

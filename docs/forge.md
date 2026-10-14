@@ -77,11 +77,17 @@ them on the match page.
 ## A match, end to end
 
 1. **The view starts the games.** The user picks a deck to test and up to ten
-   opponents (`playtest.forms.MAX_OPPONENTS`): `create_match` stores a `Playtest`
-   session and one `Match` per opponent (the tested deck in seat 0, seeds
-   `seed + index`), then calls `runner.start_game` for each, which sends both
+   opponents (`playtest.forms.MAX_OPPONENTS`), and 1 to 20 games against each
+   (`MAX_GAMES_PER_OPPONENT`, at most `MAX_GAMES` = 50 in all): `create_playtest`
+   stores a `Playtest` session and `games_per_opponent` `Match`es per opponent (the
+   tested deck in seat 0, seeds `seed + opponent index × games + game index`), then
+   calls `runner.start_game` for the first game of each opponent, which sends both
    decklists, the seed and the controllers, and stores the bridge's game id and each
-   seat's coverage (`{"unsupported_cards": [...]}`). If Forge refuses any deck
+   seat's coverage (`{"unsupported_cards": [...]}`). `run_match` starts the other
+   games when the worker picks them up. The bridge has no way to choose who plays
+   first: Forge's coin toss draws from the game's seeded RNG, so each game's seed
+   decides it, reproducibly, and games of one matchup land on the play or on the draw
+   as the seeds fall. If Forge refuses any deck
    (`ForgeDeckError`) the games already started are aborted, the session is deleted
    and the form names every unknown card (422); on any other error the same with 503.
    A deck Forge cannot play never becomes a playtest.
@@ -129,9 +135,11 @@ match's runner answers its own decisions between reads of the log.
 **Two knobs.** `CELERY_CONCURRENCY` (default 16) is how many matches the worker
 *follows* at once — threads copying the log, cheap. `FORGE_WORKERS` is how many Jev
 calls are in flight, globally, since there is one worker process: keep the `worker`
-service at one replica. Games start on the bridge in the view, so the queue does not
-bound the games in play (the bridge's `MAX_CONCURRENT_GAMES` does): the pool answers
-the decisions of a game whose follower is still queued, only its log is copied later.
+service at one replica. The first game of each opponent starts on the bridge in the
+view, so the queue does not bound those (the bridge's `MAX_CONCURRENT_GAMES` does): the
+pool answers the decisions of a game whose follower is still queued, only its log is
+copied later. A session's other games start only when their task runs, so the queue
+does bound them.
 Celery's time limits do not apply with the thread pool; `MATCH_TIMEOUT` and the
 agents' budgets bound a match.
 

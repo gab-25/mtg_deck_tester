@@ -39,7 +39,7 @@ The default `DATABASE_URL` is the Compose Postgres on localhost; set
   `docs/deck-import.md`.
 - `playtest/forge.py` — the HTTP client of the Forge bridge → `docs/forge.md`.
 - `playtest/views.py`, `playtest/forms.py` — a playtest session: the deck to test
-  plays one match against each chosen opponent.
+  plays `games_per_opponent` matches against each chosen opponent.
 - `playtest/runner.py` — starts a match's game on the bridge, copies its events into
   `MatchEvent` rows, stores the result and the summary (`playtest/summary.py`).
 - `playtest/tasks.py` — the Celery task following a match, and the worker's hooks

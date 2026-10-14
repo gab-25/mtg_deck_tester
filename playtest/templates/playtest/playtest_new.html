@@ -27,7 +27,7 @@
                 {% for deck in decks %}
                 <label class="choice">
                     <input type="radio" name="deck" value="{{ deck.id }}"{% if deck == form_deck %} checked{% endif %}
-                        hx-get="{% url 'new_playtest_opponents' %}" hx-target="#opponents" hx-swap="outerHTML" hx-include="this, #opponents input[name=opponents]:checked" />
+                        hx-get="{% url 'new_playtest_opponents' %}" hx-target="#opponents" hx-swap="outerHTML" hx-include="this, #opponents input[name=opponents]:checked, #games" />
                     <span class="pips" aria-hidden="true">{% for pip in deck.pips %}<span class="pip" style="background:{{ pip.hex }}"></span>{% endfor %}</span>
                     <span class="choice-main"><span translate="no" class="choice-name">{{ deck.name }}</span><span class="choice-meta">{{ deck.get_format_display }}</span></span>
                     <span class="choice-end">{% include "decks/partials/forge_badge.html" with deck=deck %}</span>
@@ -40,8 +40,19 @@
 
         {% include "playtest/partials/opponents.html" %}
 
+        <section class="panel step" aria-labelledby="step-3">
+            <div class="panel-head step-head"><span class="step-num">03</span><h2 id="step-3" class="step-title">Games per opponent</h2></div>
+            <div class="panel-body">
+                <div class="field">
+                    <label class="field-label" for="games">Games against each opponent</label>
+                    <input id="games" type="number" name="games" value="{{ form_games }}" min="1" max="{{ max_games_per_opponent }}" class="input" inputmode="numeric" data-games />
+                    <p class="field-help">One game says little about a matchup: mulligans, draws and the coin toss swing it. Each game is an independent game 1; Forge’s seeded coin toss picks who plays first. Up to {{ max_games_per_opponent }} per opponent and {{ max_games }} in all.</p>
+                </div>
+            </div>
+        </section>
+
         <details class="panel details">
-            <summary class="panel-head"><span class="step-num">03</span><span class="step-title">Advanced</span></summary>
+            <summary class="panel-head"><span class="step-num">04</span><span class="step-title">Advanced</span></summary>
             <div class="panel-body">
                 <div class="field">
                     <label class="field-label" for="seed">Seed</label>
@@ -67,16 +78,18 @@
     const count = () => {
       place();
       const n = document.querySelectorAll('input[name="opponents"]:checked').length;
+      const games = n * Math.max(1, Number(document.querySelector("[data-games]")?.value) || 1);
       const deck = document.querySelector('input[name="deck"]:checked');
       const start = document.querySelector("[data-start]");
       const shown = document.querySelector("[data-chosen-count]");
-      if (shown) shown.textContent = n;
+      if (shown) shown.textContent = games;
       if (start) {
-        start.textContent = n ? `Start ${n} match${n === 1 ? "" : "es"}` : "Pick at least one opponent";
+        start.textContent = n ? `Start ${games} game${games === 1 ? "" : "s"}` : "Pick at least one opponent";
         start.disabled = !n || !deck || start.dataset.blocked === "true";
       }
     };
     document.addEventListener("change", (e) => { if (e.target.name === "opponents") count(); });
+    document.addEventListener("input", (e) => { if (e.target.name === "games") count(); });
     document.addEventListener("click", (e) => {
       const top = e.target.closest("[data-pick-top]");
       const none = e.target.closest("[data-pick-none]");
