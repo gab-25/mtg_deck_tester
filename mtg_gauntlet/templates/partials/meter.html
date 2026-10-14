@@ -1,0 +1,5 @@
+{% comment %}A win-rate meter: `value` is a percentage or None.{% endcomment %}
+<span class="meter">
+    <span class="meter-track"><span class="meter-fill{% if value is not None and value < 50 %} warn{% endif %}" style="width:{{ value|default:0 }}%"></span></span>
+    <span class="meter-value">{% if value is None %}—{% else %}{{ value }}%{% endif %}</span>
+</span>

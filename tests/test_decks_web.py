@@ -5,7 +5,7 @@ import pytest
 from decks import importer
 from decks.models import Deck
 
-from .factories import legal_decklist, make_deck, scryfall_card
+from .factories import legal_decklist, make_deck, make_match, make_playtest, scryfall_card
 
 
 def _fake_fetch(name, cache):
@@ -40,7 +40,7 @@ def client(client, user, monkeypatch):
 @pytest.mark.django_db
 def test_every_page_requires_login(client):
     client.logout()
-    for url in ["/", "/decks", "/decks/new", "/matches", "/matches/new"]:
+    for url in ["/", "/decks", "/decks/new", "/playtests", "/playtests/new"]:
         response = client.get(url)
         assert response.status_code == 302
         assert response["Location"].startswith("/login")
@@ -104,7 +104,7 @@ def test_a_banned_card_fails_the_import_for_its_format(client, user, monkeypatch
 @pytest.mark.django_db
 def test_deck_detail_groups_the_cards(client, user):
     deck = make_deck(user)
-    response = client.get(f"/decks/{deck.id}")
+    response = client.get(f"/decks/{deck.id}?tab=cards")
     assert response.status_code == 200
     assert b"Creatures" in response.content
     assert b"Lands" in response.content
@@ -152,7 +152,7 @@ def test_deck_page_loads_images_from_scryfall_cdn(client, user):
         }
     ]
     deck = make_deck(user, cards=cards)
-    content = client.get(f"/decks/{deck.id}").content.decode()
+    content = client.get(f"/decks/{deck.id}?tab=cards").content.decode()
     assert f'<img src="{FRONT}"' in content
     # The thumbnail's zoom request carries both faces, for the flip.
     assert "url=https%3A%2F%2Fcards.scryfall.io%2Fnormal%2Ffront" in content
@@ -204,7 +204,7 @@ def test_importing_a_constructed_deck_keeps_the_sideboard(client, user):
     assert deck.status == Deck.Status.READY, deck.error
     assert deck.commander == ""
     assert (deck.total_cards, deck.sideboard_total) == (60, 15)
-    page = client.get(f"/decks/{deck.id}").content.decode()
+    page = client.get(f"/decks/{deck.id}?tab=cards").content.decode()
     assert "Sideboard" in page and ">Commander</div>" not in page
 
 
@@ -247,6 +247,94 @@ def test_the_metagame_page_lists_each_format(client):
     page = client.get("/metagame").content.decode()
     assert "UR Aggro" in page and "8%" in page and "1 unknown to Forge" in page
     assert "Missing Card" in page
-    assert "Not synced yet" in page  # every other format
+    assert "Not synced yet" in client.get("/metagame?format=pauper").content.decode()
     client.logout()
     assert client.get("/metagame").status_code == 302
+
+
+@pytest.mark.django_db
+def test_a_forge_check_is_saved_on_the_deck(client, user, fake_forge):
+    fake_forge.unknown = {"Bear 3"}
+    deck = make_deck(user)
+    client.post(f"/decks/{deck.id}/forge-check")
+    deck.refresh_from_db()
+    assert deck.forge_checked and deck.forge_checked_at is not None
+    assert deck.unknown_cards == ["Bear 3"] and not deck.forge_ready
+
+
+@pytest.mark.django_db
+def test_an_unreachable_bridge_keeps_the_last_forge_check(client, user, fake_forge, monkeypatch):
+    from playtest import forge
+
+    deck = make_deck(user, coverage={"unresolved": [], "unsupported_cards": []})
+
+    def down(*args):
+        raise forge.ForgeError("Forge bridge unreachable at http://localhost:8080")
+
+    monkeypatch.setattr(fake_forge, "check_deck", down)
+    assert "Forge bridge unreachable" in client.post(f"/decks/{deck.id}/forge-check").content.decode()
+    deck.refresh_from_db()
+    assert deck.forge_ready and deck.forge_checked_at is None
+
+
+@pytest.mark.django_db
+def test_the_deck_page_has_results_cards_and_decklist_tabs(client, user):
+    deck = make_deck(user, name="Boros", fmt="duel", raw_decklist="1 Bear Lord")
+    playtest = make_playtest(user, deck=deck, deck_name="Boros")
+    match = make_match(user, playtest=playtest, seats=("Boros", "Rival"), status="finished")
+    match.winner = match.seats.get(position=0)
+    match.save()
+    page = client.get(f"/decks/{deck.id}").content.decode()
+    assert "Against each opponent" in page and "Rival" in page and "1–0–0" in page
+    assert 'href="?tab=cards"' in page and 'class="tab is-active" aria-current="page"' in page
+    assert "Not checked" in page and f"/playtests/new?deck={deck.id}" in page
+    assert f'href="/decks"' in page.split('aria-label="Breadcrumb"', 1)[1]
+    assert "Bear Lord" in client.get(f"/decks/{deck.id}?tab=cards").content.decode()
+    assert "<pre" in client.get(f"/decks/{deck.id}?tab=list").content.decode()
+    assert client.get(f"/decks/{deck.id}?tab=nope").status_code == 200
+
+
+@pytest.mark.django_db
+def test_a_deck_with_no_finished_match_shows_dashes(client, user):
+    deck = make_deck(user)
+    page = client.get(f"/decks/{deck.id}").content.decode()
+    assert "—" in page and "0–0–0" in page and "No playtest yet" in page
+
+
+@pytest.mark.django_db
+def test_the_forge_badge_tells_ready_unknown_and_unchecked(client, user):
+    ready = make_deck(user, name="Ready", coverage={"unresolved": [], "unsupported_cards": []})
+    odd = make_deck(user, name="Odd", coverage={"unresolved": ["X", "Y"], "unsupported_cards": []})
+    assert "Forge ready" in client.get(f"/decks/{ready.id}").content.decode()
+    assert "2 unknown cards" in client.get(f"/decks/{odd.id}").content.decode()
+
+
+@pytest.mark.django_db
+def test_the_deck_list_filters_by_format(client, user):
+    make_deck(user, name="Modern One", fmt="modern")
+    make_deck(user, name="Duel One", fmt="duel")
+    page = client.get("/decks?format=modern").content.decode()
+    assert "Modern One" in page and "Duel One" not in page
+    assert client.get("/decks?format=nope").status_code == 200
+
+
+@pytest.mark.django_db
+def test_the_metagame_page_shows_one_format_at_a_time(client):
+    from decks.models import MetagameDeck
+
+    MetagameDeck.objects.create(format="modern", source="mtgtop8", archetype="Eldrazi Ramp", rank=1)
+    MetagameDeck.objects.create(format="pioneer", source="mtgtop8", archetype="Rakdos Midrange", rank=1)
+    page = client.get("/metagame?format=pioneer").content.decode()
+    assert "Rakdos Midrange" in page and "Eldrazi Ramp" not in page
+    assert "/playtests/new?format=pioneer" in page
+    assert 'aria-current="page" href="?format=pioneer"' in page
+    # An unknown format falls back to the first one with decks, in registry order.
+    assert "Rakdos Midrange" in client.get("/metagame?format=nope").content.decode()
+
+
+@pytest.mark.django_db
+def test_the_delete_confirmation_opens_from_the_keyboard(client, user):
+    page = client.get(f"/decks/{make_deck(user).id}").content.decode()
+    toggle = page.split('class="modal-toggle"', 1)[0].rsplit("<input", 1)[1] + page.split('class="modal-toggle"', 1)[1].split(">", 1)[0]
+    # The hidden checkbox is what Space toggles: it must stay in the tab order.
+    assert 'tabindex="-1"' not in toggle and "aria-hidden" not in toggle

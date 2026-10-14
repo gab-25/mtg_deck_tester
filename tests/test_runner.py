@@ -7,7 +7,7 @@ from playtest.agents import typesafe
 from playtest.forge import ForgeDeckError
 from playtest.models import Match, MatchEvent, Seat
 
-from .factories import make_constructed_deck, make_deck
+from .factories import make_constructed_deck, make_deck, make_playtest
 from .test_jev_agent import StubJev
 
 pytestmark = pytest.mark.django_db
@@ -27,7 +27,7 @@ def jev(monkeypatch):
 
 
 def _match(user, agents=("jev", "jev"), fmt="modern", seed=5):
-    match = Match.objects.create(owner=user, format=fmt, seed=seed)
+    match = Match.objects.create(owner=user, playtest=make_playtest(user, fmt=fmt, seed=seed), format=fmt, seed=seed)
     for position, agent in enumerate(agents):
         deck = make_constructed_deck(user, name=f"Deck {position}", fmt=fmt) if fmt != "duel" else make_deck(user, name=f"Deck {position}", fmt=fmt)
         Seat.objects.create(match=match, position=position, deck=deck, deck_name=deck.name, agent=agent)

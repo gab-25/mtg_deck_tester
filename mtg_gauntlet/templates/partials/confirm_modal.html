@@ -1,48 +1,36 @@
 {% comment %}
-Reusable confirmation modal (pure CSS, no inline JS). Replaces the browser's
-native `confirm()` for actions that need the user to agree before they run.
-
-A visually-hidden checkbox drives it: the trigger <label> checks it to open the
-overlay (shown via `peer-checked:flex`), the backdrop and Cancel labels uncheck
-it to close, and Confirm is the real submit button that POSTs to `action`.
-
-The whole thing is wrapped in a single root element on purpose: `peer-checked`
-compiles to the general-sibling selector `.peer:checked ~ *`, so without a wrapper
-two modals sharing a parent would open each other. The wrapper scopes `~` to just
-this modal.
+Confirmation modal in pure CSS: a hidden checkbox opens it (its <label> is
+the trigger), the backdrop and Cancel uncheck it, Confirm POSTs to `action`.
+The wrapper scopes the `~` selector so two modals on a page stay apart.
 
 Params:
   id            unique id for the checkbox/labels (must be unique per page)
   action        URL the confirm button POSTs to
   message       confirmation prompt shown in the modal
   trigger_label text for the button that opens the modal (optional, icon-only if omitted)
-  trigger_icon  Material Symbols name for the trigger + modal icon (optional)
-  trigger_class CSS classes for the trigger button (default: btn btn-line btn-sm)
+  trigger_icon  Material Symbols name for the trigger (optional)
+  trigger_title accessible name for an icon-only trigger (optional)
+  trigger_class CSS classes for the trigger button (default: btn btn-danger)
   confirm_label text for the confirm button (default: Confirm)
-  confirm_class CSS classes for the confirm button (default: btn btn-grad)
-  danger        truthy to render the modal icon in the danger (red) accent
+  danger        truthy to make the confirm button the danger one
 {% endcomment %}
-<div class="inline-flex">
-    <input type="checkbox" id="{{ id }}" class="peer sr-only" />
-    <label for="{{ id }}" class="{{ trigger_class|default:'btn btn-line btn-sm' }} cursor-pointer"
+<div class="modal-root">
+    {# Focusable on purpose: Space on the checkbox opens the modal from the keyboard. #}
+    <input type="checkbox" id="{{ id }}" class="modal-toggle" aria-haspopup="dialog" {% if trigger_title %}aria-label="{{ trigger_title }}"{% elif trigger_label %}aria-label="{{ trigger_label }}"{% endif %} />
+    <label for="{{ id }}" class="{{ trigger_class|default:'btn btn-danger' }}"
         {% if trigger_title %}title="{{ trigger_title }}" aria-label="{{ trigger_title }}"{% endif %}>
-        {% if trigger_icon %}<span translate="no" class="ms text-[18px]">{{ trigger_icon }}</span>{% endif %}
+        {% if trigger_icon %}<span translate="no" class="ms ms-sm">{{ trigger_icon }}</span>{% endif %}
         {% if trigger_label %}{{ trigger_label }}{% endif %}
     </label>
-    <div class="fixed inset-0 z-50 hidden items-center justify-center p-4 peer-checked:flex bg-[rgba(6,7,11,.66)] backdrop-blur-[5px]">
-        <label for="{{ id }}" class="absolute inset-0 cursor-pointer" aria-hidden="true"></label>
-        <div class="modal-card relative" style="animation:fadeup .22s ease both">
-            {# The danger/default accent (background + border) is conditional, so it stays inline. #}
-            <div class="w-[46px] h-[46px] rounded-full flex items-center justify-center mb-4"
-                style="{% if danger %}background:rgba(208,90,62,.12);border:1px solid rgba(208,90,62,.3){% else %}background:rgba(124,92,255,.12);border:1px solid var(--line){% endif %}">
-                <span translate="no" class="ms text-[24px]" style="{% if danger %}color:var(--danger){% else %}color:var(--violet2){% endif %}">{{ trigger_icon|default:'help' }}</span>
-            </div>
-            <p class="text-[14px] font-light text-txt2 leading-[1.55] m-0 mb-[22px]">{{ message }}</p>
-            <div class="flex gap-2.5">
-                <label for="{{ id }}" class="btn btn-line flex-1">Cancel</label>
-                <form method="post" action="{{ action }}" class="flex-1 m-0">
+    <div class="modal-backdrop">
+        <label for="{{ id }}" class="modal-dismiss" aria-hidden="true"></label>
+        <div class="modal" role="dialog" aria-modal="true">
+            <p class="modal-text">{{ message }}</p>
+            <div class="modal-actions">
+                <label for="{{ id }}" class="btn btn-line">Cancel</label>
+                <form method="post" action="{{ action }}">
                     {% csrf_token %}
-                    <button type="submit" class="{{ confirm_class|default:'btn btn-grad' }} w-full">
+                    <button type="submit" class="btn {% if danger %}btn-danger-solid{% else %}btn-primary{% endif %}">
                         {{ confirm_label|default:'Confirm' }}
                     </button>
                 </form>

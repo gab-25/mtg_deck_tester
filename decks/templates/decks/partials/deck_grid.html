@@ -3,7 +3,37 @@ The deck-list region. While an import runs it polls itself via HTMX (swapping
 its own outer HTML); once nothing is importing the re-rendered region drops the
 trigger and polling stops.
 {% endcomment %}
-<div id="deck-grid-region"
-    {% if has_busy %}hx-get="{% url 'deck_list' %}" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
-    {% include "decks/partials/deck_cards.html" %}
-</div>
+<section id="deck-grid-region" class="panel" aria-label="Decks"
+    {% if has_busy %}hx-get="{% url 'deck_list' %}{% if active_format %}?format={{ active_format }}{% endif %}" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
+    {% if decks %}
+    <div class="table-scroll">
+        <table class="data-table">
+            <thead><tr><th>Deck</th><th>Format</th><th>Cards</th><th>Forge</th><th>W–L–D</th><th>Win rate</th></tr></thead>
+            <tbody>
+                {% for deck in decks %}
+                <tr class="row-link">
+                    <td>
+                        {% if deck.is_busy %}<span class="cluster">{% else %}<a href="{% url 'deck_detail' deck.id %}" class="cluster">{% endif %}
+                            <span class="pips" aria-hidden="true">{% for pip in deck.pips %}<span class="pip" style="background:{{ pip.hex }}"></span>{% endfor %}</span>
+                            <span translate="no" class="deck-name">{{ deck.name }}</span>
+                        {% if deck.is_busy %}</span>{% else %}</a>{% endif %}
+                        {% if deck.commander %}<span translate="no" class="cell-sub">{{ deck.commander }}</span>{% endif %}
+                    </td>
+                    <td class="muted">{{ deck.get_format_display }}</td>
+                    <td class="num">{% if deck.is_busy %}—{% else %}{{ deck.total_cards }}{% if deck.sideboard_total %} + {{ deck.sideboard_total }}{% endif %}{% endif %}</td>
+                    <td>{% include "decks/partials/status_badge.html" with deck=deck %}</td>
+                    <td class="num">{{ deck.record.score }}</td>
+                    <td>{% include "partials/meter.html" with value=deck.record.win_rate %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty">
+        <span translate="no" class="ms ms-lg">style</span>
+        <p>{% if active_format %}No decks in this format.{% else %}No decks yet.{% endif %}</p>
+        <a href="{% url 'new_deck' %}" class="btn btn-primary">Import deck</a>
+    </div>
+    {% endif %}
+</section>

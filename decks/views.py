@@ -3,29 +3,42 @@
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
+from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from mtg_gauntlet.access import get_owned_or_404
 from mtg_gauntlet.jobs import start_job
 
-from .formats import DEFAULT_FORMAT, FORMATS, format_choices
+from .formats import DEFAULT_FORMAT, FORMATS, format_choices, playable_formats
 from .importer import decklist_errors, run_import
 from .models import Deck, MetagameDeck
 from .presentation import card_groups, commander_cards, deck_pips, sideboard_group
 
 
-def _grid_context(user) -> dict:
-    """Context for the deck grid, which polls itself while an import runs."""
-    decks = list(Deck.objects.filter(owner=user))
-    for deck in decks:
+def _grid_context(user, fmt="") -> dict:
+    """Context for the deck list, which polls itself while an import runs."""
+    from playtest.stats import record
+
+    decks = list(Deck.objects.filter(owner=user).prefetch_related("playtests__matches__winner"))
+    formats = [(key, FORMATS[key].label) for key in FORMATS if any(d.format == key for d in decks)]
+    if fmt not in dict(formats):
+        fmt = ""
+    shown = [deck for deck in decks if not fmt or deck.format == fmt]
+    for deck in shown:
         deck.pips = deck_pips(deck)
-    return {"decks": decks, "has_busy": any(d.is_busy for d in decks)}
+        deck.record = record(m for p in deck.playtests.all() for m in p.matches.all())
+    return {
+        "decks": shown,
+        "formats": formats,
+        "active_format": fmt,
+        "has_busy": any(d.is_busy for d in decks),
+    }
 
 
 @login_required
 @require_http_methods(["GET"])
 def deck_list(request):
-    context = _grid_context(request.user)
+    context = _grid_context(request.user, request.GET.get("format", ""))
     # HTMX poll: return just the grid region so it can swap itself in place.
     template = "decks/partials/deck_grid.html" if request.htmx else "decks/deck_list.html"
     return render(request, template, context)
@@ -71,18 +84,42 @@ def create_deck(request):
     return redirect("deck_list")
 
 
+# The deck page's tabs, chosen with ``?tab=``.
+DECK_TABS = ("results", "cards", "list")
+
+
 @login_required
 @require_http_methods(["GET"])
 def deck_detail(request, deck_id):
+    from playtest.stats import record, record_by_opponent
+
     deck = get_owned_or_404(Deck, request.user, deck_id)
     if deck.is_busy:
         return redirect("deck_list")
+    tab = request.GET.get("tab")
+    if tab not in DECK_TABS:
+        tab = "results"
+    playtests = list(deck.playtests.prefetch_related("matches__seats__metagame_deck", "matches__winner"))
+    matches = [match for playtest in playtests for match in playtest.matches.all()]
+    history = [
+        {
+            "playtest": playtest,
+            "record": record(playtest.matches.all()),
+            "busy": any(match.is_busy for match in playtest.matches.all()),
+            "opponents": len(playtest.matches.all()),
+        }
+        for playtest in playtests
+    ]
     return render(
         request,
         "decks/deck_detail.html",
         {
             "deck": deck,
+            "tab": tab,
             "pips": deck_pips(deck),
+            "record": record(matches),
+            "opponents": record_by_opponent(matches),
+            "history": history,
             "card_groups": card_groups(deck.cards),
             "commander_cards": commander_cards(deck.cards),
             "sideboard": sideboard_group(deck.cards),
@@ -94,19 +131,28 @@ def deck_detail(request, deck_id):
 @require_http_methods(["POST"])
 def deck_forge_check(request, deck_id):
     """What the Forge engine makes of the deck, on demand: cards it does not
-    know (a match would be refused) and cards it cannot play fully."""
+    know (a match would be refused) and cards it cannot play fully. The
+    answer is kept on the deck; a bridge that cannot answer changes nothing."""
     # The playtest app talks to Forge; imported here so decks keeps no
     # module-level dependency on it.
     from playtest import forge
 
     deck = get_owned_or_404(Deck, request.user, deck_id)
-    context = {"deck": deck}
+    context = {"deck": deck, "oob": True}
     try:
-        context["check"] = forge.client().check_deck(
+        check = forge.client().check_deck(
             deck.format, forge.decklist_text(deck.cards, has_commander=deck.has_commander)
         )
     except forge.ForgeError as exc:
         context["error"] = str(exc)
+    else:
+        deck.coverage = {
+            "unresolved": check.get("unresolved") or [],
+            "unsupported_cards": check.get("unsupported_cards") or [],
+        }
+        deck.forge_checked_at = timezone.now()
+        deck.save(update_fields=["coverage", "forge_checked_at"])
+        context["check"] = check
     return render(request, "decks/partials/forge_check.html", context)
 
 
@@ -143,18 +189,24 @@ def card_image_modal(request):
 @login_required
 @require_http_methods(["GET"])
 def metagame(request):
-    """Every format's metagame decks, as the last ``sync_metagame`` left them."""
+    """One format's metagame decks, as the last ``sync_metagame`` left them; a tab per format."""
     by_format = {key: [] for key in FORMATS}
     for deck in MetagameDeck.objects.all():
         by_format.setdefault(deck.format, []).append(deck)
-    sections = [
+    tabs = [(key, FORMATS[key].label, len(by_format[key])) for key in FORMATS]
+    active = request.GET.get("format")
+    if active not in FORMATS:
+        active = next((key for key in FORMATS if by_format[key]), next(iter(FORMATS)))
+    decks = by_format[active]
+    return render(
+        request,
+        "decks/metagame.html",
         {
-            "key": key,
-            "label": FORMATS[key].label,
+            "tabs": tabs,
+            "active_format": active,
+            "label": FORMATS[active].label,
             "decks": decks,
             "synced": max((d.fetched_at for d in decks), default=None),
-        }
-        for key, decks in by_format.items()
-        if key in FORMATS
-    ]
-    return render(request, "decks/metagame.html", {"sections": sections})
+            "playable": active in playable_formats(),
+        },
+    )

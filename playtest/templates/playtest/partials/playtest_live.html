@@ -1,45 +1,44 @@
 {% comment %}
-A session's results, one row per opponent. While a match runs the region polls
-itself (outerHTML swap); once every match ended polling stops.
+A session's score and its matches, one row per opponent. While a match runs
+the region polls itself (outerHTML swap); once every match ended polling stops.
 {% endcomment %}
-<div id="playtest-live-region" class="flex flex-col gap-5"
+<div id="playtest-live-region" class="stack"
     {% if session.busy %}hx-get="{% url 'playtest_live' playtest.id %}" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
-
-    <div class="flex items-center gap-3 flex-wrap text-[13px] text-txt2">
-        {% for result, count in session.tally %}
-        <span class="chip"><span class="font-mono2 font-bold">{{ count }}</span> {{ result }}</span>
-        {% endfor %}
-    </div>
-
-    <div class="panel-card overflow-hidden">
-        <div class="flex items-center gap-[9px] py-4 px-[18px] border-b border-line2">
-            <span translate="no" class="ms text-txt2 text-[20px]">groups</span>
-            <span class="font-semibold text-[15px]">Against each opponent</span>
-            <span class="text-[12px] text-txt3">{{ session.rows|length }} match{{ session.rows|length|pluralize:"es" }}</span>
+    <section class="panel score-band" aria-label="Score">
+        <div class="score-item"><span class="score-value">{{ record.score }}</span><span class="stat-label">won · lost · draw</span></div>
+        <div class="score-item"><span class="score-value ok">{% if record.win_rate is None %}—{% else %}{{ record.win_rate }}%{% endif %}</span><span class="stat-label">win rate{% if session.busy %} so far{% endif %}</span></div>
+        <div class="score-progress">
+            <div class="score-progress-head">
+                <span>{{ done }} of {{ total }} matches done</span>
+                {% if playing or queued %}<span>{% if playing %}{{ playing }} playing{% endif %}{% if playing and queued %} · {% endif %}{% if queued %}{{ queued }} queued{% endif %}</span>{% endif %}
+            </div>
+            <div class="segments" aria-hidden="true">
+                {% for row in session.rows %}<span class="segment {{ row.result }}"></span>{% endfor %}
+            </div>
         </div>
-        <div class="flex flex-col">
-            {% for row in session.rows %}
-            <a href="{% url 'match_detail' row.match.id %}" class="flex items-center justify-between gap-3 py-4 px-[18px] border-b border-line2 text-[13px] no-underline">
-                <div class="flex items-center gap-3 min-w-0">
-                    <span class="text-txt3">vs</span>
-                    <span translate="no" class="text-txt font-semibold">{{ row.opponent.deck_name|default:"—" }}</span>
-                    {% if row.opponent.metagame_deck_id %}<span class="text-[11px] text-txt3">Metagame</span>{% endif %}
-                </div>
-                <div class="flex items-center gap-3 flex-none">
-                    {% if row.result == 'won' %}
-                    <span class="text-gold font-semibold">Won</span>
-                    {% elif row.result == 'lost' %}
-                    <span class="text-danger font-semibold">Lost</span>
-                    {% elif row.result == 'draw' %}
-                    <span class="text-txt2 font-semibold">Draw</span>
-                    {% else %}
-                    {% include "playtest/partials/match_status.html" with match=row.match %}
-                    {% endif %}
-                    {% if row.match.turn %}<span class="font-mono2 text-[12px] text-txt3">{{ row.match.turn }} turn{{ row.match.turn|pluralize }}</span>{% endif %}
-                    <span translate="no" class="ms text-[18px] text-txt3">chevron_right</span>
-                </div>
-            </a>
-            {% endfor %}
+    </section>
+
+    <section class="panel" aria-label="Matches">
+        <div class="panel-head">
+            <span class="panel-title">One match per opponent</span>
+            {% if session.busy %}<span class="panel-sub">updates every 3 s while playing</span>{% endif %}
         </div>
-    </div>
+        <div class="table-scroll">
+            <table class="data-table">
+                <thead><tr><th>Opponent</th><th>Source</th><th>Result</th><th class="num">Turns</th><th class="num">Life</th><th><span class="sr-only">Open</span></th></tr></thead>
+                <tbody>
+                    {% for row in session.rows %}
+                    <tr class="row-link">
+                        <td class="cell-main"><a href="{% url 'match_detail' row.match.playtest_id row.match.id %}" translate="no">{{ row.opponent.deck_name|default:"—" }}</a></td>
+                        <td class="muted">{{ row.source }}</td>
+                        <td><span class="result {{ row.result }}">{% if row.result == 'running' %}<span class="spinner" aria-hidden="true"></span> {% endif %}{{ row.result|result_label }}</span></td>
+                        <td class="num">{% if row.match.turn %}{% if row.match.is_busy %}turn {% endif %}{{ row.match.turn }}{% else %}—{% endif %}</td>
+                        <td class="num">{{ row.life }}</td>
+                        <td class="cell-icon"><span translate="no" class="ms" aria-hidden="true">chevron_right</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
 </div>

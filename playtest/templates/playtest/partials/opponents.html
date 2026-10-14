@@ -1,0 +1,77 @@
+{% comment %}
+Step 2 of the new-playtest form, and the summary beside it. Changing the deck
+to test re-renders this partial (HTMX); the summary then swaps out of band.
+The hidden format input travels with it: the tested deck sets the format.
+{% endcomment %}
+<section id="opponents" class="panel step" aria-labelledby="step-2">
+    <input type="hidden" name="format" value="{{ form_format }}" />
+    <div class="panel-head step-head">
+        <span class="step-num">02</span><h2 id="step-2" class="step-title">Opponents</h2>
+        <span class="panel-sub">one match against each, up to {{ max_opponents }}</span>
+        <div class="actions">
+            {% if metagame %}<button type="button" class="btn btn-line btn-sm" data-pick-top="{{ top_metagame }}">Top {{ top_metagame }} of the metagame</button>{% endif %}
+            <button type="button" class="btn btn-line btn-sm" data-pick-none>Clear</button>
+        </div>
+    </div>
+    <div class="panel-body">
+        <div class="choice-group">
+            <span>Metagame · {{ format_rules.label }}</span>
+            <span class="choice-group-meta">{% if metagame_synced %}synced {{ metagame_synced|timesince }} ago{% else %}not synced yet{% endif %}</span>
+        </div>
+        <div class="choice-list">
+            {% for value, meta in metagame %}
+            <label class="choice">
+                <input type="checkbox" name="opponents" value="{{ value }}"{% if value in form_opponents %} checked{% endif %} data-metagame />
+                <span class="num faint">#{{ meta.rank }}</span>
+                <span class="choice-main"><span translate="no" class="choice-name">{{ meta.archetype }}</span></span>
+                <span class="choice-end">
+                    {% if meta.meta_share is not None %}<span class="num muted">{{ meta.meta_share|floatformat:"-1" }}%</span>{% endif %}
+                    {% if meta.unknown_cards %}<span class="badge warn">{{ meta.unknown_cards|length }} card{{ meta.unknown_cards|length|pluralize }} unknown to Forge</span>
+                    {% elif meta.forge_checked %}<span class="badge ok">Forge ready</span>
+                    {% else %}<span class="badge muted">Not checked</span>{% endif %}
+                </span>
+            </label>
+            {% empty %}
+            <p class="field-help">No {{ format_rules.label }} metagame decks yet: run <span class="font-mono">manage.py sync_metagame</span>.</p>
+            {% endfor %}
+        </div>
+        <div class="choice-group"><span>Your decks · {{ format_rules.label }}</span></div>
+        <div class="choice-list">
+            {% for value, deck in mine %}
+            <label class="choice">
+                <input type="checkbox" name="opponents" value="{{ value }}"{% if value in form_opponents %} checked{% endif %} />
+                <span class="pips" aria-hidden="true">{% for pip in deck.pips %}<span class="pip" style="background:{{ pip.hex }}"></span>{% endfor %}</span>
+                <span class="choice-main"><span translate="no" class="choice-name">{{ deck.name }}</span></span>
+                <span class="choice-end">{% include "decks/partials/forge_badge.html" with deck=deck %}</span>
+            </label>
+            {% empty %}
+            <p class="field-help">None of your decks is a {{ format_rules.label }} deck.</p>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+<aside id="playtest-summary" class="panel sticky" aria-label="Summary"{% if oob %} hx-swap-oob="true"{% endif %}>
+    <div class="panel-head"><span class="panel-title">Summary</span></div>
+    <div class="panel-body">
+        <div class="summary-list">
+            <div class="summary-row"><span>Deck</span><span translate="no">{{ form_deck.name|default:"—" }}</span></div>
+            <div class="summary-row"><span>Format</span><span>{{ format_rules.label }} · {{ format_rules.starting_life }} life</span></div>
+            <div class="summary-row"><span>Matches</span><span class="num" data-chosen-count>{{ chosen_count }}</span></div>
+            <div class="summary-row"><span>Players</span><span>Jev on every seat</span></div>
+        </div>
+        {% if not playable %}
+        <div class="alert alert-error">{{ format_rules.label }} cannot be played yet: the Forge engine seats two players ({{ playable_labels|join:", " }}).</div>
+        {% endif %}
+        {% for name in refused %}
+        <div class="alert alert-warn"><span translate="no">{{ name }}</span> has cards Forge does not know: its match will be refused.</div>
+        {% endfor %}
+        {% if not jev_available %}
+        <div class="alert alert-warn">No OPENROUTER_API_KEY is set, so no playtest can start.</div>
+        {% endif %}
+        <button type="submit" form="new-playtest" class="btn btn-primary btn-block" data-start data-blocked="{% if playable %}false{% else %}true{% endif %}"{% if not chosen_count or not form_deck or not playable %} disabled{% endif %}>
+            {% if chosen_count %}Start {{ chosen_count }} match{{ chosen_count|pluralize:"es" }}{% else %}Pick at least one opponent{% endif %}
+        </button>
+        <p class="field-help">Forge plays the rules; Jev (<span class="font-mono">{{ jev_model }}</span>) picks among Forge's options and hands a decision to Forge's AI when unsure.</p>
+    </div>
+</aside>

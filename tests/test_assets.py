@@ -1,11 +1,10 @@
 """Guards that the templates only use assets the vendored bundles actually ship.
 
-The stylesheet (`theme/static/css/styles.css`) and the icon font
-(`materialsymbols-subset.woff2`) are pre-built artifacts committed to the repo:
-there is no Tailwind build step and no subsetting script here. So a template can
-reference a utility class or an icon that simply does not exist, and nothing
-fails — the markup renders, silently unstyled. That is exactly how the
-markup renders silently unstyled, or an icon name prints as literal text.
+The stylesheets (`theme/static/css/*.css`, written by hand) and the icon font
+(`materialsymbols-subset.woff2`, a prebuilt subset) are committed to the repo:
+there is no CSS build and no subsetting script here. So a template can reference
+a class or an icon that simply does not exist, and nothing fails — the markup
+renders silently unstyled, or an icon name prints as literal text.
 
 These tests are cheap and catch that whole class of bug at its source.
 """
@@ -19,26 +18,23 @@ TEMPLATE_DIRS = [
     ROOT / "decks" / "templates",
     ROOT / "playtest" / "templates",
 ]
-STYLESHEET = ROOT / "theme" / "static" / "css" / "styles.css"
+CSS_DIR = ROOT / "theme" / "static" / "css"
+# Every page links these, in this order: tokens and reset before what uses them.
+STYLESHEETS = ["styles.css", "layout.css", "components.css"]
+LINKS = ROOT / "mtg_gauntlet" / "templates" / "partials" / "stylesheets.html"
+
+
+def _css() -> str:
+    return "\n".join((CSS_DIR / name).read_text() for name in STYLESHEETS)
 
 # Characters the committed icon-font subset actually carries. Note the absence
 # of "j" and "q": the subsetter dropped them, so every Material Symbols name
 # containing either (query_stats, qr_code, join_full, ...) renders as text.
 ICON_CHARS = set("_abcdefghiklmnoprstuvwxyz")
 
-# Classes referenced by templates that predate these tests and are not in the
-# stylesheet. They render unstyled today. Fix them or regenerate the CSS — but
-# do not grow this list: a new entry means new markup that does nothing.
-KNOWN_UNCOMPILED = {
-    "card-face--",  # built by string concatenation in the zoom modal
-    "cursor-default",
-    "peer",  # marker class for peer-* variants; carries no rules of its own
-    "bg-[rgba(124,92,255,.12)]",
-    "border-[rgba(124,92,255,.3)]",
-    "whitespace-pre-wrap",
-    "login-card",
-    "login-hero",
-}
+# Classes a template may use without a rule of its own. Keep it empty: a new
+# entry means markup that does nothing.
+KNOWN_UNCOMPILED = set()
 
 
 def _template_sources():
@@ -55,10 +51,10 @@ ICON_SPAN = re.compile(r'<span\b([^>]*\bclass="ms(?:\s[^"]*)?"[^>]*)>\s*([a-z_]+
 
 
 def _compiled_classes():
-    css = STYLESHEET.read_text()
+    css = _css()
     return {
         re.sub(r"\\(.)", r"\1", match)
-        for match in re.findall(r"\.((?:[A-Za-z0-9_\[\]().#/%-]|\\.)+)", css)
+        for match in re.findall(r"\.((?:[A-Za-z0-9_-]|\\.)+)", css)
     }
 
 
@@ -107,3 +103,26 @@ def test_every_icon_is_opted_out_of_page_translation():
         "These icons lack translate=\"no\", so browser translation turns them "
         f"into text: {offenders}"
     )
+
+
+def test_the_stylesheet_defines_the_design_tokens_and_no_tailwind():
+    css = _css()
+    for token in ("--bg:", "--surface:", "--accent:", "--teal:", "--gold:", "--danger:"):
+        assert token in css
+    assert "tailwind" not in css.lower() and "--tw-" not in css
+
+
+def test_every_stylesheet_is_linked_in_order():
+    assert sorted(p.name for p in CSS_DIR.glob("*.css")) == sorted(STYLESHEETS)
+    links = re.findall(r"\{% static 'css/([^']+)' %\}", LINKS.read_text())
+    assert links == STYLESHEETS
+    for page in ("base.html", "registration/login.html"):
+        src = (ROOT / "mtg_gauntlet" / "templates" / page).read_text()
+        assert '{% include "partials/stylesheets.html" %}' in src and "css/styles.css" not in src
+
+
+def test_page_titles_opt_out_of_translation():
+    # Titles hold proper names (decks, the app): translate="no" keeps them as written.
+    for page in ("base.html", "registration/login.html"):
+        src = (ROOT / "mtg_gauntlet" / "templates" / page).read_text()
+        assert '<title translate="no">' in src and "<script src=" not in src

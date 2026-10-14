@@ -1,57 +1,99 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="page" data-screen-label="Home">
-    <div class="flex items-end justify-between gap-5 flex-wrap mb-6">
-        <div>
-            <div class="kicker">Playtest</div>
-            <h1 class="font-cinzel font-semibold text-[34px] mt-[7px] mb-1.5 tracking-[.03em]">The Table</h1>
-            <p class="m-0 text-txt2 font-light text-[14.5px]">
-                Import competitive decks, seat them at a table and let AI agents play them out:
-                Standard, Pioneer, Modern, Legacy, Vintage, Pauper, Commander and Duel Commander.
-            </p>
-        </div>
-        <div class="flex gap-[11px] items-center flex-wrap">
-            <a href="{% url 'new_deck' %}" class="btn btn-line">
-                <span translate="no" class="ms text-[20px]">add</span>Import deck
-            </a>
-            <a href="{% url 'new_match' %}" class="btn btn-grad">
-                <span translate="no" class="ms text-[20px]">swords</span>Test a deck
-            </a>
-        </div>
+<div class="page-head">
+    <div class="page-head-main">
+        <div class="kicker">Home</div>
+        <h1 class="page-title">The Table</h1>
+        <p class="page-sub">What is running, what needs you, and how your decks are doing.</p>
+    </div>
+    <div class="actions">
+        <a href="{% url 'new_deck' %}" class="btn btn-line">Import deck</a>
+    </div>
+</div>
+
+<div class="split">
+    <div class="stack">
+        {% include "partials/running_now.html" %}
+
+        <section class="panel" aria-label="Your decks">
+            <div class="panel-head">
+                <span class="panel-title">Your decks</span>
+                <span class="panel-sub">record across every playtest</span>
+                <a href="{% url 'deck_list' %}" class="panel-link">All decks</a>
+            </div>
+            {% if deck_rows %}
+            <div class="table-scroll">
+                <table class="data-table">
+                    <thead><tr><th>Deck</th><th>Format</th><th>W–L–D</th><th>Win rate</th><th>Last test</th></tr></thead>
+                    <tbody>
+                        {% for row in deck_rows %}
+                        <tr class="row-link">
+                            <td>
+                                <a href="{% url 'deck_detail' row.deck.id %}" class="cluster">
+                                    <span class="pips" aria-hidden="true">{% for pip in row.deck.pips %}<span class="pip" style="background:{{ pip.hex }}"></span>{% endfor %}</span>
+                                    <span translate="no" class="deck-name">{{ row.deck.name }}</span>
+                                </a>
+                            </td>
+                            <td class="muted">{{ row.deck.get_format_display }}</td>
+                            <td class="num">{{ row.record.score }}</td>
+                            <td>{% include "partials/meter.html" with value=row.record.win_rate %}</td>
+                            <td class="muted">{% if row.last %}{{ row.last.created_at|timesince }} ago{% else %}never{% endif %}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty">
+                <span translate="no" class="ms ms-lg">style</span>
+                <p>No decks yet. Import one for any of {% for f in formats %}{{ f.label }}{% if not forloop.last %}, {% endif %}{% endfor %}.</p>
+                <a href="{% url 'new_deck' %}" class="btn btn-primary">Import deck</a>
+            </div>
+            {% endif %}
+        </section>
     </div>
 
-    <div class="home-stats grid grid-cols-3 gap-[13px] mb-[26px]">
-        <div class="stat-card">
-            <span translate="no" class="ms text-[26px] text-violet2">style</span>
-            <div><div class="stat-num">{{ deck_count }}</div><div class="stat-label">Decks</div></div>
-        </div>
-        <div class="stat-card">
-            <span translate="no" class="ms text-[26px] text-teal">swords</span>
-            <div><div class="stat-num text-teal">{{ playtest_count }}</div><div class="stat-label">Playtests</div></div>
-        </div>
-        <div class="stat-card">
-            <span translate="no" class="ms text-[26px] text-gold">smart_toy</span>
-            <div><div class="stat-num text-gold">{% if jev_ready %}On{% else %}Off{% endif %}</div><div class="stat-label">Jev players</div></div>
-        </div>
-    </div>
-
-    <div class="flex items-center justify-between mb-3">
-        <div class="kicker">Recent playtests</div>
-        <a href="{% url 'match_list' %}" class="text-[13px] text-violet2 no-underline">All playtests</a>
-    </div>
-    <div class="mb-[26px]">
-        {% if sessions %}
-        {% include "playtest/partials/playtest_cards.html" %}
-        {% else %}
-        <div class="text-txt3 text-[13px]">No playtests yet. <a href="{% url 'new_match' %}" class="text-violet2 no-underline">Test a deck</a>.</div>
+    <div class="stack">
+        {% if notices %}
+        <section class="panel" aria-label="Needs attention">
+            <div class="panel-head"><span class="panel-title">Needs attention</span></div>
+            <div class="panel-body">
+                {% for notice in notices %}
+                <div class="well notice">
+                    <span class="dot {{ notice.tone }}" aria-hidden="true"></span>
+                    <div class="notice-body">
+                        <div class="notice-title">{{ notice.title }}</div>
+                        <div class="notice-text">{{ notice.text }}</div>
+                        <a href="{{ notice.url }}" class="notice-action">{{ notice.action }}</a>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
         {% endif %}
-    </div>
 
-    <div class="flex items-center justify-between mb-3">
-        <div class="kicker">Recent decks</div>
-        <a href="{% url 'deck_list' %}" class="text-[13px] text-violet2 no-underline">All decks</a>
+        <section class="panel" aria-label="Recent playtests">
+            <div class="panel-head">
+                <span class="panel-title">Recent playtests</span>
+                <a href="{% url 'playtest_list' %}" class="panel-link">All</a>
+            </div>
+            {% if recent %}
+            <div class="panel-list">
+                {% for session in recent %}
+                <a class="list-row" href="{% url 'playtest_detail' session.playtest.id %}">
+                    <span class="list-row-main">
+                        <span translate="no" class="deck-name">{{ session.playtest.deck_name }}</span>
+                        <span class="list-row-sub">{{ session.playtest.get_format_display }} · {{ session.rows|length }} opponent{{ session.rows|length|pluralize }} · {{ session.playtest.created_at|timesince }} ago</span>
+                    </span>
+                    <span class="list-row-end num {% if session.busy %}warn{% else %}ok{% endif %}">{{ session.record.score }}</span>
+                </a>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="empty"><p>No playtests yet.</p><a href="{% url 'new_playtest' %}" class="btn btn-line btn-sm">Test a deck</a></div>
+            {% endif %}
+        </section>
     </div>
-    {% include "decks/partials/deck_cards.html" %}
 </div>
 {% endblock %}

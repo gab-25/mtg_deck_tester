@@ -4,7 +4,7 @@ import pytest
 
 from decks.models import MetagameDeck
 
-from .factories import constructed_cards
+from .factories import constructed_cards, make_playtest
 
 
 def _meta(**fields):
@@ -89,7 +89,7 @@ def test_a_new_sync_replaces_the_snapshot_and_seats_keep_their_name(fake_scryfal
     sync_format("modern", 1, DbCardCache(), fetch=_legal_fetch, check=lambda cards: {"unresolved": [], "unsupported_cards": []})
     old = MetagameDeck.objects.get()
     user = django_user_model.objects.create_user(username="u")
-    match = Match.objects.create(owner=user, format="modern", seed=1)
+    match = Match.objects.create(owner=user, playtest=make_playtest(user, fmt="modern"), format="modern", seed=1)
     seat = Seat.objects.create(match=match, position=0, metagame_deck=old, deck_name=old.archetype)
     sync_format("modern", 1, DbCardCache(), fetch=_legal_fetch, check=lambda cards: {"unresolved": [], "unsupported_cards": []})
     assert MetagameDeck.objects.count() == 1 and MetagameDeck.objects.get().pk != old.pk

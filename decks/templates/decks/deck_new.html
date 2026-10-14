@@ -2,79 +2,78 @@
 
 {% block title %}Import a deck — MTG Gauntlet{% endblock %}
 
+{% block breadcrumb %}
+<nav class="breadcrumb" aria-label="Breadcrumb">
+    <a href="{% url 'deck_list' %}">Decks</a><span aria-hidden="true">/</span><span aria-current="page">Import</span>
+</nav>
+{% endblock %}
+
 {% block content %}
-<div class="page-narrow" data-screen-label="Deck import">
-    <a href="{% url 'deck_list' %}" class="link-back mb-[18px]">
-        <span translate="no" class="ms text-[18px]">arrow_back</span>Cancel
-    </a>
-    <div class="kicker">New deck</div>
-    <h1 class="font-cinzel font-semibold text-[32px] mt-[7px] mb-6 tracking-[.02em]">Import a deck</h1>
-
-    <form method="post" action="{% url 'create_deck' %}">
-        {% csrf_token %}
-        <div class="editor-grid grid grid-cols-[minmax(0,1fr)_300px] gap-5 items-start">
-            <div class="flex flex-col gap-5 min-w-0">
-                {% include "partials/form_errors.html" with errors_title="This decklist can’t be imported" %}
-                <div>
-                    <label class="field-label mb-2">Deck name</label>
-                    {# font-size/weight override .field's own font (unlayered), so they stay inline. #}
-                    <input type="text" name="name" value="{{ form_name }}" placeholder="e.g. Atraxa Superfriends"
-                        class="field" style="font-size:16px;font-weight:500" required />
-                </div>
-                <div>
-                    <label class="field-label mb-2">Format</label>
-                    <select name="format" class="field" style="font-size:16px;font-weight:500">
-                        {% for value, label in format_choices %}
-                        <option value="{{ value }}" {% if value == form_format %}selected{% endif %}>{{ label }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div>
-                    <label class="field-label mb-2">Card list</label>
-                    <textarea name="decklist" spellcheck="false" class="field min-h-[340px]"
-                        placeholder="Commander&#10;1 Atraxa, Praetors' Voice&#10;&#10;Deck&#10;1 Sol Ring&#10;1 Cultivate&#10;…" required>{{ form_decklist }}</textarea>
-                    <div class="text-[12px] text-txt3 mt-2 font-light">
-                        One card per line, Moxfield style: <span class="font-mono2 text-txt2">quantity name</span>.
-                        Commander decks list the commander under a <span class="font-mono2 text-txt2">Commander</span> header
-                        (or tag its line with <span class="font-mono2 text-txt2">*CMDR*</span>); constructed decks list the
-                        sideboard under a <span class="font-mono2 text-txt2">Sideboard</span> header.
-                    </div>
-                </div>
-            </div>
-
-            <div class="editor-sidebar flex flex-col gap-4 sticky top-[78px]">
-                {% for key, fmt in formats.items %}
-                <div class="panel-card p-[18px]" data-format-rules="{{ key }}" {% if key != form_format %}hidden{% endif %}>
-                    <div class="flex items-center gap-[7px] font-semibold text-[12.5px] tracking-[.06em] text-txt2 mb-3">
-                        <span translate="no" class="ms text-[18px]">gavel</span>{{ fmt.label|upper }} RULES
-                    </div>
-                    <ul class="text-[12.5px] text-txt3 font-light leading-[1.6]" style="margin:0;padding-left:18px;list-style:disc">
-                        {% if fmt.has_commander %}
-                        <li>Exactly 100 cards, commander included.</li>
-                        <li>Exactly one commander, under a “Commander” header or tagged *CMDR*.</li>
-                        <li>Singleton: one copy of each card, basic lands aside.</li>
-                        <li>Every card within the commander's color identity.</li>
-                        {% else %}
-                        <li>At least 60 cards in the main deck.</li>
-                        <li>A sideboard of at most 15 cards, under a “Sideboard” header.</li>
-                        <li>At most 4 copies of a card, main deck and sideboard together{% if key == 'vintage' %}; 1 of a restricted card{% endif %}.</li>
-                        <li>No commander.</li>
-                        {% endif %}
-                        <li>Nothing banned in {{ fmt.label }}.</li>
-                    </ul>
-                </div>
-                {% endfor %}
-
-                <button type="submit" class="btn btn-grad btn-block">
-                    <span translate="no" class="ms text-[20px]">add</span>Import deck
-                </button>
-                <div class="text-[12px] text-txt3 font-light text-center leading-[1.5]">
-                    Cards are fetched from Scryfall in the background: a brand-new deck can take a minute or two.
-                </div>
-            </div>
-        </div>
-    </form>
+<div class="page-head">
+    <div class="page-head-main">
+        <h1 class="page-title">Import a deck</h1>
+        <p class="page-sub">Paste a decklist: its cards are fetched from Scryfall and checked against the format's rules.</p>
+    </div>
 </div>
+
+<form method="post" action="{% url 'create_deck' %}" class="split-form">
+    {% csrf_token %}
+    <div class="stack">
+        {% include "partials/form_errors.html" with errors_title="This decklist can’t be imported" %}
+        <div class="field">
+            <label class="field-label" for="deck-name">Deck name</label>
+            <input id="deck-name" type="text" name="name" value="{{ form_name }}" placeholder="e.g. Boros Energy" class="input" required />
+        </div>
+        <div class="field">
+            <label class="field-label" for="deck-format">Format</label>
+            <select id="deck-format" name="format" class="select">
+                {% for value, label in format_choices %}
+                <option value="{{ value }}" {% if value == form_format %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="deck-list">Card list</label>
+            <textarea id="deck-list" name="decklist" spellcheck="false" class="textarea"
+                placeholder="Deck&#10;4 Lightning Bolt&#10;4 Guide of Souls&#10;…&#10;&#10;Sideboard&#10;2 Wear // Tear" required>{{ form_decklist }}</textarea>
+            <p class="field-help">
+                One card per line, Moxfield style: <span class="font-mono">quantity name</span>.
+                Commander decks list the commander under a <span class="font-mono">Commander</span> header
+                (or tag its line with <span class="font-mono">*CMDR*</span>); constructed decks list the
+                sideboard under a <span class="font-mono">Sideboard</span> header.
+            </p>
+        </div>
+    </div>
+
+    <aside class="stack sticky" aria-label="Format rules">
+        {% for key, fmt in formats.items %}
+        <section class="panel" data-format-rules="{{ key }}" {% if key != form_format %}hidden{% endif %}>
+            <div class="panel-head"><span translate="no" class="ms ms-sm">gavel</span><span class="panel-title">{{ fmt.label }} rules</span></div>
+            <div class="panel-body">
+                <ul class="bullet-list">
+                    {% if fmt.has_commander %}
+                    <li>Exactly 100 cards, commander included.</li>
+                    <li>Exactly one commander, under a “Commander” header or tagged *CMDR*.</li>
+                    <li>Singleton: one copy of each card, basic lands aside.</li>
+                    <li>Every card within the commander's color identity.</li>
+                    {% else %}
+                    <li>At least 60 cards in the main deck.</li>
+                    <li>A sideboard of at most 15 cards, under a “Sideboard” header.</li>
+                    <li>At most 4 copies of a card, main deck and sideboard together{% if key == 'vintage' %}; 1 of a restricted card{% endif %}.</li>
+                    <li>No commander.</li>
+                    {% endif %}
+                    <li>Nothing banned in {{ fmt.label }}.</li>
+                </ul>
+            </div>
+        </section>
+        {% endfor %}
+        <button type="submit" class="btn btn-primary btn-block"><span translate="no" class="ms">add</span>Import deck</button>
+        <p class="field-help">Cards are fetched from Scryfall in the background: a brand-new deck can take a minute or two.</p>
+    </aside>
+</form>
+{% endblock %}
+
+{% block scripts %}
 <script>
   // Show the rules of the chosen format.
   document.querySelector('select[name="format"]').addEventListener("change", (e) => {

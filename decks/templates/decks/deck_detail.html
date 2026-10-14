@@ -2,103 +2,128 @@
 
 {% block title %}{{ deck.name }} — MTG Gauntlet{% endblock %}
 
+{% block breadcrumb %}
+<nav class="breadcrumb" aria-label="Breadcrumb">
+    <a href="{% url 'deck_list' %}">Decks</a><span aria-hidden="true">/</span><span translate="no" aria-current="page">{{ deck.name }}</span>
+</nav>
+{% endblock %}
+
 {% block content %}
-{% comment %}
-.page-narrow caps width at 960px; this page overrides it to 1264px, so the
-max-width stays inline — a utility would lose to the unlayered component rule.
-{% endcomment %}
-<div class="page-narrow" data-screen-label="Deck detail" style="max-width:1264px">
-    <a href="{% url 'deck_list' %}" class="link-back mb-[18px]">
-        <span translate="no" class="ms text-[18px]">arrow_back</span>All decks
-    </a>
-
-    <div class="flex items-start justify-between gap-5 flex-wrap mb-6">
-        <div>
-            <div class="flex items-center gap-[9px] mb-2.5">
-                {% for pip in pips %}<span class="pip" style="background:{{ pip.hex }}"></span>{% endfor %}
-            </div>
-            <h1 translate="no" class="font-cinzel m-0 mb-[11px] font-semibold text-[32px] tracking-[.02em]">{{ deck.name }}</h1>
-            <div class="flex items-center gap-2 flex-wrap">
-                <span class="chip">{{ deck.get_format_display }}</span>
-                {% include "decks/partials/status_badge.html" with deck=deck %}
-            </div>
-        </div>
-        <div class="flex gap-[9px] flex-wrap items-center">
-            {% if deck.status == 'ready' %}
-            <a href="{% url 'new_match' %}?deck={{ deck.id }}&format={{ deck.format }}" class="btn btn-grad btn-sm">
-                <span translate="no" class="ms text-[18px]">swords</span>Test this deck
-            </a>
-            {% endif %}
-            {% url 'delete_deck' deck.id as delete_url %}
-            {% include "partials/confirm_modal.html" with id="confirm-delete" action=delete_url message="Delete this deck? Matches it played are kept." trigger_label="Delete" trigger_icon="delete" trigger_class="btn btn-danger-line btn-sm" confirm_label="Delete" confirm_class="btn btn-danger" danger=True %}
+<div class="page-head">
+    <div class="page-head-main">
+        <span class="pips pips-lg" aria-label="Colors: {% for pip in pips %}{{ pip.letter }}{% endfor %}">{% for pip in pips %}<span class="pip" style="background:{{ pip.hex }}"></span>{% endfor %}</span>
+        <h1 translate="no" class="page-title">{{ deck.name }}</h1>
+        <div class="cluster">
+            <span class="chip">{{ deck.get_format_display }}</span>
+            {% if deck.status == 'ready' %}{% include "decks/partials/forge_badge.html" with deck=deck %}{% else %}{% include "decks/partials/status_badge.html" with deck=deck %}{% endif %}
+            {% if deck.commander %}<span translate="no" class="chip">{{ deck.commander }}</span>{% endif %}
+            <span class="faint">{{ deck.total_cards }} cards{% if deck.sideboard_total %} + {{ deck.sideboard_total }} sideboard{% endif %}</span>
         </div>
     </div>
-
-    {% if deck.status == 'failed' %}
-    {% comment %}
-    The reason can span several lines (one per rule broken): keep the line
-    breaks and top-align them. Both override .alert's own flex rules, which are
-    unlayered and would beat the equivalent utilities.
-    {% endcomment %}
-    <div class="alert alert-error mb-[18px]" style="align-items:flex-start;white-space:pre-line">{{ deck.error }}</div>
-    <div class="panel-card p-[18px]">
-        <div class="field-label mb-2">Submitted list</div>
-        <pre class="font-mono2 text-[12.5px] text-txt3 m-0" style="white-space:pre-wrap">{{ deck.raw_decklist }}</pre>
+    <div class="actions">
+        {% if deck.status == 'ready' %}
+        <a href="{% url 'new_playtest' %}?deck={{ deck.id }}" class="btn btn-primary"><span translate="no" class="ms">swords</span>Test this deck</a>
+        <form hx-post="{% url 'deck_forge_check' deck.id %}" hx-target="#forge-check" hx-swap="outerHTML" class="inline-form">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-line"><span translate="no" class="ms ms-sm">fact_check</span>{% if deck.forge_checked %}Recheck with Forge{% else %}Check with Forge{% endif %}</button>
+        </form>
+        {% endif %}
+        {% url 'delete_deck' deck.id as delete_url %}
+        {% include "partials/confirm_modal.html" with id="confirm-delete" action=delete_url message="Delete this deck? The playtests it played are kept." trigger_label="Delete" confirm_label="Delete" danger=True %}
     </div>
-    {% else %}
-    <div class="detail-grid grid grid-cols-[minmax(0,1fr)_420px] gap-[22px] items-start">
-        <div class="panel-card overflow-hidden min-w-0">
-            <div class="flex items-center gap-[9px] py-4 px-[18px] border-b border-line2">
-                <span translate="no" class="ms text-txt2 text-[20px]">playing_cards</span>
-                <span class="font-semibold text-[15px]">Cards</span>
-                <span class="text-[12px] text-txt3">{{ deck.total_cards }}{% if deck.sideboard_total %} + {{ deck.sideboard_total }} sideboard{% endif %}</span>
-            </div>
-            <div>
-                {% for group in card_groups %}
-                {% include "decks/partials/card_group.html" with group=group %}
-                {% endfor %}
-                {% if sideboard %}
-                {% include "decks/partials/card_group.html" with group=sideboard %}
-                {% endif %}
-            </div>
-        </div>
-
-        <div class="detail-sidebar flex flex-col gap-4">
-            {% for c in commander_cards %}
-            <div class="panel-card p-[18px]">
-                <div class="mb-3.5 font-semibold text-[12.5px] tracking-[.08em] uppercase text-txt3">Commander</div>
-                <div class="flex items-center gap-3">
-                    {% if c.image %}
-                    <button type="button" class="card-thumb flex-none"
-                        hx-get="{% url 'card_image_modal' %}?{{ c.image_query }}"
-                        hx-target="#card-image-modal-container" hx-swap="innerHTML" title="View card">
-                        <img src="{{ c.image }}" alt="{{ c.name }}" loading="lazy" />
-                    </button>
-                    {% endif %}
-                    <div class="min-w-0">
-                        <div translate="no" class="font-cinzel font-semibold text-[15px] leading-[1.2]">{{ c.name }}</div>
-                        <div class="mt-1 text-[12px] text-txt3 font-light">{{ c.type_line }}</div>
-                    </div>
-                </div>
-            </div>
-            {% endfor %}
-
-            <div class="panel-card p-[18px]" id="forge-check">
-                <div class="flex items-center justify-between gap-2 mb-2">
-                    <div class="font-semibold text-[12.5px] tracking-[.08em] uppercase text-txt3">Forge engine</div>
-                </div>
-                <div class="text-[12px] text-txt3 font-light leading-[1.45] mb-3">
-                    Matches are played by Forge, which refuses a deck with a card it does not know. Check this deck before seating it.
-                </div>
-                <form hx-post="{% url 'deck_forge_check' deck.id %}" hx-target="#forge-check" hx-swap="outerHTML">
-                    {% csrf_token %}
-                    <button type="submit" class="btn btn-line btn-sm"><span translate="no" class="ms text-[16px]">fact_check</span>Check with Forge</button>
-                </form>
-            </div>
-        </div>
-    </div>
-    {% endif %}
 </div>
+
+{% if deck.status == 'failed' %}
+<div class="alert alert-error" role="alert"><span translate="no" class="ms ms-sm">error</span><pre>{{ deck.error }}</pre></div>
+<section class="panel">
+    <div class="panel-head"><span class="panel-title">Submitted decklist</span></div>
+    <pre class="decklist">{{ deck.raw_decklist }}</pre>
+</section>
+{% else %}
+{% if deck.forge_checked %}{% include "decks/partials/forge_check.html" with check=deck.coverage %}{% else %}<div id="forge-check"></div>{% endif %}
+
+<div class="grid-stats">
+    <div class="stat-tile"><span class="stat-value">{{ record.score }}</span><span class="stat-label">Record, {{ record.played }} match{{ record.played|pluralize:"es" }}</span></div>
+    <div class="stat-tile"><span class="stat-value ok">{% if record.win_rate is None %}—{% else %}{{ record.win_rate }}%{% endif %}</span><span class="stat-label">Win rate</span></div>
+    <div class="stat-tile"><span class="stat-value">{{ record.avg_turns|dash }}</span><span class="stat-label">Turns per game</span></div>
+    <div class="stat-tile"><span class="stat-value warn">{{ record.median_confidence|dash }}</span><span class="stat-label">Median Jev confidence</span></div>
+</div>
+
+<nav class="tabs" aria-label="Deck sections">
+    <a href="?tab=results" class="tab{% if tab == 'results' %} is-active{% endif %}"{% if tab == 'results' %} aria-current="page"{% endif %}>Results · {{ history|length }} playtest{{ history|length|pluralize }}</a>
+    <a href="?tab=cards" class="tab{% if tab == 'cards' %} is-active{% endif %}"{% if tab == 'cards' %} aria-current="page"{% endif %}>Cards · {{ deck.total_cards }}{% if deck.sideboard_total %} + {{ deck.sideboard_total }}{% endif %}</a>
+    <a href="?tab=list" class="tab{% if tab == 'list' %} is-active{% endif %}"{% if tab == 'list' %} aria-current="page"{% endif %}>Decklist</a>
+</nav>
+
+{% if tab == 'results' %}
+<div class="split">
+    <section class="panel" aria-label="Against each opponent">
+        <div class="panel-head"><span class="panel-title">Against each opponent</span><span class="panel-sub">all playtests combined</span></div>
+        {% if opponents %}
+        <div class="table-scroll">
+            <table class="data-table">
+                <thead><tr><th>Opponent</th><th class="num">Matches</th><th>W–L–D</th><th>Win rate</th></tr></thead>
+                <tbody>
+                    {% for row in opponents %}
+                    <tr>
+                        <td class="cell-main"><span translate="no">{{ row.name }}</span><span class="cell-sub">{{ row.source }}</span></td>
+                        <td class="num">{{ row.record.played }}</td>
+                        <td class="num">{{ row.record.score }}</td>
+                        <td>{% include "partials/meter.html" with value=row.record.win_rate %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty"><p>No playtest yet.</p>{% if deck.status == 'ready' %}<a href="{% url 'new_playtest' %}?deck={{ deck.id }}" class="btn btn-line btn-sm">Test this deck</a>{% endif %}</div>
+        {% endif %}
+    </section>
+    <section class="panel" aria-label="Playtest history">
+        <div class="panel-head"><span class="panel-title">Playtest history</span></div>
+        <div class="panel-list">
+            {% for item in history %}
+            <a class="list-row" href="{% url 'playtest_detail' item.playtest.id %}">
+                <span class="list-row-main">
+                    <span>{{ item.playtest.created_at|date:"j M, H:i" }}</span>
+                    <span class="list-row-sub">{% if item.busy %}playing · {% endif %}{{ item.opponents }} opponent{{ item.opponents|pluralize }} · seed {{ item.playtest.seed }}</span>
+                </span>
+                <span class="list-row-end num {% if item.busy %}warn{% elif item.record.win_rate is not None and item.record.win_rate >= 50 %}ok{% else %}muted{% endif %}">{{ item.record.score }}</span>
+            </a>
+            {% empty %}
+            <div class="empty"><p>Nothing played yet.</p></div>
+            {% endfor %}
+        </div>
+    </section>
+</div>
+{% elif tab == 'cards' %}
+<div class="card-groups">
+    {% if commander_cards %}
+    <section class="panel">
+        <div class="panel-head"><div class="panel-title">Commander</div></div>
+        {% for c in commander_cards %}
+        <button type="button" class="card-row"{% if c.image_query %} hx-get="{% url 'card_image_modal' %}?{{ c.image_query }}" hx-target="#card-image-modal-container" hx-swap="innerHTML"{% endif %} title="View card">
+            <span class="card-thumb">{% if c.image %}<img src="{{ c.image }}" alt="" loading="lazy" />{% endif %}</span>
+            <span class="list-row-main"><span translate="no" class="deck-name">{{ c.name }}</span><span class="list-row-sub">{{ c.type_line }}</span></span>
+        </button>
+        {% endfor %}
+    </section>
+    {% endif %}
+    {% for group in card_groups %}{% include "decks/partials/card_group.html" with group=group %}{% endfor %}
+    {% if sideboard %}{% include "decks/partials/card_group.html" with group=sideboard %}{% endif %}
+</div>
+{% else %}
+<section class="panel">
+    <div class="panel-head">
+        <span class="panel-title">Submitted decklist</span>
+        <div class="actions">
+            <button type="button" class="btn btn-line btn-sm" data-copy="decklist-text" onclick="navigator.clipboard.writeText(document.getElementById(this.dataset.copy).textContent).then(() => { this.textContent = 'Copied'; })">Copy</button>
+        </div>
+    </div>
+    <pre id="decklist-text" class="decklist">{{ deck.raw_decklist }}</pre>
+</section>
+{% endif %}
+{% endif %}
 
 {# HTMX target: the card-image zoom modal is fetched and swapped in here on click. #}
 <div id="card-image-modal-container"></div>

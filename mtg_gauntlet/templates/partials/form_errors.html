@@ -1,16 +1,14 @@
 {% comment %}
-The rejection notice for a decklist that cannot be accepted: everything wrong
-with it at once (Commander legality, unparsable lines, match set-up) so it can be fixed in one
-pass. Inline styles override .alert's own flex rules, which are unlayered and
-would beat the equivalent utilities.
+Everything wrong with a submitted form at once, so it can be fixed in one pass.
 {% endcomment %}
 {% if errors %}
-<div class="alert alert-error" style="align-items:flex-start;flex-direction:column;gap:7px">
-    <div class="font-semibold" style="display:flex;align-items:center;gap:8px">
-        <span translate="no" class="ms text-[16px]">error</span>{{ errors_title|default:'This can’t be saved yet' }}
+<div class="alert alert-error" role="alert">
+    <span translate="no" class="ms ms-sm">error</span>
+    <div class="alert-body">
+        <strong>{{ errors_title|default:'This can’t be saved yet' }}</strong>
+        <ul class="alert-list">
+            {% for error in errors %}<li>{{ error }}</li>{% endfor %}
+        </ul>
     </div>
-    <ul class="font-light" style="margin:0;padding-left:26px;list-style:disc">
-        {% for error in errors %}<li>{{ error }}</li>{% endfor %}
-    </ul>
 </div>
 {% endif %}

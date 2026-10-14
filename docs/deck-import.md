@@ -199,8 +199,8 @@ MTGGoldfish is not used: its `robots.txt` disallows `/deck/download*`.
 - replaces the format's decks in one transaction. Seats that played a replaced deck
   keep its name (`Seat.metagame_deck` is `SET_NULL`).
 
-The new-playtest form offers the ready metagame decks of the chosen format as opponents,
-`archetype — share — N cards unknown to Forge`, with ⚠ when Forge does not know a
-card (the bridge would refuse the match); the `/metagame` page shows every format's
-snapshot. Source parsers are tested on pages
+The new-playtest form offers the ready metagame decks of the tested deck's format as
+opponents, by rank with their share and a badge when Forge does not know a card (the
+bridge would refuse the match); the `/metagame` page shows one format's snapshot per
+tab (`?format=`). Source parsers are tested on pages
 recorded under `tests/fixtures/metagame/`.

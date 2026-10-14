@@ -13,7 +13,7 @@ from playtest import forge, runner
 from playtest.agents import typesafe
 from playtest.models import Match, Seat
 
-from .factories import make_deck, scryfall_card
+from .factories import make_deck, make_playtest, scryfall_card
 from .test_jev_agent import StubJev
 
 pytestmark = [
@@ -35,7 +35,7 @@ def _deck(user, name, entries):
 
 
 def _match(user, seed):
-    match = Match.objects.create(owner=user, format="modern", seed=seed)
+    match = Match.objects.create(owner=user, playtest=make_playtest(user, fmt="modern", seed=seed), format="modern", seed=seed)
     for position, deck in enumerate((_deck(user, "Red", RED), _deck(user, "Green", GREEN))):
         Seat.objects.create(match=match, position=position, deck=deck, deck_name=deck.name, agent=Seat.Agent.JEV)
     return match

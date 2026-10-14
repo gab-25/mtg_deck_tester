@@ -5,69 +5,73 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title translate="no">{% block title %}MTG Gauntlet{% endblock %}</title>
-    <script src="{% static 'js/untranslated-title.js' %}"></script>
-    <link rel="stylesheet" href="{% static 'vendor/fontawesome/css/all.min.css' %}" />
     {# Loads htmx (bundled by django-htmx) and, in DEBUG, its error-logging extension. #}
     {% htmx_script %}
-    <link rel="stylesheet" href="{% static 'css/styles.css' %}" />
-    {# Fonts loaded after the stylesheet. #}
     {% include "partials/design_head.html" %}
+    {% include "partials/stylesheets.html" %}
 </head>
 <body>
-    <div class="bg-glow"></div>
-    <div class="bg-grid"></div>
-
-    <div class="relative z-[1] min-h-screen flex flex-col">
-        <header class="app-nav no-print">
-            <a href="{% url 'home' %}" class="brand">
-                {% include "partials/brand_mark.html" with size=28 %}
-                <span translate="no" class="brand-name">MTG GAUNTLET</span>
-                <span translate="no" class="brand-badge"><span translate="no" class="ms text-[12px]">auto_awesome</span>AI</span>
-            </a>
-            <nav class="flex items-center gap-[13px] flex-wrap">
-                <a href="{% url 'match_list' %}" class="btn btn-line btn-sm">
-                    <span translate="no" class="ms text-[18px]">swords</span>Playtests
-                </a>
-                <a href="{% url 'deck_list' %}" class="btn btn-line btn-sm">
-                    <span translate="no" class="ms text-[18px]">style</span>Decks
-                </a>
-                <a href="{% url 'metagame' %}" class="btn btn-line btn-sm">
-                    <span translate="no" class="ms text-[18px]">leaderboard</span>Metagame
-                </a>
-                <a href="{% url 'new_match' %}" class="btn btn-grad">
-                    <span translate="no" class="ms text-[20px]">add</span>Test a deck
-                </a>
-                <div class="flex items-center gap-[11px]">
-                    <div translate="no" class="avatar">{{ user.get_username|slice:":2" }}</div>
-                    <div class="leading-[1.15]">
-                        <div translate="no" class="text-[13.5px] font-semibold">{{ user.get_username }}</div>
-                        <form method="post" action="{% url 'logout' %}" class="m-0">
-                            {% csrf_token %}
-                            <button type="submit" class="bg-transparent border-none p-0 cursor-pointer text-[11px] text-txt3">
-                                Sign out
-                            </button>
-                        </form>
-                    </div>
+{% with nav_active=request.resolver_match.url_name|nav_section %}
+<div class="app">
+    <aside class="sidebar" aria-label="Sidebar">
+        <a href="{% url 'home' %}" class="brand">
+            {% include "partials/brand_mark.html" with size=28 %}
+            <span translate="no" class="brand-name">MTG GAUNTLET</span>
+        </a>
+        <a href="{% url 'new_playtest' %}" class="btn btn-primary btn-block">
+            <span translate="no" class="ms">add</span>New playtest
+        </a>
+        <nav class="nav" aria-label="Main">
+            <a class="nav-item{% if nav_active == 'home' %} is-active{% endif %}" {% if nav_active == 'home' %}aria-current="page" {% endif %}href="{% url 'home' %}">Home</a>
+            <a class="nav-item{% if nav_active == 'decks' %} is-active{% endif %}" {% if nav_active == 'decks' %}aria-current="page" {% endif %}href="{% url 'deck_list' %}">Decks<span class="nav-count">{{ sidebar.deck_count }}</span></a>
+            <a class="nav-item{% if nav_active == 'playtests' %} is-active{% endif %}" {% if nav_active == 'playtests' %}aria-current="page" {% endif %}href="{% url 'playtest_list' %}">Playtests<span class="nav-count">{{ sidebar.playtest_count }}</span></a>
+            <a class="nav-item{% if nav_active == 'metagame' %} is-active{% endif %}" {% if nav_active == 'metagame' %}aria-current="page" {% endif %}href="{% url 'metagame' %}">Metagame</a>
+        </nav>
+        <div class="sidebar-foot">
+            <div class="engine-box">
+                <div class="field-label">Engine</div>
+                <div class="engine-row" title="{{ sidebar.forge_url }}">
+                    <span class="dot info" aria-hidden="true"></span>Forge bridge<span translate="no" class="engine-url">{{ sidebar.forge_url }}</span>
                 </div>
-            </nav>
-        </header>
+                <div class="engine-row">
+                    {% if sidebar.jev_ready %}
+                    <span class="dot ok" aria-hidden="true"></span>Jev players<span class="engine-value ok">ready</span>
+                    {% else %}
+                    <span class="dot danger" aria-hidden="true"></span>Jev players<span class="engine-value danger">no API key</span>
+                    {% endif %}
+                </div>
+                <div class="engine-row">
+                    <span class="dot {% if sidebar.running %}warn{% else %}muted{% endif %}" aria-hidden="true"></span>Workers<span class="engine-value{% if sidebar.running %} warn{% endif %}">{{ sidebar.running }}/{{ sidebar.workers }} busy</span>
+                </div>
+            </div>
+            <div class="account">
+                <div translate="no" class="avatar" aria-hidden="true">{{ user.get_username|slice:":2" }}</div>
+                <div class="stack-sm" style="gap:1px">
+                    <span translate="no" class="account-name">{{ user.get_username }}</span>
+                    <form method="post" action="{% url 'logout' %}">
+                        {% csrf_token %}
+                        <button type="submit" class="btn-link">Sign out</button>
+                    </form>
+                </div>
+            </div>
+            <div class="app-foot"><span translate="no">MTG Gauntlet</span> v{{ app_version }}</div>
+        </div>
+    </aside>
 
-        <main class="flex-1">
+    <main class="main">
+        <div class="page{% block page_class %}{% endblock %}">
+            {% block breadcrumb %}{% endblock %}
             {% block content %}{% endblock %}
-        </main>
+        </div>
+    </main>
+</div>
+{% endwith %}
 
-        <footer class="no-print p-[22px] text-center text-[12px] text-txt3">
-            <span translate="no">MTG Gauntlet</span> <span class="opacity-70">v{{ app_version }}</span> &bull; card data from Scryfall &bull; played by AI
-        </footer>
-    </div>
-
-    {% if messages %}
-    {% for message in messages %}
-    <div class="snackbar no-print">
-        <span translate="no" class="ms text-[20px] text-teal">check_circle</span>
-        <span class="text-[14px]">{{ message }}</span>
-    </div>
-    {% endfor %}
-    {% endif %}
+{% for message in messages %}
+<div class="snackbar" role="status">
+    <span translate="no" class="ms ok">check_circle</span>{{ message }}
+</div>
+{% endfor %}
+{% block scripts %}{% endblock %}
 </body>
 </html>

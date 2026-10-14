@@ -71,7 +71,10 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "mtg_gauntlet.context_processors.app_version",
+                "mtg_gauntlet.context_processors.sidebar",
             ],
+            # The project package is not an app, so its tags load as builtins.
+            "builtins": ["mtg_gauntlet.templatetags.nav", "mtg_gauntlet.templatetags.ui"],
         },
     },
 ]

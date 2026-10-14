@@ -100,27 +100,36 @@ The suite is **hermetic**:
 | `test_runner.py`, `test_summary.py` | Whole matches on the fake bridge, fallbacks, budgets, the worker pool; the summary |
 | `test_metagame.py`, `test_metagame_sources.py` | Metagame decks, their sync and sources |
 | `test_forge_bridge.py` | Opt-in (`-m forge`): a match on a real bridge, replayed from its seed |
-| `test_decks_web.py`, `test_matches_web.py` | Views end to end through the Django test client |
-| `test_migrations.py` | The `0002_card_image_urls` and heuristic → `forge_ai` data migrations |
+| `test_decks_web.py`, `test_matches_web.py`, `test_home.py` | Views end to end through the Django test client |
+| `test_stats.py`, `test_sidebar.py` | Records per deck and per opponent, what needs attention; the sidebar and its sections |
+| `test_migrations.py` | The `0002_card_image_urls` and heuristic → `forge_ai` data migrations; the deck's stored Forge check and the required playtest |
 | `test_assets.py` | Template classes and icons vs. the vendored assets (below) |
 
 ## Templates, styles and icons
 
-The stylesheet and icon font are **prebuilt artifacts committed to the repo**: there
-is no Tailwind build and no font subsetting step here. `tests/test_assets.py` guards
-what that implies:
+The stylesheets are **written by hand** and the icon font is a **prebuilt subset**,
+both committed to the repo: there is no CSS build and no font subsetting step here.
+`theme/static/css/` holds three files, linked in this order by
+`partials/stylesheets.html`:
 
-- **Classes**: every `class="…"` token in a template must exist in
-  `theme/static/css/styles.css`. A class that is not compiled in does nothing.
-  `KNOWN_UNCOMPILED` lists the legacy exceptions; do not add to it — use classes the
-  stylesheet already has, or plain CSS in the stylesheet.
+- `styles.css`: the tokens (colors, fonts, radii as custom properties in `:root`), the reset and the base typography;
+- `layout.css`: the app shell (sidebar, main column), page furniture, the login page and their responsive rules;
+- `components.css`: everything else, with the components' responsive rules last so they win.
+
+A rule overriding another file's class must live in a later file. `tests/test_assets.py` guards what that implies:
+
+- **Classes**: every `class="…"` token in a template must be defined in one of
+  the stylesheets; a class with no rule does nothing. Add the rule to the right
+  file (reusing the tokens) when a template needs a new class.
+  `KNOWN_UNCOMPILED` stays empty. Build class names whole, never by concatenation
+  (`card-face--{{ n }}` hides the class from the check).
 - **Icons**: icons are Material Symbols ligatures (`<span class="ms" …>name</span>`)
   from `theme/static/vendor/gfonts/woff2/materialsymbols-subset.woff2`. The subset
   lacks the glyphs `j` and `q`, so names such as `query_stats` render as text. Check
   a new icon in the browser too.
 - **Translation**: every icon span needs `translate="no"`, or a browser page
-  translator rewrites the ligature name. `theme/static/js/untranslated-title.js` does
-  the same job for the tab title.
+  translator rewrites the ligature name. Page titles and proper names (decks,
+  cards, the app) carry it too.
 
 Fonts are vendored under `theme/static/vendor/` (no CDN). Card images are the only
 remote assets, loaded from `cards.scryfall.io`.

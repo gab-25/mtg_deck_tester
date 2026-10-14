@@ -97,10 +97,25 @@ else's row. Login is required everywhere except the login page.
   `<app>/templates/<app>/`, with HTMX fragments under `partials/`.
 - HTMX comes from `django-htmx` (`{% htmx_script %}` in `base.html`; the middleware
   sets `request.htmx`).
-- Styling is a **precompiled** Tailwind stylesheet (`theme/static/css/styles.css`);
-  there is no CSS build step in this repo. Icons are Material Symbols ligatures from
-  a vendored font subset. See [Development](development.md#templates-styles-and-icons)
-  for the constraints this puts on templates.
+- Layout: every page extends `base.html`, a fixed sidebar (New playtest, Home ·
+  Decks · Playtests · Metagame, the engine box, the account) beside the page. The
+  active section comes from the route name through the `nav_section` filter
+  (`mtg_gauntlet/templatetags/`, loaded as a builtin), the counts and engine state
+  from the `sidebar` context processor (local data only: no call to the bridge).
+  Pages put their breadcrumb in `{% block breadcrumb %}`; tabs are links with
+  `?tab=` (deck: results/cards/list, match: summary/log).
+- Routes: `/decks/<id>`, `/playtests`, `/playtests/new?deck=&opponents=&format=`,
+  `/playtests/<id>` and its matches at `/playtests/<id>/matches/<id>` (a match is
+  found only under its own playtest), `/metagame?format=`.
+- Numbers shown per deck and per opponent come from `playtest/stats.py`: pure
+  functions over matches already loaded, seen from seat 0, finished matches only.
+- Styling is **hand-written** CSS in `theme/static/css/`: `styles.css` (design tokens
+  in `:root`, reset, base), `layout.css` (app shell, page furniture, login) and
+  `components.css`, linked in that order by `partials/stylesheets.html`. No Tailwind
+  and no build step.
+  Icons are Material Symbols ligatures from a vendored font subset. See
+  [Development](development.md#templates-styles-and-icons) for the constraints this
+  puts on templates.
 - Static files are served by WhiteNoise (hashed and compressed when `DEBUG` is off).
 - Card images are never stored: `image_urls` point at `cards.scryfall.io`, and the
   zoom modal endpoint (`card-image`) only accepts URLs under that prefix.
