@@ -89,8 +89,12 @@ class ForgeClient:
         except ValueError as exc:
             raise ForgeError(f"{what}: unreadable answer from the Forge bridge ({exc})") from exc
 
-    def health(self) -> dict:
-        return self._json(self._call("GET", "/health"), "health")
+    def health(self, timeout: float = REQUEST_TIMEOUT) -> dict:
+        """``{"status": "ready", "cards": N}``, or ``{"status": "loading"}`` while Forge reads its cards."""
+        response = self._call("GET", "/health", timeout=timeout)
+        if response.status_code == 503:
+            return {"status": "loading"}
+        return self._json(response, "health")
 
     def create_game(self, fmt: str, seed: int, seats: list[dict]) -> dict:
         """``seats``: ``[{"name", "decklist", "controller"}]``. Returns the bridge's game,

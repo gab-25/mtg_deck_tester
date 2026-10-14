@@ -12,6 +12,7 @@ urlpatterns = [
     path("logout", auth_views.LogoutView.as_view(), name="logout"),
     path("", views.home, name="home"),
     path("home/running", views.home_running, name="home_running"),
+    path("engine/forge", views.forge_status, name="forge_status"),
     path("", include("decks.urls")),
     path("", include("playtest.urls")),
 ]

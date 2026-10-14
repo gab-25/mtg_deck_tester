@@ -30,9 +30,7 @@
         <div class="sidebar-foot">
             <div class="engine-box">
                 <div class="field-label">Engine</div>
-                <div class="engine-row" title="{{ sidebar.forge_url }}">
-                    <span class="dot info" aria-hidden="true"></span>Forge bridge<span translate="no" class="engine-url">{{ sidebar.forge_url }}</span>
-                </div>
+                {% include "partials/forge_status.html" with forge_url=sidebar.forge_url %}
                 <div class="engine-row">
                     {% if sidebar.jev_ready %}
                     <span class="dot ok" aria-hidden="true"></span>Jev players<span class="engine-value ok">ready</span>

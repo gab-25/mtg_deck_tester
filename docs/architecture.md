@@ -114,7 +114,9 @@ else's row. Login is required everywhere except the login page.
   Decks · Playtests · Metagame, the engine box, the account) beside the page. The
   active section comes from the route name through the `nav_section` filter
   (`mtg_gauntlet/templatetags/`, loaded as a builtin), the counts and engine state
-  from the `sidebar` context processor (local data only: no call to the bridge).
+  from the `sidebar` context processor (local data only: no call to the bridge). The
+  Forge bridge row loads apart (`/engine/forge`, HTMX on load, then every 30s): it
+  asks the bridge's `/health` with a 2s timeout and caches the answer for 10s.
   Pages put their breadcrumb in `{% block breadcrumb %}`; tabs are links with
   `?tab=` (deck: results/cards/list, match: summary/log).
 - Routes: `/decks/<id>`, `/playtests`, `/playtests/new?deck=&opponents=&format=`,
