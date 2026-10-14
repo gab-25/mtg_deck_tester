@@ -74,7 +74,7 @@ TEMPLATES = [
                 "mtg_gauntlet.context_processors.sidebar",
             ],
             # The project package is not an app, so its tags load as builtins.
-            "builtins": ["mtg_gauntlet.templatetags.nav"],
+            "builtins": ["mtg_gauntlet.templatetags.nav", "mtg_gauntlet.templatetags.ui"],
         },
     },
 ]
