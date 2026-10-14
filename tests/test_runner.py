@@ -56,6 +56,22 @@ def test_a_jev_duel_plays_to_the_end_and_stores_the_log(user, fake_forge):
     assert match.summary["turns"] == match.turn
 
 
+def test_each_seats_life_follows_the_game_while_it_runs(user, fake_forge, monkeypatch):
+    seen = []
+    store = runner._store
+
+    def spy(match, events):
+        store(match, events)
+        lives = list(match.seats.values_list("life", flat=True))
+        seen.append((Match.objects.get(pk=match.pk).turn, lives))
+
+    monkeypatch.setattr(runner, "_store", spy)
+    match = _play(_match(user))
+    assert seen[0][1] == [20, 20]
+    final = fake_forge.games[match.forge_game_id].life
+    assert any(lives != [20, 20] for _, lives in seen[:-1]) and seen[-1][1] == final
+
+
 def test_the_bridge_receives_the_decklists_seed_and_controllers(user, fake_forge):
     _play(_match(user, agents=("jev", "forge_ai"), seed=11))
     [created] = fake_forge.created

@@ -24,7 +24,7 @@ from mtg_gauntlet.logging_context import job_log_context
 
 from . import forge, workers
 from .models import Match, MatchEvent, Seat
-from .summary import summarize_match, table_names
+from .summary import current_lives, summarize_match, table_names
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +122,10 @@ def _store(match: Match, events: list[dict]) -> None:
     if turn > match.turn:
         match.turn = turn
         Match.objects.filter(pk=match.pk).update(turn=turn)
+    # Each seat's life follows the game as it goes; _finish stores the final one.
+    if any(event["kind"] == "log" and (event.get("payload") or {}).get("type") == "LIFE" for event in events):
+        for position, life in current_lives(events, list(match.seats.all())).items():
+            Seat.objects.filter(match_id=match.pk, position=position).update(life=life)
 
 
 def _match_timeout() -> float:
@@ -228,6 +232,7 @@ def run_match(match_id) -> None:
                 start_game(match, client)
             match.started_at = match.started_at or timezone.now()
             Match.objects.filter(pk=match_id).update(status=Match.Status.RUNNING, started_at=match.started_at)
+            match.seats.filter(life__isnull=True).update(life=FORMATS[match.format].starting_life)
             game = follow(match, client)
             if Match.objects.filter(pk=match_id).exists():
                 _finish(match, game)

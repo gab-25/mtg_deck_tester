@@ -142,7 +142,7 @@ class Seat(models.Model):
     # ``{"unsupported_cards": [...]}``, cards it knows but cannot play fully.
     coverage = models.JSONField(default=dict, blank=True)
 
-    # Filled in when the match ends.
+    # The starting life once the match runs, then kept current by its events.
     life = models.IntegerField(null=True, blank=True)
 
     class Meta:

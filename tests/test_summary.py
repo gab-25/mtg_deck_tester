@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from playtest.summary import fallback_reason, summarize_match
+from playtest.summary import current_lives, fallback_reason, summarize_match
 
 GAME = json.loads((Path(__file__).parent / "fixtures" / "forge_game.json").read_text())
 
@@ -78,3 +78,11 @@ def test_a_fallback_and_the_forge_ai_decision_carrying_it_out_count_once():
     summary = summarize_match(events, _seats("jev", "forge_ai"), "modern", {"turn": 1})
     assert summary["seats"][0]["decisions"] == {"agent": 0, "forge_ai": 2, "agent_share": 0}
     assert summary["automatic"] == {"assignCombatDamage": 1}
+
+
+def test_current_lives_follow_the_life_lines_seen_so_far():
+    seats = _seats("jev", "jev")
+    assert current_lives([], seats) == {}
+    assert current_lives(GAME["events"], seats) == {0: -6, 1: 8}
+    first = next(i for i, e in enumerate(GAME["events"]) if (e.get("payload") or {}).get("type") == "LIFE")
+    assert len(current_lives(GAME["events"][: first + 1], seats)) == 1
