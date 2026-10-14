@@ -22,7 +22,7 @@ END_REASONS = {
 
 
 class Playtest(models.Model):
-    """A test session: one deck plays one match against each chosen opponent."""
+    """A test session: one deck plays ``games_per_opponent`` matches against each chosen opponent."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner = models.ForeignKey(
@@ -34,8 +34,13 @@ class Playtest(models.Model):
         "decks.Deck", null=True, blank=True, on_delete=models.SET_NULL, related_name="playtests"
     )
     deck_name = models.CharField(max_length=255)
-    # Each match's seed is this one plus its opponent's index.
+    # Game ``g`` (0-based) against opponent ``o`` is seeded with
+    # ``seed + o * games_per_opponent + g``: unique in the session, and the
+    # same seeds as before with one game per opponent.
     seed = models.BigIntegerField()
+    # Independent game 1s against each opponent; Forge's seeded coin toss
+    # picks who plays first in each.
+    games_per_opponent = models.PositiveSmallIntegerField(default=1)
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:

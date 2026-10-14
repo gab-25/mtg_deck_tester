@@ -1,5 +1,6 @@
 {% comment %}
-A session's score and its matches, one row per opponent. While a match runs
+A session's score, its record against each opponent when it plays several
+games per opponent, and every match. While a match runs
 the region polls itself (outerHTML swap); once every match ended polling stops.
 {% endcomment %}
 <div id="playtest-live-region" class="stack"
@@ -9,7 +10,7 @@ the region polls itself (outerHTML swap); once every match ended polling stops.
         <div class="score-item"><span class="score-value ok">{% if record.win_rate is None %}—{% else %}{{ record.win_rate }}%{% endif %}</span><span class="stat-label">win rate{% if session.busy %} so far{% endif %}</span></div>
         <div class="score-progress">
             <div class="score-progress-head">
-                <span>{{ done }} of {{ total }} matches done</span>
+                <span>{{ done }} of {{ total }} game{{ total|pluralize }} done</span>
                 {% if playing or queued %}<span>{% if playing %}{{ playing }} playing{% endif %}{% if playing and queued %} · {% endif %}{% if queued %}{{ queued }} queued{% endif %}</span>{% endif %}
             </div>
             <div class="segments" aria-hidden="true">
@@ -18,18 +19,44 @@ the region polls itself (outerHTML swap); once every match ended polling stops.
         </div>
     </section>
 
+    {% if playtest.games_per_opponent > 1 %}
+    <section class="panel" aria-label="Matchups">
+        <div class="panel-head">
+            <span class="panel-title">{{ playtest.games_per_opponent }} games per opponent</span>
+            <span class="panel-sub">win rate over finished games</span>
+        </div>
+        <div class="table-scroll">
+            <table class="data-table">
+                <thead><tr><th>Opponent</th><th>Source</th><th>W–L–D</th><th>Win rate</th><th>Games</th></tr></thead>
+                <tbody>
+                    {% for matchup in session.matchups %}
+                    <tr>
+                        <td class="cell-main" translate="no">{{ matchup.opponent.deck_name|default:"—" }}</td>
+                        <td class="muted">{{ matchup.source }}</td>
+                        <td class="num">{{ matchup.record.score }}</td>
+                        <td>{% include "partials/meter.html" with value=matchup.record.win_rate %}</td>
+                        <td class="muted">{{ matchup.done }} of {{ matchup.rows|length }} done{% if matchup.running %} · {{ matchup.running }} playing{% endif %}{% if matchup.pending %} · {{ matchup.pending }} queued{% endif %}{% if matchup.failed %} · <span class="danger">{{ matchup.failed }} failed</span>{% endif %}{% if matchup.stopped %} · {{ matchup.stopped }} stopped{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    {% endif %}
+
     <section class="panel" aria-label="Matches">
         <div class="panel-head">
-            <span class="panel-title">One match per opponent</span>
+            <span class="panel-title">{% if playtest.games_per_opponent > 1 %}Every game{% else %}One match per opponent{% endif %}</span>
             {% if session.busy %}<span class="panel-sub">updates every 3 s while playing</span>{% endif %}
         </div>
         <div class="table-scroll">
             <table class="data-table">
-                <thead><tr><th>Opponent</th><th>Source</th><th>Result</th><th class="num">Turns</th><th class="num">Life</th><th><span class="sr-only">Open</span></th></tr></thead>
+                <thead><tr><th>Opponent</th>{% if playtest.games_per_opponent > 1 %}<th class="num">Game</th>{% endif %}<th>Source</th><th>Result</th><th class="num">Turns</th><th class="num">Life</th><th><span class="sr-only">Open</span></th></tr></thead>
                 <tbody>
                     {% for row in session.rows %}
                     <tr class="row-link">
                         <td class="cell-main"><a href="{% url 'match_detail' row.match.playtest_id row.match.id %}" translate="no">{{ row.opponent.deck_name|default:"—" }}</a></td>
+                        {% if playtest.games_per_opponent > 1 %}<td class="num">{{ row.game }}</td>{% endif %}
                         <td class="muted">{{ row.source }}</td>
                         <td><span class="result {{ row.result }}">{% if row.result == 'running' %}<span class="spinner" aria-hidden="true"></span> {% endif %}{{ row.result|result_label }}</span></td>
                         <td class="num">{% if row.match.turn %}{% if row.match.is_busy %}turn {% endif %}{{ row.match.turn }}{% else %}—{% endif %}</td>

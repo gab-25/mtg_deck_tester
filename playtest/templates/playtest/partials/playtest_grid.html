@@ -10,9 +10,9 @@ The playtest-list region: polls itself while a match is running.
             <tbody>
                 {% for session in sessions %}
                 <tr class="row-link">
-                    <td class="cell-main"><a href="{% url 'playtest_detail' session.playtest.id %}" translate="no" class="deck-name">{{ session.playtest.deck_name }}</a><span class="cell-sub">{% if session.busy %}<span class="warn">playing</span> · {% endif %}vs <span translate="no">{% for row in session.rows %}{{ row.opponent.deck_name|default:"—" }}{% if not forloop.last %}, {% endif %}{% endfor %}</span></span></td>
+                    <td class="cell-main"><a href="{% url 'playtest_detail' session.playtest.id %}" translate="no" class="deck-name">{{ session.playtest.deck_name }}</a><span class="cell-sub">{% if session.busy %}<span class="warn">playing</span> · {% endif %}vs <span translate="no">{% for matchup in session.matchups %}{{ matchup.opponent.deck_name|default:"—" }}{% if not forloop.last %}, {% endif %}{% endfor %}</span></span></td>
                     <td class="muted">{{ session.playtest.get_format_display }}</td>
-                    <td class="num">{{ session.rows|length }}</td>
+                    <td class="num">{{ session.matchups|length }}{% if session.playtest.games_per_opponent > 1 %} <span class="faint">× {{ session.playtest.games_per_opponent }}</span>{% endif %}</td>
                     <td class="num">{{ session.record.score }}</td>
                     <td>{% include "partials/meter.html" with value=session.record.win_rate %}</td>
                     <td class="muted nowrap">{{ session.playtest.created_at|timesince }} ago</td>

@@ -94,14 +94,39 @@ def test_forge_matches_keep_the_round_as_turn_and_give_llm_and_random_seats_to_f
 
 
 
+def _migrate_latest():
+    """Back to the latest schema, for the tests after a test that migrated back."""
+    executor = MigrationExecutor(connection)
+    executor.migrate(executor.loader.graph.leaf_nodes())
+
+
 @pytest.mark.django_db(transaction=True)
 def test_every_match_belongs_to_a_playtest():
-    apps = _migrate(("playtest", "0003_match_playtest_required"))
-    assert apps.get_model("playtest", "Match")._meta.get_field("playtest").null is False
+    try:
+        apps = _migrate(("playtest", "0003_match_playtest_required"))
+        assert apps.get_model("playtest", "Match")._meta.get_field("playtest").null is False
+    finally:
+        _migrate_latest()
 
 
 @pytest.mark.django_db(transaction=True)
 def test_decks_remember_their_forge_check():
-    apps = _migrate(("decks", "0006_deck_forge_check"))
-    fields = {f.name for f in apps.get_model("decks", "Deck")._meta.get_fields()}
-    assert {"coverage", "forge_checked_at"} <= fields
+    try:
+        apps = _migrate(("decks", "0006_deck_forge_check"))
+        fields = {f.name for f in apps.get_model("decks", "Deck")._meta.get_fields()}
+        assert {"coverage", "forge_checked_at"} <= fields
+    finally:
+        _migrate_latest()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_older_playtests_played_one_game_per_opponent(django_user_model):
+    apps = _migrate(("playtest", "0003_match_playtest_required"))
+    try:
+        owner = django_user_model.objects.create_user(username="old")
+        Playtest = apps.get_model("playtest", "Playtest")
+        Playtest.objects.create(owner_id=owner.id, format="duel", deck_name="Old", seed=3)
+        apps = _migrate(("playtest", "0004_playtest_games_per_opponent"))
+        assert apps.get_model("playtest", "Playtest").objects.get().games_per_opponent == 1
+    finally:
+        _migrate_latest()

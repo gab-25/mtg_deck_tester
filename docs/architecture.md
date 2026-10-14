@@ -24,20 +24,25 @@ POST form ──► cheap validation ──► row created (status = pending) �
    status 422 on errors (`decks.importer.decklist_errors`,
    `playtest.forms.parse_playtest_form`).
 2. **It creates the rows** (`Deck` with `status=pending`; for a playtest, the
-   `Playtest` session and one `Match` per opponent with its two `Seat`s, in one
-   transaction), then starts the import with `start_job(run_import, id)`, or queues
-   each match with `playtest.tasks.run_match_task.delay(id)`. A playtest first starts
-   every match's game on the Forge bridge (`playtest.runner.start_game`): when Forge
+   `Playtest` session and `games_per_opponent` `Match`es per opponent, each with its
+   two `Seat`s, in one transaction), then starts the import with
+   `start_job(run_import, id)`, or queues each match with
+   `playtest.tasks.run_match_task.delay(id)`, game by game across the opponents (every
+   opponent's first game, then every second game…) so each matchup gets going early.
+   A playtest first starts the first game of each opponent on the Forge bridge
+   (`playtest.runner.start_game`), which checks the decks once per opponent: when Forge
    does not know a card (or the bridge is unreachable) the games already started are
    aborted, the session is deleted and the form is re-rendered naming the cards, so a
-   refused deck never becomes a playtest.
+   refused deck never becomes a playtest. The other games start on the bridge when
+   the worker picks them up.
    If the broker refuses a match, the same happens as for a bridge error (503).
 3. **Where the job runs.** A deck import runs in a daemon thread of the web process
    (`RUN_JOBS_IN_BACKGROUND=1`, the default) or inline (tests); moving it to the
    worker is a follow-up. A match runs on the **Celery worker**: Redis carries the
    task, a single worker process (`--pool threads`, `CELERY_CONCURRENCY` threads,
    default 16) follows up to that many matches at once and the rest wait in the
-   queue. Restarting the web process does not touch them. Tests run tasks eagerly
+   queue, first in first out: a session's games queue behind the sessions started
+   before it, which is why a session plays at most `playtest.forms.MAX_GAMES` (50). Restarting the web process does not touch them. Tests run tasks eagerly
    (`CELERY_TASK_ALWAYS_EAGER`), with no broker. The database, not the queue, is the
    source of truth: when the worker starts it re-queues every `pending` or `running`
    match, and a task whose match ended, was stopped or deleted, or is already
@@ -54,8 +59,8 @@ POST form ──► cheap validation ──► row created (status = pending) �
      for every running match. Without a pool the runner answers its own.
 5. **The page polls**. The deck list and playtest list re-fetch their grid partial while
    anything is busy (`has_busy` in the context; the view returns the partial when
-   `request.htmx` is set). A playtest page polls `playtests/<id>/live` (one row per
-   opponent with its result); a match page polls `matches/<id>/live`, which renders
+   `request.htmx` is set). A playtest page polls `playtests/<id>/live` (each
+   opponent's record when it plays several games, and one row per game); a match page polls `matches/<id>/live`, which renders
    the scoreboard and the log.
 
 Every log line emitted inside a job is prefixed with `[deck <id>]` or
@@ -87,8 +92,8 @@ jobs can be told apart on the console.
 | `scryfall_cards` | `decks.ScryfallCard` | Raw Scryfall JSON keyed by `card_en_<slug>`, shared by every user. `{"error": "not_found"}` caches a miss. |
 | `scryfall_bulk_loads` | `decks.BulkDataLoad` | One row per `load_oracle_cards` run (for `--if-newer`). |
 | `metagame_decks` | `decks.MetagameDeck` | The top decks of each format, replaced by every `sync_metagame`; shared and read-only, with source, archetype, meta share, rank, cards and `coverage` — Forge's check at sync (`{"unresolved", "unsupported_cards"}`, empty when the bridge was unreachable). |
-| `playtests` | `playtest.Playtest` | A test session: UUID primary key, owner, format, the deck under test (`deck`, `SET_NULL`, with `deck_name`), `seed`. Its matches (one per opponent) are deleted with it. |
-| `matches` | `playtest.Match` | UUID primary key, `playtest` (empty for matches from before sessions; seat 0 is the deck under test, seat 1 the opponent), `seed` (the session's plus the opponent's index), `forge_game_id`, `turn`, status (`pending`/`running`/`finished`/`failed`/`stopped`), winner (a `Seat`), `end_reason` (Forge's, verbatim), `started_at`, `summary` (JSON). |
+| `playtests` | `playtest.Playtest` | A test session: UUID primary key, owner, format, the deck under test (`deck`, `SET_NULL`, with `deck_name`), `seed`, `games_per_opponent` (default 1). Its matches (`games_per_opponent` per opponent) are deleted with it. |
+| `matches` | `playtest.Match` | UUID primary key, `playtest` (empty for matches from before sessions; seat 0 is the deck under test, seat 1 the opponent), `seed` (`session seed + opponent index × games_per_opponent + game index`: unique in the session, and it locates the match's opponent and game), `forge_game_id`, `turn`, status (`pending`/`running`/`finished`/`failed`/`stopped`), winner (a `Seat`), `end_reason` (Forge's, verbatim), `started_at`, `summary` (JSON). |
 | `seats` | `playtest.Seat` | Position, agent (always `jev` for new matches; `forge_ai` only on older seats), a model id (older seats only; new seats use `~typesafe/jev-latest`), the deck it plays — a user `deck` or a `metagame_deck` — `coverage` (`{"unsupported_cards": [...]}` from the bridge) and final `life`. `deck` is `SET_NULL` on delete; `deck_name` keeps the name. |
 | `match_events` | `playtest.MatchEvent` | The bridge's log: `seq`, `turn`, `step` (Forge's phase), `seat_position`, `kind` (`log`/`decision`/`fallback`/`forge_ai`/`game_over`), `text`, `payload` (Forge's log category, Jev confidence and probabilities, fallback reasons), `reasoning`. |
 

@@ -7,7 +7,7 @@ The hidden format input travels with it: the tested deck sets the format.
     <input type="hidden" name="format" value="{{ form_format }}" />
     <div class="panel-head step-head">
         <span class="step-num">02</span><h2 id="step-2" class="step-title">Opponents</h2>
-        <span class="panel-sub">one match against each, up to {{ max_opponents }}</span>
+        <span class="panel-sub">up to {{ max_opponents }}</span>
         <div class="actions">
             {% if metagame %}<button type="button" class="btn btn-line btn-sm" data-pick-top="{{ top_metagame }}">Top {{ top_metagame }} of the metagame</button>{% endif %}
             <button type="button" class="btn btn-line btn-sm" data-pick-none>Clear</button>
@@ -57,7 +57,7 @@ The hidden format input travels with it: the tested deck sets the format.
         <div class="summary-list">
             <div class="summary-row"><span>Deck</span><span translate="no">{{ form_deck.name|default:"—" }}</span></div>
             <div class="summary-row"><span>Format</span><span>{{ format_rules.label }} · {{ format_rules.starting_life }} life</span></div>
-            <div class="summary-row"><span>Matches</span><span class="num" data-chosen-count>{{ chosen_count }}</span></div>
+            <div class="summary-row"><span>Games</span><span class="num" data-chosen-count>{{ chosen_games }}</span></div>
             <div class="summary-row"><span>Players</span><span>Jev on every seat</span></div>
         </div>
         {% if not playable %}
@@ -70,7 +70,7 @@ The hidden format input travels with it: the tested deck sets the format.
         <div class="alert alert-warn">No OPENROUTER_API_KEY is set, so no playtest can start.</div>
         {% endif %}
         <button type="submit" form="new-playtest" class="btn btn-primary btn-block" data-start data-blocked="{% if playable %}false{% else %}true{% endif %}"{% if not chosen_count or not form_deck or not playable %} disabled{% endif %}>
-            {% if chosen_count %}Start {{ chosen_count }} match{{ chosen_count|pluralize:"es" }}{% else %}Pick at least one opponent{% endif %}
+            {% if chosen_count %}Start {{ chosen_games }} game{{ chosen_games|pluralize }}{% else %}Pick at least one opponent{% endif %}
         </button>
         <p class="field-help">Forge plays the rules; Jev (<span class="font-mono">{{ jev_model }}</span>) picks among Forge's options and hands a decision to Forge's AI when unsure.</p>
     </div>

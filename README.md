@@ -53,10 +53,13 @@ hands the decision back to Forge's AI.
   cards Forge does not know is flagged.
 - **Partner commanders**: Partner, Partner with, Friends forever and Backgrounds are
   accepted at import and sent to Forge as the deck's commanders.
-- **Playtests**: pick the deck to test and a list of opponents of its format (your
-  decks and the metagame's, up to 10): the deck plays one match against each, all in
-  the background. The playtest page shows each opponent's result (won, lost, draw),
-  turns and life as the matches end, with a link to every match and **Run again**.
+- **Playtests**: pick the deck to test, a list of opponents of its format (your
+  decks and the metagame's, up to 10) and how many games it plays against each (1 to
+  20, at most 50 in a session): every game runs in the background, an independent
+  game 1 whose seed also decides, through Forge's coin toss, who plays first. The
+  playtest page shows each opponent's record (W–L–D and win rate over finished
+  games, with the games still playing, queued or failed) and every game's result,
+  turns and life as they end, with a link to every match and **Run again**.
 - **Around the deck**: a sidebar (Home · Decks · Playtests · Metagame) on every page.
   Home shows what is running, each deck's record and what needs attention (decks not
   checked with Forge, imports, a stale metagame); a deck's page adds its record

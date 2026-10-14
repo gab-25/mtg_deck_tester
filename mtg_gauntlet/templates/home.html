@@ -84,7 +84,7 @@
                 <a class="list-row" href="{% url 'playtest_detail' session.playtest.id %}">
                     <span class="list-row-main">
                         <span translate="no" class="deck-name">{{ session.playtest.deck_name }}</span>
-                        <span class="list-row-sub">{{ session.playtest.get_format_display }} · {{ session.rows|length }} opponent{{ session.rows|length|pluralize }} · {{ session.playtest.created_at|timesince }} ago</span>
+                        <span class="list-row-sub">{{ session.playtest.get_format_display }} · {{ session.matchups|length }} opponent{{ session.matchups|length|pluralize }}{% if session.playtest.games_per_opponent > 1 %} × {{ session.playtest.games_per_opponent }} games{% endif %} · {{ session.playtest.created_at|timesince }} ago</span>
                     </span>
                     <span class="list-row-end num {% if session.busy %}warn{% else %}ok{% endif %}">{{ session.record.score }}</span>
                 </a>

@@ -541,7 +541,7 @@ def test_run_again_preselects_the_opponents(client, user):
     tested, rival = make_deck(user, name="T", fmt="duel"), make_deck(user, name="R", fmt="duel")
     page = client.get(f"/playtests/new?deck={tested.id}&opponents={rival.id}").content.decode()
     assert _checked(page) == [str(rival.id)]
-    assert "Start 1 match" in page
+    assert "Start 1 game" in page
 
 
 @pytest.mark.django_db
@@ -600,8 +600,8 @@ def test_the_playtest_page_shows_score_rows_and_run_again(client, user):
     match.save()
     page = client.get(f"/playtests/{playtest.id}").content.decode()
     assert "vs</span> the field" in page and "seed 4417" in page and "1–0–0" in page and "100%" in page
-    assert "1 of 1 matches done" in page and "Your deck" in page and "14 – 0" in page
-    assert f"/playtests/new?deck={tested.id}&amp;opponents={rival.id}" in page
+    assert "1 of 1 game done" in page and "Your deck" in page and "14 – 0" in page
+    assert f"/playtests/new?deck={tested.id}&amp;games=1&amp;opponents={rival.id}" in page
     assert f'href="/decks/{tested.id}"' in page.split('aria-label="Breadcrumb"', 1)[1]
     assert 'class="segment won"' in page
 
@@ -657,7 +657,7 @@ def test_picking_a_deck_keeps_the_chosen_opponents_of_its_format(client, user):
     meta = _metagame("modern", archetype="Amulet Titan", rank=1)
     other = _metagame("pauper", archetype="Faeries", rank=1)
     page = client.get("/playtests/new?format=modern").content.decode()
-    assert 'hx-include="this, #opponents input[name=opponents]:checked"' in page
+    assert 'hx-include="this, #opponents input[name=opponents]:checked, #games"' in page
     part = client.get("/playtests/new/opponents", {"deck": tested.id, "opponents": [f"metagame:{meta.id}", f"metagame:{other.id}"]}).content.decode()
     assert _checked(part) == [f"metagame:{meta.id}"]
 
@@ -693,3 +693,172 @@ def test_a_session_the_broker_cannot_queue_leaves_nothing_behind(client, user, f
     assert b"The playtest could not be queued" in response.content
     assert not Playtest.objects.exists() and not Match.objects.exists()
     assert {g.status for g in fake_forge.games.values()} == {"aborted"}
+
+
+# Games per opponent (#59).
+
+
+@pytest.mark.django_db
+def test_each_opponent_plays_n_games_with_unique_deterministic_seeds(client, user, fake_forge):
+    tested, *opponents = [make_deck(user, name=f"Deck {i}", fmt="duel") for i in range(3)]
+    assert client.post("/playtests/create", _form("duel", [tested, *opponents], games="3")).status_code == 302
+    playtest = Playtest.objects.get(owner=user)
+    assert playtest.games_per_opponent == 3
+    matches = list(playtest.matches.order_by("seed"))
+    # seed + opponent index × games + game index
+    assert [m.seed for m in matches] == [7, 8, 9, 10, 11, 12]
+    assert [m.seats.get(position=1).deck_id for m in matches] == [opponents[0].id] * 3 + [opponents[1].id] * 3
+    assert all(m.status == Match.Status.FINISHED for m in matches), [m.error for m in matches]
+    # Forge checks the decks once per opponent when the session starts; the
+    # other games start when the worker picks them up.
+    assert [g["seed"] for g in fake_forge.created[:2]] == [7, 10]
+    assert sorted(g["seed"] for g in fake_forge.created) == [7, 8, 9, 10, 11, 12]
+
+
+@pytest.mark.django_db
+def test_one_game_per_opponent_is_the_default(client, user, fake_forge):
+    decks = [make_deck(user, name=f"Deck {i}", fmt="duel") for i in range(3)]
+    form = _form("duel", decks)
+    assert "games" not in form
+    client.post("/playtests/create", form)
+    playtest = Playtest.objects.get(owner=user)
+    assert playtest.games_per_opponent == 1
+    assert sorted(playtest.matches.values_list("seed", flat=True)) == [7, 8]
+
+
+@pytest.mark.django_db
+def test_only_the_first_game_of_each_opponent_starts_with_the_session(client, user, fake_forge, monkeypatch):
+    from playtest import tasks
+
+    queued = []
+    monkeypatch.setattr(tasks.run_match_task, "delay", queued.append)
+    decks = [make_deck(user, name=f"Deck {i}", fmt="duel") for i in range(3)]
+    assert client.post("/playtests/create", _form("duel", decks, games="2")).status_code == 302
+    playtest = Playtest.objects.get(owner=user)
+    by_seed = {m.seed: m for m in playtest.matches.all()}
+    assert [bool(by_seed[seed].forge_game_id) for seed in (7, 8, 9, 10)] == [True, False, True, False]
+    # Every game is queued, game by game across the opponents so none waits behind another's.
+    assert queued == [str(by_seed[seed].id) for seed in (7, 9, 8, 10)]
+
+
+@pytest.mark.django_db
+def test_a_refused_deck_is_named_once_however_many_games(client, user, fake_forge):
+    tested = make_deck(user, name="Deck 0", fmt="duel")
+    odd = make_deck(user, name="Odd", fmt="duel")
+    odd.cards[2]["data"]["name"] = "Nope Card"
+    odd.save()
+    fake_forge.unknown = {"Nope Card"}
+    response = client.post("/playtests/create", _form("duel", [tested, odd], games="5"))
+    assert response.status_code == 422
+    assert response.content.decode().count("Odd: Forge does not know Nope Card.") == 1
+    assert len(fake_forge.created) == 0 and not Match.objects.exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("games, message", [
+    ("0", "Games per opponent must be between 1 and 20."),
+    ("21", "Games per opponent must be between 1 and 20."),
+    ("two", "Games per opponent must be between 1 and 20."),
+])
+def test_games_per_opponent_out_of_range_is_refused(client, user, games, message):
+    decks = [make_deck(user, name=f"Deck {i}", fmt="duel") for i in range(2)]
+    response = client.post("/playtests/create", _form("duel", decks, games=games))
+    assert response.status_code == 422 and message in response.content.decode()
+    assert not Playtest.objects.exists()
+
+
+@pytest.mark.django_db
+def test_a_session_has_at_most_fifty_games(client, user):
+    decks = [make_deck(user, name=f"Deck {i}", fmt="duel") for i in range(4)]
+    response = client.post("/playtests/create", _form("duel", decks, games="17"))
+    assert response.status_code == 422
+    assert "A playtest plays at most 50 games; 3 opponents × 17 games is 51." in response.content.decode()
+    assert not Playtest.objects.exists()
+
+
+@pytest.mark.django_db
+def test_the_form_keeps_the_games_per_opponent(client, user):
+    decks = [make_deck(user, name=f"Deck {i}", fmt="duel") for i in range(2)]
+    page = client.get(f"/playtests/new?deck={decks[0].id}").content.decode()
+    assert 'name="games"' in page and 'value="1"' in page.split('name="games"', 1)[1].split(">", 1)[0]
+    refused = client.post("/playtests/create", _form("duel", decks, games="4", seed="x")).content.decode()
+    assert 'value="4"' in refused.split('name="games"', 1)[1].split(">", 1)[0]
+    assert "Start 4 games" in refused
+
+
+def _game(user, playtest, opponent, seed, **fields):
+    match = make_match(user, playtest=playtest, seats=("Deck 0", opponent), seed=seed, **fields)
+    if fields.get("status") == Match.Status.FINISHED:
+        match.winner = match.seats.get(position=0 if fields.pop("won", True) else 1)
+        match.save()
+    return match
+
+
+@pytest.mark.django_db
+def test_the_session_page_shows_each_matchup_record(client, user):
+    from playtest.views import session_view
+
+    playtest = make_playtest(user, seed=10, games_per_opponent=3)
+    won = dict(status=Match.Status.FINISHED, end_reason="AllOpponentsLost")
+    for seed in (10, 11):
+        _game(user, playtest, "Goblins", seed, **won)
+    _game(user, playtest, "Goblins", 12, status=Match.Status.RUNNING)
+    lost = make_match(user, playtest=playtest, seats=("Deck 0", "Elves"), seed=13, status=Match.Status.FINISHED)
+    lost.winner = lost.seats.get(position=1)
+    lost.save()
+    make_match(user, playtest=playtest, seats=("Deck 0", "Elves"), seed=14, status=Match.Status.FINISHED)
+    make_match(user, playtest=playtest, seats=("Deck 0", "Elves"), seed=15, status=Match.Status.FAILED)
+
+    session = session_view(Playtest.objects.get(pk=playtest.pk))
+    goblins, elves = session["matchups"]
+    assert goblins["opponent"].deck_name == "Goblins" and elves["opponent"].deck_name == "Elves"
+    assert (goblins["record"].score, goblins["record"].win_rate, goblins["running"]) == ("2–0–0", 100, 1)
+    assert [row["game"] for row in goblins["rows"]] == [1, 2, 3]
+    assert (elves["record"].score, elves["record"].win_rate, elves["failed"]) == ("0–1–1", 0, 1)
+
+    page = client.get(f"/playtests/{playtest.id}").content.decode()
+    assert "3 games per opponent" in page
+    assert "2–0–0" in page and "0–1–1" in page
+    assert page.count('href="/playtests/%s/matches/' % playtest.id) == 6
+
+
+@pytest.mark.django_db
+def test_stopping_a_session_stops_every_game_of_every_matchup(client, user, fake_forge, monkeypatch):
+    from playtest import tasks
+
+    monkeypatch.setattr(tasks.run_match_task, "delay", lambda match_id: None)
+    decks = [make_deck(user, name=f"Deck {i}", fmt="duel") for i in range(3)]
+    client.post("/playtests/create", _form("duel", decks, games="3"))
+    playtest = Playtest.objects.get(owner=user)
+    assert client.post(f"/playtests/{playtest.id}/stop").status_code == 302
+    assert set(playtest.matches.values_list("status", flat=True)) == {Match.Status.STOPPED}
+    assert {g.status for g in fake_forge.games.values()} == {"aborted"}
+
+
+@pytest.mark.django_db
+def test_run_again_keeps_the_games_per_opponent(client, user, fake_forge):
+    decks = [make_deck(user, name=f"Deck {i}", fmt="duel") for i in range(2)]
+    client.post("/playtests/create", _form("duel", decks, games="2"))
+    playtest = Playtest.objects.get(owner=user)
+    page = client.get(f"/playtests/{playtest.id}").content.decode()
+    assert "games=2" in re.search(r'href="(/playtests/new\?[^"]+)"', page).group(1)
+
+
+@pytest.mark.django_db
+def test_the_playtest_list_counts_opponents_not_games(client, user, fake_forge):
+    decks = [make_deck(user, name=f"Deck {i}", fmt="duel") for i in range(3)]
+    client.post("/playtests/create", _form("duel", decks, games="2"))
+    page = client.get("/playtests").content.decode()
+    assert "vs <span translate=\"no\">Deck 1, Deck 2</span>" in page
+
+
+@pytest.mark.django_db
+def test_the_home_running_panel_lists_matchups_when_a_session_plays_several_games(client, user):
+    playtest = make_playtest(user, seed=1, games_per_opponent=3)
+    _game(user, playtest, "Goblins", 1, status=Match.Status.FINISHED)
+    _game(user, playtest, "Goblins", 2, status=Match.Status.RUNNING)
+    _game(user, playtest, "Goblins", 3)
+    page = client.get("/").content.decode()
+    panel = page.split('id="running-now"', 1)[1].split("</section>", 1)[0]
+    assert panel.count("Goblins") == 1
+    assert "1–0–0" in panel and "1 of 3 games done" in panel
