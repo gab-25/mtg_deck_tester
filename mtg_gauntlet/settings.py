@@ -71,6 +71,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "mtg_gauntlet.context_processors.app_version",
+                "mtg_gauntlet.context_processors.sidebar",
             ],
         },
     },
