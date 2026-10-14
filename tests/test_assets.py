@@ -58,7 +58,7 @@ def _compiled_classes():
     css = STYLESHEET.read_text()
     return {
         re.sub(r"\\(.)", r"\1", match)
-        for match in re.findall(r"\.((?:[A-Za-z0-9_\[\]().#/%-]|\\.)+)", css)
+        for match in re.findall(r"\.((?:[A-Za-z0-9_-]|\\.)+)", css)
     }
 
 
@@ -107,3 +107,10 @@ def test_every_icon_is_opted_out_of_page_translation():
         "These icons lack translate=\"no\", so browser translation turns them "
         f"into text: {offenders}"
     )
+
+
+def test_the_stylesheet_defines_the_design_tokens_and_no_tailwind():
+    css = STYLESHEET.read_text()
+    for token in ("--bg:", "--surface:", "--accent:", "--teal:", "--gold:", "--danger:"):
+        assert token in css
+    assert "tailwind" not in css.lower() and "--tw-" not in css

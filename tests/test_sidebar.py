@@ -30,3 +30,24 @@ def test_sidebar_is_empty_for_anonymous_users():
     request = RequestFactory().get("/login")
     request.user = AnonymousUser()
     assert sidebar(request) == {"sidebar": {}}
+
+
+@pytest.mark.parametrize("name, section", [
+    ("home", "home"), ("home_running", "home"), ("deck_list", "decks"), ("deck_detail", "decks"),
+    ("new_deck", "decks"), ("create_deck", "decks"), ("playtest_list", "playtests"),
+    ("new_playtest", "playtests"), ("playtest_detail", "playtests"), ("match_detail", "playtests"),
+    ("metagame", "metagame"), ("login", ""), (None, ""),
+])
+def test_nav_section(name, section):
+    from mtg_gauntlet.templatetags.nav import nav_section
+
+    assert nav_section(name) == section
+
+
+@pytest.mark.django_db
+def test_pages_show_the_sidebar_with_the_active_section(client, django_user_model):
+    client.force_login(django_user_model.objects.create_user(username="u"))
+    page = client.get("/decks").content.decode()
+    assert 'class="sidebar"' in page and "MTG GAUNTLET" in page
+    assert 'aria-current="page" href="/decks"' in page
+    assert "fontawesome" not in page

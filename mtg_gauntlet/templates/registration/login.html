@@ -6,73 +6,43 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title translate="no">Sign in &bull; MTG Gauntlet</title>
     <script src="{% static 'js/untranslated-title.js' %}"></script>
-    <link rel="stylesheet" href="{% static 'vendor/fontawesome/css/all.min.css' %}" />
-    <link rel="stylesheet" href="{% static 'css/styles.css' %}" />
     {% include "partials/design_head.html" %}
-    <style>
-      @media (max-width:820px){ .login-card{grid-template-columns:1fr!important} .login-hero{display:none!important} }
-    </style>
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}" />
 </head>
 <body>
-    <div class="bg-glow"></div>
-    <div class="bg-grid"></div>
-
-    <div data-screen-label="Login" class="relative z-[1] min-h-screen flex items-center justify-center p-[28px]">
-        {# background (layered gradient) + box-shadow are complex one-offs, kept inline. #}
-        <div class="login-card w-full max-w-[1000px] grid grid-cols-[1.08fr_.92fr] border border-line rounded-[22px] overflow-hidden backdrop-blur-[10px]" style="background:linear-gradient(180deg,rgba(20,23,34,.72),rgba(10,11,16,.72));box-shadow:0 50px 130px -50px rgba(0,0,0,.9)">
-
-            {# radial-gradient background is a complex one-off, kept inline. #}
-            <div class="login-hero relative py-[52px] px-12 flex flex-col justify-between border-r border-line min-h-[588px]" style="background:radial-gradient(520px 320px at 18% 8%,rgba(124,92,255,.18),transparent 62%)">
-                <div class="flex items-center gap-3">
-                    <span class="inline-flex" style="animation:floaty 6s ease-in-out infinite">{% include "partials/brand_mark.html" with size=40 gid="hero" %}</span>
-                    <div>
-                        <div translate="no" class="font-cinzel font-bold text-[19px] tracking-[.14em] leading-none">MTG GAUNTLET</div>
-                        <div class="text-[10px] tracking-[.28em] text-txt3 uppercase mt-1">AI Playtesting</div>
-                    </div>
-                </div>
-
-                <div class="my-10">
-                    <h1 class="font-cinzel font-semibold text-[40px] leading-[1.1] m-0 mb-4 tracking-[.01em]">Let the AI<br>shuffle up.</h1>
-                    <p class="font-light text-[15.5px] text-txt2 leading-[1.6] max-w-[352px] m-0 mb-7">AI playtesting for competitive Magic: The Gathering. Import a deck, pick its opponents from your decks or the metagame's best, and watch Jev play every match out, turn by turn.</p>
-                    <div class="flex flex-col gap-[13px]">
-                        <div class="flex items-center gap-[11px] text-[14px]"><span translate="no" class="ms text-violet2 text-[20px]">auto_awesome</span>Jev plays every seat</div>
-                        <div class="flex items-center gap-[11px] text-[14px]"><span translate="no" class="ms text-teal text-[20px]">gavel</span>Real rules, enforced by Forge</div>
-                        <div class="flex items-center gap-[11px] text-[14px]"><span translate="no" class="ms text-gold text-[20px]">leaderboard</span>Seven formats and their top metagame decks</div>
-                        <div class="flex items-center gap-[11px] text-[14px]"><span translate="no" class="ms text-violet2 text-[20px]">history</span>Full, replayable game logs</div>
-                    </div>
-                </div>
-
+    <main class="login">
+        <div class="panel login-card">
+            <div class="brand">
+                {% include "partials/brand_mark.html" with size=36 gid="login" %}
+                <span translate="no" class="brand-name">MTG GAUNTLET</span>
+            </div>
+            <div class="stack-sm">
+                <h1 class="login-title">Sign in</h1>
+                <p class="muted">AI playtesting for competitive Magic: Forge plays the rules, Jev plays every seat.</p>
             </div>
 
-            <div class="py-[52px] px-[46px] flex flex-col justify-center gap-[19px]">
-                <div>
-                    <div class="font-cinzel font-semibold text-[23px] tracking-[.05em]">Sign in</div>
-                    <div class="text-[13.5px] text-txt2 font-light mt-[5px]">Welcome back, planeswalker.</div>
+            {% if form.errors %}
+            <div class="alert alert-error" role="alert"><span translate="no" class="ms ms-sm">error</span>Invalid username or password.</div>
+            {% endif %}
+
+            <form method="post" action="{% url 'login' %}" class="stack">
+                {% csrf_token %}
+                <div class="field">
+                    <label class="field-label" for="{{ form.username.id_for_label }}">Username</label>
+                    <input type="text" name="{{ form.username.html_name }}" id="{{ form.username.id_for_label }}"
+                        class="input" autocomplete="username" autofocus required />
                 </div>
-
-                {% if form.errors %}
-                <div class="alert alert-error"><span translate="no" class="ms text-[16px]">error</span>Invalid username or password.</div>
-                {% endif %}
-
-                <form method="post" action="{% url 'login' %}" class="flex flex-col gap-[19px]">
-                    {% csrf_token %}
-                    <label class="block">
-                        <span class="field-label mb-[7px]">Username</span>
-                        <input type="text" name="{{ form.username.html_name }}" id="{{ form.username.id_for_label }}"
-                            class="field" autocomplete="username" autofocus required />
-                    </label>
-                    <label class="block">
-                        <span class="field-label mb-[7px]">Password</span>
-                        <input type="password" name="{{ form.password.html_name }}" id="{{ form.password.id_for_label }}"
-                            class="field" autocomplete="current-password" required />
-                    </label>
-                    <input type="hidden" name="next" value="{{ next }}" />
-                    <button type="submit" class="btn btn-grad btn-block">
-                        Enter the vault<span translate="no" class="ms text-[20px]">east</span>
-                    </button>
-                </form>
-            </div>
+                <div class="field">
+                    <label class="field-label" for="{{ form.password.id_for_label }}">Password</label>
+                    <input type="password" name="{{ form.password.html_name }}" id="{{ form.password.id_for_label }}"
+                        class="input" autocomplete="current-password" required />
+                </div>
+                <input type="hidden" name="next" value="{{ next }}" />
+                <button type="submit" class="btn btn-primary btn-block">
+                    Sign in<span translate="no" class="ms">arrow_forward</span>
+                </button>
+            </form>
         </div>
-    </div>
+    </main>
 </body>
 </html>

@@ -1,18 +1,10 @@
 {% load static %}
 {% comment %}
 Shared <head> assets: favicons and the vendored web fonts (Space Grotesk,
-Cinzel, Space Mono, Material Symbols). Included by base.html and the standalone
-login page.
-
-The "vault" design system itself (violet / teal / gold on near-black) lives in
-the stylesheet at theme/static/css/styles.css, linked from base.html and the
-login page — it is no longer inlined here.
+Cinzel, Space Mono, Material Symbols). Included by base.html and the
+standalone login page, before the stylesheet.
 {% endcomment %}
-
-{# Favicons: the "vault eye/lens" brand mark. SVG for modern browsers, .ico as fallback. #}
 <link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}" />
 <link rel="icon" type="image/x-icon" href="{% static 'favicon.ico' %}" />
 <link rel="apple-touch-icon" href="{% static 'apple-touch-icon.png' %}" />
-
-{# Fonts vendored locally under vendor/gfonts/ — no CDN dependency. #}
 <link rel="stylesheet" href="{% static 'vendor/gfonts/fonts.css' %}" />

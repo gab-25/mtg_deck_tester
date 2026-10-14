@@ -1,48 +1,37 @@
 {% comment %}
-Zoom-modal fragment served over HTMX and swapped into #card-image-modal-container
-on the deck view. It's a full-screen CSS overlay (no inline JS).
+Zoom-modal fragment served over HTMX and swapped into #card-image-modal-container.
 
-A double-faced card ships both faces here at once; a hidden checkbox and the
-`.card-face` rules in styles.css decide which one is visible, so flipping costs
-no request.
-
-Closing: the backdrop and the Close button each hx-get this same endpoint with
-no url, which returns an empty body and so clears the container. The backdrop's
-trigger is filtered to `target:#card-image-modal` on purpose — clicks bubble, so
-without the filter every click inside the card (the Flip label included) would
-close the modal too. Close needs its own hx-get rather than a second filter,
-because clicking its icon makes the <span>, not the button, the event target.
+A double-faced card ships both faces at once; a hidden checkbox and the
+`.card-face` rules decide which one shows, so flipping costs no request.
+The backdrop and Close each hx-get this endpoint with no url, which returns
+an empty body and clears the container; the backdrop's trigger is filtered
+to `target:#card-image-modal` so clicks inside the card don't close it.
 {% endcomment %}
-<div
-    id="card-image-modal"
-    class="no-print fixed inset-0 z-[75] flex items-center justify-center p-8 cursor-zoom-out bg-[rgba(6,7,11,.8)] backdrop-blur-[6px]"
+<div id="card-image-modal" class="zoom"
     hx-get="{% url 'card_image_modal' %}"
     hx-target="#card-image-modal-container"
     hx-swap="innerHTML"
-    hx-trigger="click target:#card-image-modal"
->
+    hx-trigger="click target:#card-image-modal">
     {% if image_urls|length > 1 %}
     <input type="checkbox" id="card-face-flip" class="card-face-flip sr-only" />
     {% endif %}
-    <div class="flex flex-col items-center gap-4 cursor-default" style="animation:fadeup .28s ease both">
-        <div class="relative w-[340px] max-w-[80vw] aspect-[488/680] rounded-[18px] overflow-hidden bg-[#0c0e15] border border-line" style="box-shadow:0 40px 100px -30px rgba(0,0,0,.9),0 0 60px -18px rgba(124,92,255,.5)">
+    <div class="zoom-body">
+        <div class="zoom-card">
             {% for url in image_urls %}
-            <img src="{{ url }}" alt="card face {{ forloop.counter }}" class="card-face card-face--{{ forloop.counter0 }} relative w-full h-full object-cover block" />
+            <img src="{{ url }}" alt="card face {{ forloop.counter }}" class="card-face card-face--{{ forloop.counter0 }}" />
             {% endfor %}
         </div>
-        <div class="flex items-center gap-2">
+        <div class="cluster">
             {% if image_urls|length > 1 %}
-            <label for="card-face-flip" title="Show the other face"
-                class="flex items-center gap-1.5 bg-[rgba(255,255,255,.06)] text-txt2 border border-line2 rounded-full py-2 px-[15px] font-medium text-[13px] cursor-pointer">
-                <span translate="no" class="ms text-[17px]">flip</span>Flip
+            <label for="card-face-flip" class="btn btn-line btn-sm" title="Show the other face">
+                <span translate="no" class="ms ms-sm">flip</span>Flip
             </label>
             {% endif %}
-            <button type="button"
+            <button type="button" class="btn btn-line btn-sm"
                 hx-get="{% url 'card_image_modal' %}"
                 hx-target="#card-image-modal-container"
-                hx-swap="innerHTML"
-                class="flex items-center gap-1.5 bg-[rgba(255,255,255,.06)] text-txt2 border border-line2 rounded-full py-2 px-[15px] font-medium text-[13px] cursor-pointer">
-                <span translate="no" class="ms text-[17px]">close</span>Close
+                hx-swap="innerHTML">
+                <span translate="no" class="ms ms-sm">close</span>Close
             </button>
         </div>
     </div>
