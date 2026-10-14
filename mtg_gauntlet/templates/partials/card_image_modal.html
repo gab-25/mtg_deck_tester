@@ -18,7 +18,7 @@ to `target:#card-image-modal` so clicks inside the card don't close it.
     <div class="zoom-body">
         <div class="zoom-card">
             {% for url in image_urls %}
-            <img src="{{ url }}" alt="card face {{ forloop.counter }}" class="card-face card-face--{{ forloop.counter0 }}" />
+            <img src="{{ url }}" alt="card face {{ forloop.counter }}" class="card-face {% if forloop.first %}card-face--0{% else %}card-face--1{% endif %}" />
             {% endfor %}
         </div>
         <div class="cluster">

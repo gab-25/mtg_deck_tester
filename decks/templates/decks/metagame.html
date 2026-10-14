@@ -3,51 +3,62 @@
 {% block title %}Metagame — MTG Gauntlet{% endblock %}
 
 {% block content %}
-<div class="page" data-screen-label="Metagame">
-    <div class="mb-6">
-        <div class="kicker">Opponents</div>
-        <h1 class="font-cinzel font-semibold text-[34px] mt-[7px] mb-1.5 tracking-[.03em]">Metagame</h1>
-        <p class="m-0 text-txt2 font-light text-[14.5px]">
-            The top decks of each format, from EDHTop16 (Commander) and MTGTop8 (everything else).
-            Refreshed with <span class="font-mono2">manage.py sync_metagame</span>; pick them as opponents when you set up a match.
-            ⚠ marks a deck the playtest simulates at under 70%.
+<div class="page-head">
+    <div class="page-head-main">
+        <div class="kicker">Metagame</div>
+        <h1 class="page-title">The field</h1>
+        <p class="page-sub">
+            The top decks of each format, from EDHTop16 (Commander) and MTGTop8 (everything else),
+            refreshed with <span class="font-mono">manage.py sync_metagame</span>.
         </p>
     </div>
-
-    <div class="flex flex-col gap-5">
-        {% for section in sections %}
-        <div class="panel-card overflow-hidden">
-            <div class="flex items-center justify-between gap-[9px] py-4 px-[18px] border-b border-line2">
-                <span class="font-semibold text-[15px]">{{ section.label }}</span>
-                <span class="text-[12px] text-txt3">{% if section.synced %}Synced {{ section.synced|date:"j M Y, H:i" }}{% else %}Not synced yet{% endif %}</span>
-            </div>
-            {% if section.decks %}
-            <div class="flex flex-col">
-                {% for deck in section.decks %}
-                <div class="flex items-center justify-between gap-3 py-2 px-[18px] border-b border-line2 text-[13px]">
-                    <div class="flex items-center gap-3 min-w-0">
-                        <span class="font-mono2 text-txt3 min-w-[19px]">{{ deck.rank }}</span>
-                        <span translate="no" class="{% if deck.status == 'failed' %}text-txt3{% else %}text-txt{% endif %}">{{ deck.archetype }}</span>
-                        {% if deck.source_url %}<a href="{{ deck.source_url }}" class="text-violet2 no-underline text-[12px]" rel="noopener" target="_blank">{{ deck.get_source_display }}</a>{% endif %}
-                    </div>
-                    <div class="flex items-center gap-3 flex-none font-mono2 text-[12px]">
-                        {% if deck.meta_share is not None %}<span class="text-txt2">{{ deck.meta_share|floatformat:"-1" }}%</span>{% endif %}
-                        {% if deck.status == 'failed' %}
-                        <span class="text-danger" title="{{ deck.error }}">failed: {{ deck.error|truncatechars:80 }}</span>
-                        {% elif deck.unknown_cards %}
-                        <span class="text-gold" title="{{ deck.unknown_cards|join:', ' }}">{{ deck.unknown_cards|length }} unknown to Forge ⚠</span>
-                        {% elif deck.forge_checked %}
-                        <span class="text-teal">Forge ready</span>
-                        {% endif %}
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
-            {% else %}
-            <div class="py-4 px-[18px] text-[13px] text-txt3">No decks yet.</div>
-            {% endif %}
-        </div>
-        {% endfor %}
+    {% if decks and playable %}
+    <div class="actions">
+        <a href="{% url 'new_playtest' %}?format={{ active_format }}" class="btn btn-primary"><span translate="no" class="ms">swords</span>Test my deck against these</a>
     </div>
+    {% endif %}
 </div>
+
+<nav class="tabs" aria-label="Formats">
+    {% for key, label, count in tabs %}
+    <a class="tab{% if key == active_format %} is-active{% endif %}" {% if key == active_format %}aria-current="page" {% endif %}href="?format={{ key }}">{{ label }}{% if count %} · {{ count }}{% endif %}</a>
+    {% endfor %}
+</nav>
+
+<section class="panel" aria-label="{{ label }} metagame">
+    <div class="panel-head">
+        <span class="panel-title">{{ label }}</span>
+        <span class="panel-sub">{% if synced %}Synced {{ synced|timesince }} ago · {{ synced|date:"j M Y, H:i" }}{% else %}Not synced yet{% endif %}</span>
+    </div>
+    {% if decks %}
+    <div class="table-scroll">
+        <table class="data-table">
+            <thead><tr><th class="num">#</th><th>Archetype</th><th class="num">Share</th><th>Forge</th><th>Source</th></tr></thead>
+            <tbody>
+                {% for deck in decks %}
+                <tr>
+                    <td class="num faint">{{ deck.rank }}</td>
+                    <td class="cell-main"><span translate="no">{{ deck.archetype }}</span>{% if deck.commander %}<span translate="no" class="cell-sub">{{ deck.commander }}</span>{% endif %}</td>
+                    <td class="num">{% if deck.meta_share is not None %}{{ deck.meta_share|floatformat:"-1" }}%{% else %}—{% endif %}</td>
+                    <td>
+                        {% if deck.status == 'failed' %}
+                        <span class="badge danger" title="{{ deck.error }}">failed: {{ deck.error|truncatechars:80 }}</span>
+                        {% elif deck.unknown_cards %}
+                        <span class="badge warn" title="{{ deck.unknown_cards|join:', ' }}">{{ deck.unknown_cards|length }} unknown to Forge</span>
+                        {% elif deck.forge_checked %}
+                        <span class="badge ok">Forge ready</span>
+                        {% else %}
+                        <span class="badge muted">Not checked</span>
+                        {% endif %}
+                    </td>
+                    <td>{% if deck.source_url %}<a href="{{ deck.source_url }}" rel="noopener" target="_blank">{{ deck.get_source_display }}</a>{% else %}<span class="muted">{{ deck.get_source_display }}</span>{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty"><span translate="no" class="ms ms-lg">leaderboard</span><p>No {{ label }} decks yet: run <span class="font-mono">manage.py sync_metagame</span>.</p></div>
+    {% endif %}
+</section>
 {% endblock %}

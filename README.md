@@ -45,17 +45,23 @@ hands the decision back to Forge's AI.
   with the reason logged, so a match never stalls on a model.
 - **Coverage**: Forge either knows a card or the match is refused, naming the card.
   Each seat lists the cards Forge knows but cannot play fully. The deck page checks a
-  deck on demand (**Check with Forge**), never on page view.
+  deck on demand (**Check with Forge**), never on page view, and keeps the answer:
+  the deck's badge, the home page and the new-playtest form show it.
 - **Metagame decks**: `manage.py sync_metagame` imports the top decks of every format
   (EDHTop16 for Commander, MTGTop8 for the rest) as shared opponents, shown on the
   *Metagame* page and offered as opponents in the new-playtest form with their meta share; a deck with
-  cards Forge does not know is flagged ⚠.
+  cards Forge does not know is flagged.
 - **Partner commanders**: Partner, Partner with, Friends forever and Backgrounds are
   accepted at import and sent to Forge as the deck's commanders.
-- **Playtests**: pick the deck to test and a list of opponents (your decks and the
-  metagame's, up to 10): the deck plays one match against each, all in the background.
-  The playtest page shows each opponent's result (won, lost, draw) as the matches end,
-  with a link to every match.
+- **Playtests**: pick the deck to test and a list of opponents of its format (your
+  decks and the metagame's, up to 10): the deck plays one match against each, all in
+  the background. The playtest page shows each opponent's result (won, lost, draw),
+  turns and life as the matches end, with a link to every match and **Run again**.
+- **Around the deck**: a sidebar (Home · Decks · Playtests · Metagame) on every page.
+  Home shows what is running, each deck's record and what needs attention (decks not
+  checked with Forge, imports, a stale metagame); a deck's page adds its record
+  against each opponent and its playtest history; the Metagame page has a tab per
+  format with **Test my deck against these**.
 - **Live game log and summary**: each match's page shows the
   table and Forge's log as it grows (HTMX polling), each Jev decision with its
   confidence, each fallback with its reason, and at the end a deterministic summary per
@@ -234,7 +240,7 @@ The suite is hermetic: in-memory SQLite, no Scryfall, OpenRouter or Forge calls 
 guard fails any test that reaches the network), and no API key. Matches play against
 `tests/fakeforge.py`, an in-memory bridge; only the tests marked `forge` reach a real
 one, and they skip without `FORGE_URL`. It also checks that templates only use classes
-the precompiled stylesheet contains and icons the vendored font subset can render.
+the hand-written stylesheet defines and icons the vendored font subset can render.
 
 ## License
 

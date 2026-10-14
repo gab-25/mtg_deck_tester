@@ -247,7 +247,7 @@ def test_the_metagame_page_lists_each_format(client):
     page = client.get("/metagame").content.decode()
     assert "UR Aggro" in page and "8%" in page and "1 unknown to Forge" in page
     assert "Missing Card" in page
-    assert "Not synced yet" in page  # every other format
+    assert "Not synced yet" in client.get("/metagame?format=pauper").content.decode()
     client.logout()
     assert client.get("/metagame").status_code == 302
 
@@ -316,3 +316,17 @@ def test_the_deck_list_filters_by_format(client, user):
     page = client.get("/decks?format=modern").content.decode()
     assert "Modern One" in page and "Duel One" not in page
     assert client.get("/decks?format=nope").status_code == 200
+
+
+@pytest.mark.django_db
+def test_the_metagame_page_shows_one_format_at_a_time(client):
+    from decks.models import MetagameDeck
+
+    MetagameDeck.objects.create(format="modern", source="mtgtop8", archetype="Eldrazi Ramp", rank=1)
+    MetagameDeck.objects.create(format="pioneer", source="mtgtop8", archetype="Rakdos Midrange", rank=1)
+    page = client.get("/metagame?format=pioneer").content.decode()
+    assert "Rakdos Midrange" in page and "Eldrazi Ramp" not in page
+    assert "/playtests/new?format=pioneer" in page
+    assert 'aria-current="page" href="?format=pioneer"' in page
+    # An unknown format falls back to the first one with decks, in registry order.
+    assert "Rakdos Midrange" in client.get("/metagame?format=nope").content.decode()

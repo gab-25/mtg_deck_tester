@@ -9,7 +9,7 @@ from django.views.decorators.http import require_http_methods
 from mtg_gauntlet.access import get_owned_or_404
 from mtg_gauntlet.jobs import start_job
 
-from .formats import DEFAULT_FORMAT, FORMATS, format_choices
+from .formats import DEFAULT_FORMAT, FORMATS, format_choices, playable_formats
 from .importer import decklist_errors, run_import
 from .models import Deck, MetagameDeck
 from .presentation import card_groups, commander_cards, deck_pips, sideboard_group
@@ -189,18 +189,24 @@ def card_image_modal(request):
 @login_required
 @require_http_methods(["GET"])
 def metagame(request):
-    """Every format's metagame decks, as the last ``sync_metagame`` left them."""
+    """One format's metagame decks, as the last ``sync_metagame`` left them; a tab per format."""
     by_format = {key: [] for key in FORMATS}
     for deck in MetagameDeck.objects.all():
         by_format.setdefault(deck.format, []).append(deck)
-    sections = [
+    tabs = [(key, FORMATS[key].label, len(by_format[key])) for key in FORMATS]
+    active = request.GET.get("format")
+    if active not in FORMATS:
+        active = next((key for key in FORMATS if by_format[key]), next(iter(FORMATS)))
+    decks = by_format[active]
+    return render(
+        request,
+        "decks/metagame.html",
         {
-            "key": key,
-            "label": FORMATS[key].label,
+            "tabs": tabs,
+            "active_format": active,
+            "label": FORMATS[active].label,
             "decks": decks,
             "synced": max((d.fetched_at for d in decks), default=None),
-        }
-        for key, decks in by_format.items()
-        if key in FORMATS
-    ]
-    return render(request, "decks/metagame.html", {"sections": sections})
+            "playable": active in playable_formats(),
+        },
+    )

@@ -12,7 +12,7 @@
     <link rel="stylesheet" href="{% static 'css/styles.css' %}" />
 </head>
 <body>
-{% with active=request.resolver_match.url_name|nav_section %}
+{% with nav_active=request.resolver_match.url_name|nav_section %}
 <div class="app">
     <aside class="sidebar" aria-label="Sidebar">
         <a href="{% url 'home' %}" class="brand">
@@ -23,10 +23,10 @@
             <span translate="no" class="ms">add</span>New playtest
         </a>
         <nav class="nav" aria-label="Main">
-            <a class="nav-item{% if active == 'home' %} is-active{% endif %}" {% if active == 'home' %}aria-current="page" {% endif %}href="{% url 'home' %}">Home</a>
-            <a class="nav-item{% if active == 'decks' %} is-active{% endif %}" {% if active == 'decks' %}aria-current="page" {% endif %}href="{% url 'deck_list' %}">Decks<span class="nav-count">{{ sidebar.deck_count }}</span></a>
-            <a class="nav-item{% if active == 'playtests' %} is-active{% endif %}" {% if active == 'playtests' %}aria-current="page" {% endif %}href="{% url 'playtest_list' %}">Playtests<span class="nav-count">{{ sidebar.playtest_count }}</span></a>
-            <a class="nav-item{% if active == 'metagame' %} is-active{% endif %}" {% if active == 'metagame' %}aria-current="page" {% endif %}href="{% url 'metagame' %}">Metagame</a>
+            <a class="nav-item{% if nav_active == 'home' %} is-active{% endif %}" {% if nav_active == 'home' %}aria-current="page" {% endif %}href="{% url 'home' %}">Home</a>
+            <a class="nav-item{% if nav_active == 'decks' %} is-active{% endif %}" {% if nav_active == 'decks' %}aria-current="page" {% endif %}href="{% url 'deck_list' %}">Decks<span class="nav-count">{{ sidebar.deck_count }}</span></a>
+            <a class="nav-item{% if nav_active == 'playtests' %} is-active{% endif %}" {% if nav_active == 'playtests' %}aria-current="page" {% endif %}href="{% url 'playtest_list' %}">Playtests<span class="nav-count">{{ sidebar.playtest_count }}</span></a>
+            <a class="nav-item{% if nav_active == 'metagame' %} is-active{% endif %}" {% if nav_active == 'metagame' %}aria-current="page" {% endif %}href="{% url 'metagame' %}">Metagame</a>
         </nav>
         <div class="sidebar-foot">
             <div class="engine-box">

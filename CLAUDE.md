@@ -43,7 +43,7 @@ The default `DATABASE_URL` is the Compose Postgres on localhost; set
   seat's agent → `docs/forge.md`.
 - `playtest/agents/` — the Jev agent and its client →
   `docs/agents.md`.
-- `theme/static/` — precompiled stylesheet, vendored fonts and icons.
+- `theme/static/` — the hand-written stylesheet, vendored fonts and icons.
 - Overall flow (request → background thread → stored result, HTMX polling) →
   `docs/architecture.md`; tests, Docker, migrations → `docs/development.md`.
 
@@ -57,10 +57,12 @@ The default `DATABASE_URL` is the Compose Postgres on localhost; set
 - `decks/formats.py` is the single source for format parameters (its `forge_format`
   is the bridge's name). Adding a format, a `Seat.Agent` or any status/choice value
   needs a migration.
-- Templates may only use CSS classes present in `theme/static/css/styles.css` and
-  icon names the vendored Material Symbols subset can render (no `j`/`q`), each icon
-  with `translate="no"`. There is no CSS build: `tests/test_assets.py` enforces this;
-  do not grow `KNOWN_UNCOMPILED`.
+- Templates may only use CSS classes defined in `theme/static/css/styles.css`, a
+  hand-written stylesheet (design tokens in `:root`, semantic component classes; no
+  Tailwind, no build), and icon names the vendored Material Symbols subset can render
+  (no `j`/`q`), each icon with `translate="no"`. `tests/test_assets.py` enforces both;
+  keep `KNOWN_UNCOMPILED` empty. Every page extends `base.html` (the sidebar); its
+  section comes from the route name (`nav_section`).
 - Tests must never call Scryfall, OpenRouter or the Forge bridge (`tests/conftest.py`
   fails any that does): use the `fake_forge` fixture (`tests/fakeforge.py`),
   monkeypatch `fetch_card_data` / `fetch_card_raw`, `requests` or
