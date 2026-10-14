@@ -192,10 +192,11 @@ MTGGoldfish is not used: its `robots.txt` disallows `/deck/download*`.
   changed) leaves that format's previous snapshot untouched;
 - imports every list through `import_decklist`, the same path and rules as user
   decks; a deck that fails is kept as `failed` with its error;
-- checks each imported deck against the Forge bridge (`POST /decks/check`) and stores
-  the cards Forge does not know and the ones it cannot play fully as its `coverage`;
-  when the bridge is unreachable the coverage stays empty and the command says
-  "not checked";
+- does not ask the Forge bridge, so the sync runs without it: the decks are stored
+  with an empty `coverage` ("not checked"). Starting a playtest sends each
+  opponent's deck to the bridge anyway (the first game is created on the spot): a
+  deck with a card Forge does not know refuses the session, and what the bridge said
+  of a metagame deck becomes its `coverage` (`playtest/runner.py`, `start_game`);
 - replaces the format's decks in one transaction. Seats that played a replaced deck
   keep its name (`Seat.metagame_deck` is `SET_NULL`).
 

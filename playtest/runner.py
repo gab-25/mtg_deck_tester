@@ -51,32 +51,50 @@ def seat_cards(seat: Seat) -> list:
     return seat.deck.cards
 
 
+def _remember_metagame_coverage(seat: Seat, unresolved: list, unsupported: list) -> None:
+    """Keeps what Forge said of a seat's metagame deck: the sync does not ask it."""
+    if seat.metagame_deck is not None:
+        seat.metagame_deck.coverage = {"unresolved": unresolved, "unsupported_cards": unsupported}
+        seat.metagame_deck.save(update_fields=["coverage"])
+
+
 def start_game(match: Match, client=None) -> dict:
     """Creates the match's game on the bridge; stores its id and each seat's coverage.
 
-    Raises :class:`~.forge.ForgeDeckError` (unknown cards, named per seat) or
-    :class:`~.forge.ForgeError`; then nothing is stored.
+    What the bridge says of a metagame deck is kept on it too. Raises
+    :class:`~.forge.ForgeDeckError` (unknown cards, named per seat) or
+    :class:`~.forge.ForgeError`; then only the unknown cards are stored.
     """
     client = client or forge.client()
     seats = list(match.seats.select_related("deck", "metagame_deck"))
     has_commander = FORMATS[match.format].has_commander
     names = table_names(seats)
-    game = client.create_game(
-        match.format,
-        match.seed,
-        [
-            {
-                "name": name,
-                "decklist": forge.decklist_text(seat_cards(seat), has_commander=has_commander),
-                "controller": seat.controller,
-            }
-            for seat, name in zip(seats, names)
-        ],
-    )
+    try:
+        game = client.create_game(
+            match.format,
+            match.seed,
+            [
+                {
+                    "name": name,
+                    "decklist": forge.decklist_text(seat_cards(seat), has_commander=has_commander),
+                    "controller": seat.controller,
+                }
+                for seat, name in zip(seats, names)
+            ],
+        )
+    except forge.ForgeDeckError as exc:
+        # Seats the error does not name may still hold unknown cards: the
+        # bridge can stop at the first bad deck, so only named seats are kept.
+        for seat, name in zip(seats, names):
+            if exc.unresolved.get(name):
+                _remember_metagame_coverage(seat, list(exc.unresolved[name]), [])
+        raise
     with transaction.atomic():
         for seat, bridge_seat in zip(seats, game.get("seats", [])):
-            seat.coverage = {"unsupported_cards": list(bridge_seat.get("unsupported_cards") or [])}
+            unsupported = list(bridge_seat.get("unsupported_cards") or [])
+            seat.coverage = {"unsupported_cards": unsupported}
             seat.save(update_fields=["coverage"])
+            _remember_metagame_coverage(seat, [], unsupported)
         match.forge_game_id = game["id"]
         match.save(update_fields=["forge_game_id"])
     return game
