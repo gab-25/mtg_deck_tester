@@ -4,9 +4,9 @@ MTG Gauntlet is one Django project (`mtg_gauntlet`) with three apps:
 
 | App | What it owns |
 |---|---|
-| `mtg_gauntlet/` | Settings, root URLs, the layout templates and the home page, plus the plumbing every app shares: background jobs (`jobs.py`), the ownership check (`access.py`), per-job log stamping (`logging_context.py`). |
+| `mtg_gauntlet/` | Settings, root URLs, the layout templates and the home page, plus the plumbing every app shares: the Celery app (`celery.py`), deck-import threads (`jobs.py`), the ownership check (`access.py`), per-job log stamping (`logging_context.py`). |
 | `decks/` | Decks and the Scryfall card cache: decklist parsing, card fetching, legality, the format registry. See [Deck import](deck-import.md). |
-| `playtest/` | Matches: the client of the Forge bridge (the rules engine), the runner and the worker pool that connect it to the database, the agents that play, and the match summary. See [Forge](forge.md) and [Agents](agents.md). |
+| `playtest/` | Matches: the client of the Forge bridge (the rules engine), the runner, the Celery task (`tasks.py`) and the worker pool that connect it to the database, the agents that play, and the match summary. See [Forge](forge.md) and [Agents](agents.md). |
 | `theme/` | Static assets only: the precompiled stylesheet, vendored fonts, favicons. No Python beyond its `AppConfig`. |
 
 ## Request → background job → stored result
@@ -15,7 +15,7 @@ Both long-running operations — importing a deck and playing a match — follow
 same shape:
 
 ```
-POST form ──► cheap validation ──► row created (status = pending) ──► start_job(...)
+POST form ──► cheap validation ──► row created (status = pending) ──► start_job / .delay()
    │                                                                     │
    └─► redirect to a page that polls (HTMX) ◄── row updated as it runs ◄─┘
 ```
@@ -25,15 +25,23 @@ POST form ──► cheap validation ──► row created (status = pending) �
    `playtest.forms.parse_playtest_form`).
 2. **It creates the rows** (`Deck` with `status=pending`; for a playtest, the
    `Playtest` session and one `Match` per opponent with its two `Seat`s, in one
-   transaction) and calls `mtg_gauntlet.jobs.start_job(target, id)` for each. A
-   playtest first starts every match's game on the Forge bridge
-   (`playtest.runner.start_game`): when Forge does not know a card (or the bridge is
-   unreachable) the games already started are aborted, the session is deleted and the
-   form is re-rendered naming the cards, so a refused deck never becomes a playtest.
-3. **`start_job` runs the job in a daemon thread** (`RUN_JOBS_IN_BACKGROUND=1`, the
-   default) or inline (tests set it to `False` in `settings_test.py`). The thread
-   closes its own DB connection when done. There is no queue and no worker process:
-   a job lives and dies with the web process that started it.
+   transaction), then starts the import with `start_job(run_import, id)`, or queues
+   each match with `playtest.tasks.run_match_task.delay(id)`. A playtest first starts
+   every match's game on the Forge bridge (`playtest.runner.start_game`): when Forge
+   does not know a card (or the bridge is unreachable) the games already started are
+   aborted, the session is deleted and the form is re-rendered naming the cards, so a
+   refused deck never becomes a playtest.
+   If the broker refuses a match, the same happens as for a bridge error (503).
+3. **Where the job runs.** A deck import runs in a daemon thread of the web process
+   (`RUN_JOBS_IN_BACKGROUND=1`, the default) or inline (tests); moving it to the
+   worker is a follow-up. A match runs on the **Celery worker**: Redis carries the
+   task, a single worker process (`--pool threads`, `CELERY_CONCURRENCY` threads,
+   default 16) follows up to that many matches at once and the rest wait in the
+   queue. Restarting the web process does not touch them. Tests run tasks eagerly
+   (`CELERY_TASK_ALWAYS_EAGER`), with no broker. The database, not the queue, is the
+   source of truth: when the worker starts it re-queues every `pending` or `running`
+   match, and a task whose match ended, was stopped or deleted, or is already
+   followed, does nothing.
 4. **The job writes its progress and outcome back to the row**:
    - `decks.importer.run_import` moves the deck `pending → processing → ready | failed`
      and stores `cards`, `commander`, `color_identity` (or `error`).
@@ -42,7 +50,7 @@ POST form ──► cheap validation ──► row created (status = pending) �
      `Match.turn` current, and at the end stores the winner, Forge's end reason, each
      seat's final life and the deterministic `Match.summary`.
    - Meanwhile the **worker pool** (`playtest/workers.py`, `FORGE_WORKERS` threads
-     started once per process with the first match) answers the bridge's decisions
+     started once in the Celery worker, when it is ready) answers the bridge's decisions
      for every running match. Without a pool the runner answers its own.
 5. **The page polls**. The deck list and playtest list re-fetch their grid partial while
    anything is busy (`has_busy` in the context; the view returns the partial when

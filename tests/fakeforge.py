@@ -13,7 +13,7 @@ import re
 import threading
 import uuid
 
-from playtest.forge import ForgeDeckError, ForgeError
+from playtest.forge import ForgeDeckError, ForgeError, ForgeGameNotFound
 
 HEADERS = {"commander", "deck", "sideboard"}
 # The Forge method that takes a decision of each kind when it falls back.
@@ -237,7 +237,7 @@ class FakeForge:
     def _game(self, game_id: str) -> FakeGame:
         game = self.games.get(game_id)
         if game is None:
-            raise ForgeError(f"Forge bridge returned HTTP 404 for game {game_id}")
+            raise ForgeGameNotFound()
         return game
 
     def health(self) -> dict:

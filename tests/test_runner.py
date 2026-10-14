@@ -239,6 +239,22 @@ def test_ten_matches_started_together_finish_with_two_workers(user, fake_forge, 
 # -- failures end the game on the bridge -----------------------------------------------------
 
 
+def test_a_game_the_bridge_forgot_fails_the_match_at_once(user, fake_forge, monkeypatch):
+    """A restarted bridge has no game to come back: no minute of retries."""
+
+    def retried(seconds):
+        raise AssertionError("the runner waited for a game the bridge does not know")
+
+    monkeypatch.setattr(runner, "MAX_OUTAGE_SECONDS", 3600)
+    monkeypatch.setattr(runner.time, "sleep", retried)
+    match = _match(user)
+    runner.start_game(match)
+    del fake_forge.games[match.forge_game_id]
+    match = _play(match)
+    assert match.status == Match.Status.FAILED
+    assert match.error == "The Forge bridge no longer knows this game (it restarted?)."
+
+
 def test_a_failed_match_aborts_its_game_so_no_agent_keeps_playing(user, fake_forge, monkeypatch):
     from playtest import forge
 

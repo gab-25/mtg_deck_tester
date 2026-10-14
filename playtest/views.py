@@ -16,15 +16,15 @@ from decks.formats import FORMATS, playable_formats
 from decks.models import Deck, MetagameDeck
 from decks.presentation import deck_pips
 from mtg_gauntlet.access import get_owned_or_404
-from mtg_gauntlet.jobs import start_job
 
 from . import forge
 from .agents import typesafe
 from .forms import DEFAULT_MATCH_FORMAT, MAX_OPPONENTS, METAGAME_PREFIX, SEAT_AGENT, parse_playtest_form
 from .models import Match, Playtest, Seat
-from .runner import run_match, start_game
+from .runner import start_game
 from .stats import opponent_source, record
 from .summary import event_row, fallback_executions, fallback_reason
+from .tasks import run_match_task
 
 logger = logging.getLogger(__name__)
 
@@ -202,15 +202,21 @@ def create_playtest(request):
             errors.append(f"The playtest could not start: {exc}")
             status = 503
             break
+    if not errors:
+        try:
+            for match in matches:
+                run_match_task.delay(str(match.id))
+        except Exception as exc:  # noqa: BLE001 - the broker is unreachable or refused the task
+            logger.exception("Could not queue the playtest")
+            errors, status = [f"The playtest could not be queued: {exc}"], 503
     if errors:
+        # A match queued before the failure finds its row deleted: its task leaves it alone.
         for match in matches:
             match.refresh_from_db()
             _abort(match)
         playtest.delete()
         context = _form_context(request.user, request.POST, errors=list(dict.fromkeys(errors)))
         return render(request, "playtest/playtest_new.html", context, status=status)
-    for match in matches:
-        start_job(run_match, match.id)
     return redirect("playtest_detail", playtest_id=playtest.id)
 
 
@@ -405,8 +411,9 @@ def _stop(match) -> None:
     if not match.is_busy:
         return
     _abort(match)
-    # The runner records the end when it follows the game; if none does any
-    # more (the process restarted), this keeps the match from polling forever.
+    # The runner records the end when it follows the game. A match still in
+    # the queue, or whose worker restarted, is marked here: its task reads
+    # this row and leaves the match alone.
     Match.objects.filter(pk=match.pk, status__in=[Match.Status.PENDING, Match.Status.RUNNING]).update(
         status=Match.Status.STOPPED, end_reason="aborted", finished_at=timezone.now()
     )

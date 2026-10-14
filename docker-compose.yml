@@ -31,6 +31,18 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
 
+  # The Celery broker. No volume: the worker rebuilds the queue from the
+  # database when it starts.
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   web:
     build: .
     depends_on:
@@ -38,15 +50,49 @@ services:
         condition: service_healthy
       forge:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       DATABASE_URL: postgresql://mtg:mtg@db:5432/mtg_tester
       FORGE_URL: http://forge:8080
-      # Threads answering Forge's decisions: the most model calls in flight.
-      FORGE_WORKERS: ${FORGE_WORKERS:-4}
+      CELERY_BROKER_URL: redis://redis:6379/0
       # Provide your OpenRouter key to enable Jev seats:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
     ports:
       - "8000:8000"
+    # The worker starts once this answers: migrations are applied by then.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/login')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # Plays the matches: follows each game and answers its decisions with Jev.
+  # Keep ONE replica: its FORGE_WORKERS threads are the global bound on the
+  # Jev calls in flight. --concurrency is how many matches it follows at once.
+  worker:
+    build: .
+    command: ["celery", "-A", "mtg_gauntlet", "worker", "--pool", "threads",
+              "--concurrency", "${CELERY_CONCURRENCY:-16}", "-l", "info"]
+    deploy:
+      replicas: 1
+    depends_on:
+      web:
+        condition: service_healthy
+      forge:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://mtg:mtg@db:5432/mtg_tester
+      FORGE_URL: http://forge:8080
+      CELERY_BROKER_URL: redis://redis:6379/0
+      # Threads answering Forge's decisions: the most Jev calls in flight.
+      FORGE_WORKERS: ${FORGE_WORKERS:-4}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      MAX_AGENT_CALLS: ${MAX_AGENT_CALLS:-400}
+      MAX_MATCH_SECONDS: ${MAX_MATCH_SECONDS:-1800}
 
 volumes:
   pgdata:

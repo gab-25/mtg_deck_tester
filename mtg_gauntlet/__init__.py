@@ -23,3 +23,8 @@ def _read_version() -> str:
 __version__ = _read_version()
 
 load_dotenv()
+
+# The Celery app loads with Django, so @shared_task binds to it.
+from .celery import app as celery_app  # noqa: E402
+
+__all__ = ("__version__", "celery_app")

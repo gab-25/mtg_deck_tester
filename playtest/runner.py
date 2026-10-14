@@ -8,7 +8,7 @@ events into ``MatchEvent`` rows as they arrive and, when the game is over,
 stores the winner, the end reason and the summary.
 
 Decisions are answered by the worker pool (:mod:`.workers`). When no pool runs
-in this process (``FORGE_WORKERS=0``, and in tests) the runner answers its own
+in this process (a web process, ``FORGE_WORKERS=0``, and tests) the runner answers its own
 match's decisions in between reading the log.
 """
 
@@ -129,6 +129,8 @@ def follow(match: Match, client) -> dict:
                 since = batch["next"]
                 continue
             game = client.game(match.forge_game_id)
+        except forge.ForgeGameNotFound:
+            raise  # no outage to wait out: the game is gone
         except forge.ForgeError:
             outage_since = outage_since or time.monotonic()
             if time.monotonic() - outage_since > MAX_OUTAGE_SECONDS:
@@ -197,14 +199,12 @@ def _finish(match: Match, game: dict) -> None:
 
 
 def run_match(match_id) -> None:
-    """Background job: follows ``match_id``'s game on the bridge to its end."""
+    """Celery task body (:func:`.tasks.run_match_task`): follows ``match_id``'s game on the bridge to its end."""
     with job_log_context("match", match_id):
         match = Match.objects.filter(pk=match_id).first()
         if match is None:
             return  # deleted before the job started
         client = forge.client()
-        if getattr(settings, "RUN_JOBS_IN_BACKGROUND", True):
-            workers.ensure_started()
         try:
             if not match.forge_game_id:
                 start_game(match, client)

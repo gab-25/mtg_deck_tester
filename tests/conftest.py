@@ -21,6 +21,17 @@ def no_network(request, monkeypatch):
     monkeypatch.setattr(requests.Session, "request", refuse)
 
 
+@pytest.fixture(autouse=True)
+def no_broker(monkeypatch):
+    """Tasks run eagerly in tests: a message that would reach the broker fails the test."""
+    from mtg_gauntlet.celery import app
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("unexpected message to the Celery broker in a test")
+
+    monkeypatch.setattr(app, "send_task", refuse)
+
+
 @pytest.fixture
 def fake_forge(monkeypatch):
     """Every bridge call goes to one in-memory :class:`~tests.fakeforge.FakeForge`."""

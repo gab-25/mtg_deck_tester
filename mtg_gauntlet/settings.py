@@ -154,14 +154,22 @@ USE_I18N = True
 TIME_ZONE = "UTC"
 LANGUAGE_CODE = "en-us"
 
-# Deck imports (minutes of Scryfall calls) and matches (possibly hundreds of
-# agent calls) run in a background thread so the request returns immediately.
-# Disabled in tests, where the work runs inline (see ``settings_test``).
+# Deck imports (minutes of Scryfall calls) run in a background thread so the
+# request returns immediately. Disabled in tests, where the work runs inline
+# (see ``settings_test``).
 RUN_JOBS_IN_BACKGROUND = os.environ.get("RUN_JOBS_IN_BACKGROUND", "1").lower() in {
     "1",
     "true",
     "yes",
 }
+
+# Matches run on the Celery worker, with Redis as broker (docs/architecture.md).
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+# A match takes minutes: each worker thread reserves one task at a time.
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+# Results live in the database: no result backend.
+CELERY_TASK_IGNORE_RESULT = True
 
 # Surface application logs (including background job progress) on the console.
 # Level is controlled by ``LOG_LEVEL`` (defaults to INFO).

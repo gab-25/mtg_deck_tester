@@ -19,9 +19,11 @@ uv run python manage.py runserver          # local dev server on :8000, auto-rel
 uv run python manage.py makemigrations     # after model/choices changes
 uv run python manage.py load_oracle_cards  # fill the card cache from Scryfall bulk data
 uv run python manage.py sync_metagame      # import the top decks of each format (network)
-docker compose up --build                  # Postgres + the Forge bridge + gunicorn on :8000
+docker compose up --build                  # Postgres + Forge + Redis + gunicorn on :8000 + the worker
 docker compose up -d db                    # just Postgres, for local runs
 docker compose up -d forge                 # just the Forge bridge, on localhost:8080
+docker compose up -d redis                 # just Redis, the Celery broker, on localhost:6379
+uv run celery -A mtg_gauntlet worker --pool threads -l info  # the worker that plays matches
 ```
 
 The default `DATABASE_URL` is the Compose Postgres on localhost; set
@@ -31,7 +33,8 @@ The default `DATABASE_URL` is the Compose Postgres on localhost; set
 
 ## Layout
 
-- `mtg_gauntlet/` — settings, URLs, layout templates, background jobs, ownership.
+- `mtg_gauntlet/` — settings, URLs, layout templates, the Celery app, deck-import
+  threads, ownership.
 - `decks/` — decklist parsing, Scryfall fetch + cache, legality, format registry →
   `docs/deck-import.md`.
 - `playtest/forge.py` — the HTTP client of the Forge bridge → `docs/forge.md`.
@@ -39,13 +42,16 @@ The default `DATABASE_URL` is the Compose Postgres on localhost; set
   plays one match against each chosen opponent.
 - `playtest/runner.py` — starts a match's game on the bridge, copies its events into
   `MatchEvent` rows, stores the result and the summary (`playtest/summary.py`).
+- `playtest/tasks.py` — the Celery task following a match, and the worker's hooks
+  (pool start, recovery) → `docs/forge.md`.
 - `playtest/workers.py` — the worker pool answering the bridge's decisions with each
   seat's agent → `docs/forge.md`.
 - `playtest/agents/` — the Jev agent and its client →
   `docs/agents.md`.
 - `theme/static/` — the hand-written stylesheet, vendored fonts and icons.
-- Overall flow (request → background thread → stored result, HTMX polling) →
-  `docs/architecture.md`; tests, Docker, migrations → `docs/development.md`.
+- Overall flow (request → Celery task (matches) or thread (imports) → stored result,
+  HTMX polling) → `docs/architecture.md`; tests, Docker, migrations →
+  `docs/development.md`.
 
 ## Conventions
 
@@ -68,7 +74,8 @@ The default `DATABASE_URL` is the Compose Postgres on localhost; set
   fails any that does): use the `fake_forge` fixture (`tests/fakeforge.py`),
   monkeypatch `fetch_card_data` / `fetch_card_raw`, `requests` or
   `typesafe.system_one`, or pass a fake `ask`. Only tests marked `forge`
-  reach a real bridge. Shared builders are in `tests/factories.py`.
+  reach a real bridge. Celery tasks run eagerly in tests and the broker is refused
+  (`tests/conftest.py`). Shared builders are in `tests/factories.py`.
 - Every deck/match view loads rows through `mtg_gauntlet.access.get_owned_or_404`.
 
 ## Workflow

@@ -115,3 +115,13 @@ def test_check_deck_needs_a_bridge_that_supports_it():
     client, _ = _client({("POST", "/decks/check"): Response(404)})
     with pytest.raises(forge.ForgeError, match="update mtg_forge_engine"):
         client.check_deck("modern", "4 Lightning Bolt")
+
+
+@pytest.mark.parametrize("path, call", [
+    ("/games/g1", lambda client: client.game("g1")),
+    ("/games/g1/events", lambda client: client.events("g1", 3)),
+])
+def test_a_game_the_bridge_does_not_know_is_its_own_error(path, call):
+    client, _ = _client({("GET", path): Response(404, {"detail": "no such game"})})
+    with pytest.raises(forge.ForgeGameNotFound, match="no longer knows this game"):
+        call(client)
