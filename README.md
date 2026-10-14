@@ -146,7 +146,8 @@ docker compose exec web python manage.py createsuperuser
 ```
 
 This also pulls and starts the Forge bridge (`forge`, the
-`ghcr.io/gab-25/mtg_forge_engine` image); `web` waits for its health check, about a
+`ghcr.io/gab-25/mtg_forge_engine` image), Redis (`redis`) and the Celery worker that
+plays the matches (`worker`); `web` waits for the bridge's health check, about a
 minute while the card database loads. Then open <http://localhost:8000>.
 
 ### Locally
@@ -155,9 +156,11 @@ minute while the card database loads. Then open <http://localhost:8000>.
 uv sync
 cp .env.example .env                  # then edit it
 docker compose up -d forge            # the Forge bridge on localhost:8080 (FORGE_URL's default)
+docker compose up -d redis            # the Celery broker on localhost:6379
 uv run python manage.py migrate
 uv run python manage.py createsuperuser
 uv run python manage.py runserver     # http://localhost:8000
+uv run celery -A mtg_gauntlet worker --pool threads -l info   # in a second terminal: plays the matches
 ```
 
 ## Local card database
@@ -210,13 +213,15 @@ local development; real environment variables win):
 |---|---|---|
 | `DATABASE_URL` | Postgres or SQLite URL | `postgresql://mtg:mtg@localhost:5432/mtg_tester` |
 | `FORGE_URL` | The Forge bridge (Compose sets `http://forge:8080`) | `http://localhost:8080` |
-| `FORGE_WORKERS` | Threads answering Forge's decisions: the most model calls in flight; `0` lets each match's runner answer its own | `4` |
+| `CELERY_BROKER_URL` | Redis the matches are queued on (Compose sets `redis://redis:6379/0`) | `redis://localhost:6379/0` |
+| `CELERY_CONCURRENCY` | Compose only: matches the worker follows at once | `16` |
+| `FORGE_WORKERS` | Worker threads answering Forge's decisions: the most Jev calls in flight; `0` lets each match's runner answer its own | `4` |
 | `OPENROUTER_API_KEY` | Jev's key: required to start a match | — |
 | `MAX_AGENT_CALLS` | Model calls per seat; past it the seat delegates to Forge's AI | `400` |
 | `MAX_MATCH_SECONDS` | Match wall clock; past it model seats delegate to Forge's AI | `1800` |
 | `SECRET_KEY` / `DEBUG` | Django basics | dev key / on |
 | `CSRF_TRUSTED_ORIGINS` | Comma-separated origins behind a proxy | — |
-| `RUN_JOBS_IN_BACKGROUND` | Run imports and matches off the request thread | `1` |
+| `RUN_JOBS_IN_BACKGROUND` | Run deck imports off the request thread | `1` |
 | `LOG_LEVEL` | Console log level | `INFO` |
 
 The bridge has its own settings — `DECISION_TIMEOUT` (an unanswered decision goes to

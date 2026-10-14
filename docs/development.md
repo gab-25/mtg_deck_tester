@@ -12,10 +12,15 @@ uv sync                                   # dependencies, dev group included
 cp .env.example .env                      # then edit it
 docker compose up -d db                   # optional: just Postgres, on localhost:5432
 docker compose up -d forge                # the Forge bridge, on localhost:8080
+docker compose up -d redis                # the Celery broker, on localhost:6379
 uv run python manage.py migrate
 uv run python manage.py createsuperuser
 uv run python manage.py runserver         # http://localhost:8000, auto-reload
+uv run celery -A mtg_gauntlet worker --pool threads -l info   # plays the matches (second terminal)
 ```
+
+Matches need the worker: `runserver` alone queues them and they stay *Pending*. The
+worker does not auto-reload: restart it after changing `playtest/`.
 
 The default `DATABASE_URL` points at the Compose Postgres
 (`postgresql://mtg:mtg@localhost:5432/mtg_tester`). For a database-free setup use
@@ -46,7 +51,14 @@ docker compose exec web python manage.py createsuperuser
   build time, `DEBUG=0`, gunicorn on port 8000 as an unprivileged user.
   `docker-entrypoint.sh` runs `migrate` before starting the server. It waits for
   the bridge's health check and reaches it at `FORGE_URL=http://forge:8080`.
-- `FORGE_WORKERS` and `OPENROUTER_API_KEY` are passed through from your shell.
+- `redis`: `redis:7-alpine`, the Celery broker, published on `127.0.0.1:6379`, no
+  volume (the worker rebuilds the queue from the database when it starts).
+- `worker`: the same image running `celery -A mtg_gauntlet worker --pool threads`;
+  it plays the matches. Keep one replica (its `FORGE_WORKERS` threads bound the Jev
+  calls in flight). It starts once `web` answers its health check, so migrations are
+  applied by then.
+- `FORGE_WORKERS`, `CELERY_CONCURRENCY` and `OPENROUTER_API_KEY` are passed through
+  from your shell.
 
 CI (`.github/workflows/ci.yml`) runs on pushes to `main` only: `uv sync --frozen`,
 `uv run pytest`, then builds and pushes a multi-arch image to

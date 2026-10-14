@@ -85,11 +85,13 @@ them on the match page.
    (`ForgeDeckError`) the games already started are aborted, the session is deleted
    and the form names every unknown card (422); on any other error the same with 503.
    A deck Forge cannot play never becomes a playtest.
-2. **The job follows it.** `runner.run_match` (a background job) marks the match
+2. **The worker follows it.** `runner.run_match` (the Celery task `run_match_task`,
+   on the worker) marks the match
    running and copies the bridge's events into `MatchEvent` rows as they arrive,
    keeping `Match.turn` current. The bridge may be unreachable for up to a minute
    (`MAX_OUTAGE_SECONDS`) before the match fails; a deleted match or a game past
-   `MATCH_TIMEOUT` (3 hours) is aborted. A match that fails for any reason aborts its
+   `MATCH_TIMEOUT` (3 hours) is aborted. When the bridge no longer knows the game (it
+   restarted) the match fails at once. A match that fails for any reason aborts its
    game, and workers delegate every decision of a match that no longer runs.
 3. **When the game ends** it stores the winner, Forge's end reason, each seat's final
    life and the summary. Status: `finished`; `stopped` when aborted by the user;
@@ -98,12 +100,13 @@ them on the match page.
 A running match can be stopped from its page (`matches/<id>/stop`), a whole session
 from its own (`playtests/<id>/stop`), and deleting either aborts the games still
 running. Stopping also marks the match `stopped` itself, so a match
-whose runner died with its process (there is no recovery at startup) stops polling.
+still in the queue is left alone by its task.
 
 ## The worker pool
 
-`playtest/workers.py`: `FORGE_WORKERS` threads (default 4) start once per process,
-with the first match. Each long-polls `lease(30)`, finds the `Match` by its
+`playtest/workers.py`: `FORGE_WORKERS` threads (default 4) start once in the Celery
+worker, on `worker_ready` (`playtest/tasks.py`), and stop on `worker_shutdown`; web
+processes never run a pool. Each long-polls `lease(30)`, finds the `Match` by its
 `forge_game_id` and the `Seat` by position, asks the seat's agent and answers. The
 pool size bounds the model calls in flight across every running match.
 
@@ -120,8 +123,21 @@ pool size bounds the model calls in flight across every running match.
   retried after a pause. If a worker dies anyway, `DECISION_TIMEOUT` hands its
   decision to Forge's AI: no match stalls.
 
-With `FORGE_WORKERS=0` (and in tests, where jobs run inline) no pool runs: each
+With `FORGE_WORKERS=0` (and in tests, where tasks run eagerly) no pool runs: each
 match's runner answers its own decisions between reads of the log.
+
+**Two knobs.** `CELERY_CONCURRENCY` (default 16) is how many matches the worker
+*follows* at once — threads copying the log, cheap. `FORGE_WORKERS` is how many Jev
+calls are in flight, globally, since there is one worker process: keep the `worker`
+service at one replica. Games start on the bridge in the view, so the queue does not
+bound the games in play (the bridge's `MAX_CONCURRENT_GAMES` does): the pool answers
+the decisions of a game whose follower is still queued, only its log is copied later.
+Celery's time limits do not apply with the thread pool; `MATCH_TIMEOUT` and the
+agents' budgets bound a match.
+
+**Restarts.** Tasks are acknowledged on receipt. When the worker starts it re-queues
+every `pending` or `running` match; a resumed match copies the log from its last
+stored event, but its agents are new, so it no longer replays exactly from its seed.
 
 ## Reproducibility
 
@@ -156,6 +172,5 @@ folds runs of `forge_ai` events into one line.
 
 - Two seats per game: multiplayer Commander waits for a bridge extension.
 - The bridge keeps no state across restarts: running matches then fail.
-- With several web processes (gunicorn workers), each runs its own pool, so one
-  game's decisions may be answered by agents in different processes and a seat no
-  longer replays exactly.
+- One worker process: a second replica would run a second pool, so the bound on Jev
+  calls doubles and a game's decisions may reach agents in different processes.
