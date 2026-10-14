@@ -1,11 +1,10 @@
 {% comment %}
-Status pill for a deck import. Include with the deck in scope:
-{% include "decks/partials/status_badge.html" with deck=deck %}
+Status pill for a deck import: {% include "decks/partials/status_badge.html" with deck=deck %}
 {% endcomment %}
 {% if deck.status == 'ready' %}
-<span class="status status-ready"><span translate="no" class="ms text-[13px]">check</span>Ready</span>
+{% include "decks/partials/forge_badge.html" with deck=deck %}
 {% elif deck.status == 'failed' %}
-<span class="status status-failed"><span translate="no" class="ms text-[13px]">error</span>Failed</span>
+<span class="badge danger"><span translate="no" class="ms ms-sm">error</span>Import failed</span>
 {% else %}
-<span class="status status-pending"><span class="spinner"></span>Importing</span>
+<span class="badge info"><span class="spinner" aria-hidden="true"></span>Importing</span>
 {% endif %}

@@ -3,20 +3,25 @@
 {% block title %}Decks — MTG Gauntlet{% endblock %}
 
 {% block content %}
-<div class="page" data-screen-label="Decks">
-    <div class="flex items-end justify-between gap-5 flex-wrap mb-6">
-        <div>
-            <div class="kicker">Collection</div>
-            <h1 class="font-cinzel font-semibold text-[34px] mt-[7px] mb-1.5 tracking-[.03em]">Your Decks</h1>
-            <p class="m-0 text-txt2 font-light text-[14.5px]">
-                {{ decks|length }} deck{{ decks|length|pluralize }} ready to be played by the AI
-            </p>
-        </div>
-        <a href="{% url 'new_deck' %}" class="btn btn-grad">
-            <span translate="no" class="ms text-[20px]">add</span>Import deck
-        </a>
+<div class="page-head">
+    <div class="page-head-main">
+        <div class="kicker">Decks</div>
+        <h1 class="page-title">Your decks</h1>
+        <p class="page-sub">Each deck keeps the record of every playtest it played.</p>
     </div>
-
-    {% include "decks/partials/deck_grid.html" %}
+    <div class="actions">
+        <a href="{% url 'new_deck' %}" class="btn btn-primary"><span translate="no" class="ms">add</span>Import deck</a>
+    </div>
 </div>
+
+{% if formats|length > 1 %}
+<nav class="cluster" aria-label="Formats">
+    <a href="{% url 'deck_list' %}" class="chip-link{% if not active_format %} is-active{% endif %}"{% if not active_format %} aria-current="page"{% endif %}>All</a>
+    {% for key, label in formats %}
+    <a href="?format={{ key }}" class="chip-link{% if key == active_format %} is-active{% endif %}"{% if key == active_format %} aria-current="page"{% endif %}>{{ label }}</a>
+    {% endfor %}
+</nav>
+{% endif %}
+
+{% include "decks/partials/deck_grid.html" %}
 {% endblock %}

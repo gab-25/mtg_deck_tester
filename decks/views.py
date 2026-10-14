@@ -15,18 +15,30 @@ from .models import Deck, MetagameDeck
 from .presentation import card_groups, commander_cards, deck_pips, sideboard_group
 
 
-def _grid_context(user) -> dict:
-    """Context for the deck grid, which polls itself while an import runs."""
-    decks = list(Deck.objects.filter(owner=user))
-    for deck in decks:
+def _grid_context(user, fmt="") -> dict:
+    """Context for the deck list, which polls itself while an import runs."""
+    from playtest.stats import record
+
+    decks = list(Deck.objects.filter(owner=user).prefetch_related("playtests__matches__winner"))
+    formats = [(key, FORMATS[key].label) for key in FORMATS if any(d.format == key for d in decks)]
+    if fmt not in dict(formats):
+        fmt = ""
+    shown = [deck for deck in decks if not fmt or deck.format == fmt]
+    for deck in shown:
         deck.pips = deck_pips(deck)
-    return {"decks": decks, "has_busy": any(d.is_busy for d in decks)}
+        deck.record = record(m for p in deck.playtests.all() for m in p.matches.all())
+    return {
+        "decks": shown,
+        "formats": formats,
+        "active_format": fmt,
+        "has_busy": any(d.is_busy for d in decks),
+    }
 
 
 @login_required
 @require_http_methods(["GET"])
 def deck_list(request):
-    context = _grid_context(request.user)
+    context = _grid_context(request.user, request.GET.get("format", ""))
     # HTMX poll: return just the grid region so it can swap itself in place.
     template = "decks/partials/deck_grid.html" if request.htmx else "decks/deck_list.html"
     return render(request, template, context)
@@ -72,18 +84,42 @@ def create_deck(request):
     return redirect("deck_list")
 
 
+# The deck page's tabs, chosen with ``?tab=``.
+DECK_TABS = ("results", "cards", "list")
+
+
 @login_required
 @require_http_methods(["GET"])
 def deck_detail(request, deck_id):
+    from playtest.stats import record, record_by_opponent
+
     deck = get_owned_or_404(Deck, request.user, deck_id)
     if deck.is_busy:
         return redirect("deck_list")
+    tab = request.GET.get("tab")
+    if tab not in DECK_TABS:
+        tab = "results"
+    playtests = list(deck.playtests.prefetch_related("matches__seats__metagame_deck", "matches__winner"))
+    matches = [match for playtest in playtests for match in playtest.matches.all()]
+    history = [
+        {
+            "playtest": playtest,
+            "record": record(playtest.matches.all()),
+            "busy": any(match.is_busy for match in playtest.matches.all()),
+            "opponents": len(playtest.matches.all()),
+        }
+        for playtest in playtests
+    ]
     return render(
         request,
         "decks/deck_detail.html",
         {
             "deck": deck,
+            "tab": tab,
             "pips": deck_pips(deck),
+            "record": record(matches),
+            "opponents": record_by_opponent(matches),
+            "history": history,
             "card_groups": card_groups(deck.cards),
             "commander_cards": commander_cards(deck.cards),
             "sideboard": sideboard_group(deck.cards),
@@ -102,7 +138,7 @@ def deck_forge_check(request, deck_id):
     from playtest import forge
 
     deck = get_owned_or_404(Deck, request.user, deck_id)
-    context = {"deck": deck}
+    context = {"deck": deck, "oob": True}
     try:
         check = forge.client().check_deck(
             deck.format, forge.decklist_text(deck.cards, has_commander=deck.has_commander)

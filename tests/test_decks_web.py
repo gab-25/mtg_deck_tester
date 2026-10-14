@@ -5,7 +5,7 @@ import pytest
 from decks import importer
 from decks.models import Deck
 
-from .factories import legal_decklist, make_deck, scryfall_card
+from .factories import legal_decklist, make_deck, make_match, make_playtest, scryfall_card
 
 
 def _fake_fetch(name, cache):
@@ -104,7 +104,7 @@ def test_a_banned_card_fails_the_import_for_its_format(client, user, monkeypatch
 @pytest.mark.django_db
 def test_deck_detail_groups_the_cards(client, user):
     deck = make_deck(user)
-    response = client.get(f"/decks/{deck.id}")
+    response = client.get(f"/decks/{deck.id}?tab=cards")
     assert response.status_code == 200
     assert b"Creatures" in response.content
     assert b"Lands" in response.content
@@ -152,7 +152,7 @@ def test_deck_page_loads_images_from_scryfall_cdn(client, user):
         }
     ]
     deck = make_deck(user, cards=cards)
-    content = client.get(f"/decks/{deck.id}").content.decode()
+    content = client.get(f"/decks/{deck.id}?tab=cards").content.decode()
     assert f'<img src="{FRONT}"' in content
     # The thumbnail's zoom request carries both faces, for the flip.
     assert "url=https%3A%2F%2Fcards.scryfall.io%2Fnormal%2Ffront" in content
@@ -204,7 +204,7 @@ def test_importing_a_constructed_deck_keeps_the_sideboard(client, user):
     assert deck.status == Deck.Status.READY, deck.error
     assert deck.commander == ""
     assert (deck.total_cards, deck.sideboard_total) == (60, 15)
-    page = client.get(f"/decks/{deck.id}").content.decode()
+    page = client.get(f"/decks/{deck.id}?tab=cards").content.decode()
     assert "Sideboard" in page and ">Commander</div>" not in page
 
 
@@ -275,3 +275,44 @@ def test_an_unreachable_bridge_keeps_the_last_forge_check(client, user, fake_for
     assert "Forge bridge unreachable" in client.post(f"/decks/{deck.id}/forge-check").content.decode()
     deck.refresh_from_db()
     assert deck.forge_ready and deck.forge_checked_at is None
+
+
+@pytest.mark.django_db
+def test_the_deck_page_has_results_cards_and_decklist_tabs(client, user):
+    deck = make_deck(user, name="Boros", fmt="duel", raw_decklist="1 Bear Lord")
+    playtest = make_playtest(user, deck=deck, deck_name="Boros")
+    match = make_match(user, playtest=playtest, seats=("Boros", "Rival"), status="finished")
+    match.winner = match.seats.get(position=0)
+    match.save()
+    page = client.get(f"/decks/{deck.id}").content.decode()
+    assert "Against each opponent" in page and "Rival" in page and "1–0–0" in page
+    assert 'href="?tab=cards"' in page and 'class="tab is-active" aria-current="page"' in page
+    assert "Not checked" in page and f"/playtests/new?deck={deck.id}" in page
+    assert f'href="/decks"' in page.split('aria-label="Breadcrumb"', 1)[1]
+    assert "Bear Lord" in client.get(f"/decks/{deck.id}?tab=cards").content.decode()
+    assert "<pre" in client.get(f"/decks/{deck.id}?tab=list").content.decode()
+    assert client.get(f"/decks/{deck.id}?tab=nope").status_code == 200
+
+
+@pytest.mark.django_db
+def test_a_deck_with_no_finished_match_shows_dashes(client, user):
+    deck = make_deck(user)
+    page = client.get(f"/decks/{deck.id}").content.decode()
+    assert "—" in page and "0–0–0" in page and "No playtest yet" in page
+
+
+@pytest.mark.django_db
+def test_the_forge_badge_tells_ready_unknown_and_unchecked(client, user):
+    ready = make_deck(user, name="Ready", coverage={"unresolved": [], "unsupported_cards": []})
+    odd = make_deck(user, name="Odd", coverage={"unresolved": ["X", "Y"], "unsupported_cards": []})
+    assert "Forge ready" in client.get(f"/decks/{ready.id}").content.decode()
+    assert "2 unknown cards" in client.get(f"/decks/{odd.id}").content.decode()
+
+
+@pytest.mark.django_db
+def test_the_deck_list_filters_by_format(client, user):
+    make_deck(user, name="Modern One", fmt="modern")
+    make_deck(user, name="Duel One", fmt="duel")
+    page = client.get("/decks?format=modern").content.decode()
+    assert "Modern One" in page and "Duel One" not in page
+    assert client.get("/decks?format=nope").status_code == 200

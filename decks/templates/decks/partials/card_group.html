@@ -1,37 +1,21 @@
 {% comment %}
 One group of card rows on the deck page. Include with `group` in scope.
 {% endcomment %}
-<div class="group-head">
-    <span class="w-[9px] h-[9px] rounded-full" style="background:{{ group.hex }}"></span>
-    <span class="font-semibold text-[12.5px] tracking-[.06em] uppercase text-txt2">{{ group.label }}</span>
-    <span class="font-mono2 font-bold text-[11px] text-txt3">{{ group.count }}</span>
-</div>
-{% for c in group.cards %}
-<button
-    type="button"
-    class="card-row"
-    {% if c.image_query %}
-    hx-get="{% url 'card_image_modal' %}?{{ c.image_query }}"
-    hx-target="#card-image-modal-container"
-    hx-swap="innerHTML"
-    {% endif %}
-    title="View card"
->
-    <div class="card-thumb">
-        {% if c.image %}<img src="{{ c.image }}" alt="{{ c.name }}" loading="lazy" />{% endif %}
-        <span class="font-mono2 absolute top-1 left-1 min-w-[19px] h-[19px] py-0 px-[5px] flex items-center justify-center rounded-full bg-[rgba(10,11,16,.82)] font-bold text-[11px] text-txt">{{ c.quantity }}×</span>
-        {% if c.image %}<span translate="no" class="ms absolute right-1 bottom-1 p-0.5 text-[15px] text-txt2 bg-[rgba(10,11,16,.72)] rounded-md">zoom_in</span>{% endif %}
+<section class="panel">
+    <div class="panel-head">
+        <span class="dot" style="background:{{ group.hex }}" aria-hidden="true"></span>
+        <span class="panel-title">{{ group.label }}</span>
+        <span class="panel-sub num">{{ group.count }}</span>
     </div>
-    <div class="flex-1 min-w-0">
-        <div class="flex items-center gap-2 flex-wrap">
-            <span class="font-semibold text-[14.5px]">{{ c.name }}</span>
-            <span class="py-0.5 px-[7px] text-[11px] border border-line2 rounded-full" style="color:{{ c.type_hex }}">{{ c.type }}</span>
-            {% if c.is_commander %}<span class="chip">Commander</span>{% endif %}
-        </div>
-        {% if c.oracle %}<div class="mt-1 max-w-[560px] text-[12.5px] text-txt3 font-light leading-[1.45] whitespace-pre-line">{{ c.oracle }}</div>{% endif %}
-    </div>
-    <div class="flex-none flex flex-col items-end gap-1.5">
-        <span class="mv-badge">{{ c.mv }}</span>
-    </div>
-</button>
-{% endfor %}
+    {% for c in group.cards %}
+    <button type="button" class="card-row"
+        {% if c.image_query %}hx-get="{% url 'card_image_modal' %}?{{ c.image_query }}" hx-target="#card-image-modal-container" hx-swap="innerHTML"{% endif %}
+        title="{% if c.oracle %}{{ c.oracle }}{% else %}View card{% endif %}">
+        <span class="card-qty">{{ c.quantity }}</span>
+        <span class="card-thumb">{% if c.image %}<img src="{{ c.image }}" alt="" loading="lazy" />{% endif %}</span>
+        <span translate="no" class="card-name">{{ c.name }}</span>
+        {% if c.is_commander %}<span class="chip">Commander</span>{% endif %}
+        <span class="card-type" style="color:{{ c.type_hex }}">{{ c.type }} · {{ c.mv }}</span>
+    </button>
+    {% endfor %}
+</section>

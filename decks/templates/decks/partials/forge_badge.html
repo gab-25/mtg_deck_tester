@@ -1,0 +1,10 @@
+{% comment %}
+What Forge made of the deck at its last check. The forge-check response
+swaps it in place out of band, so the header follows a new check.
+{% endcomment %}
+<span id="forge-badge"{% if oob %} hx-swap-oob="true"{% endif %} class="badge {% if not deck.forge_checked %}muted{% elif deck.unknown_cards %}danger{% elif deck.unsupported_cards %}warn{% else %}ok{% endif %}">
+    {% if not deck.forge_checked %}Not checked
+    {% elif deck.unknown_cards %}{{ deck.unknown_cards|length }} unknown card{{ deck.unknown_cards|length|pluralize }}
+    {% elif deck.unsupported_cards %}Forge ready · {{ deck.unsupported_cards|length }} unsupported
+    {% else %}Forge ready{% endif %}{% if deck.forge_checked_at %} · checked {{ deck.forge_checked_at|timesince }} ago{% endif %}
+</span>
