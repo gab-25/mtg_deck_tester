@@ -250,3 +250,28 @@ def test_the_metagame_page_lists_each_format(client):
     assert "Not synced yet" in page  # every other format
     client.logout()
     assert client.get("/metagame").status_code == 302
+
+
+@pytest.mark.django_db
+def test_a_forge_check_is_saved_on_the_deck(client, user, fake_forge):
+    fake_forge.unknown = {"Bear 3"}
+    deck = make_deck(user)
+    client.post(f"/decks/{deck.id}/forge-check")
+    deck.refresh_from_db()
+    assert deck.forge_checked and deck.forge_checked_at is not None
+    assert deck.unknown_cards == ["Bear 3"] and not deck.forge_ready
+
+
+@pytest.mark.django_db
+def test_an_unreachable_bridge_keeps_the_last_forge_check(client, user, fake_forge, monkeypatch):
+    from playtest import forge
+
+    deck = make_deck(user, coverage={"unresolved": [], "unsupported_cards": []})
+
+    def down(*args):
+        raise forge.ForgeError("Forge bridge unreachable at http://localhost:8080")
+
+    monkeypatch.setattr(fake_forge, "check_deck", down)
+    assert "Forge bridge unreachable" in client.post(f"/decks/{deck.id}/forge-check").content.decode()
+    deck.refresh_from_db()
+    assert deck.forge_ready and deck.forge_checked_at is None

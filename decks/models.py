@@ -41,6 +41,10 @@ class Deck(models.Model):
     # where ``data`` is the processed Scryfall card and its ``image_urls`` point
     # at Scryfall's image CDN.
     cards = models.JSONField(default=list)
+    # What the Forge engine made of the deck at its last check:
+    # ``{"unresolved": [...], "unsupported_cards": [...]}``; empty until checked.
+    coverage = models.JSONField(default=dict, blank=True)
+    forge_checked_at = models.DateTimeField(null=True, blank=True)
 
     created_at = models.DateTimeField(default=timezone.now)
 
@@ -75,6 +79,24 @@ class Deck(models.Model):
     @property
     def is_busy(self) -> bool:
         return self.status in {self.Status.PENDING, self.Status.PROCESSING}
+
+    @property
+    def forge_checked(self) -> bool:
+        return "unresolved" in (self.coverage or {})
+
+    @property
+    def unknown_cards(self) -> list[str]:
+        """Cards Forge does not know: a match with this deck would be refused."""
+        return list((self.coverage or {}).get("unresolved") or [])
+
+    @property
+    def unsupported_cards(self) -> list[str]:
+        """Cards Forge knows but cannot play fully."""
+        return list((self.coverage or {}).get("unsupported_cards") or [])
+
+    @property
+    def forge_ready(self) -> bool:
+        return self.forge_checked and not self.unknown_cards
 
 
 class ScryfallCard(models.Model):

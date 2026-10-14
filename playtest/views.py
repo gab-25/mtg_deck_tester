@@ -28,16 +28,8 @@ def _grid_context(user) -> dict:
     playtests = list(
         Playtest.objects.filter(owner=user).prefetch_related("matches__seats", "matches__winner")
     )
-    # Matches from before test sessions, listed on their own.
-    matches = list(
-        Match.objects.filter(owner=user, playtest=None).select_related("winner").prefetch_related("seats")
-    )
     sessions = [session_view(playtest) for playtest in playtests]
-    return {
-        "sessions": sessions,
-        "matches": matches,
-        "has_busy": any(s["busy"] for s in sessions) or any(m.is_busy for m in matches),
-    }
+    return {"sessions": sessions, "has_busy": any(s["busy"] for s in sessions)}
 
 
 def session_view(playtest) -> dict:
@@ -296,6 +288,4 @@ def delete_match(request, match_id):
         _abort(match)
     playtest_id = match.playtest_id
     match.delete()
-    if playtest_id:
-        return redirect("playtest_detail", playtest_id=playtest_id)
-    return redirect("match_list")
+    return redirect("playtest_detail", playtest_id=playtest_id)

@@ -4,7 +4,7 @@ import pytest
 
 from playtest.models import Match, Playtest
 
-from .factories import make_deck
+from .factories import make_deck, make_match, make_playtest
 
 
 @pytest.fixture
@@ -191,7 +191,7 @@ def test_bad_numbers_are_reported(client, user):
 @pytest.mark.django_db
 def test_someone_elses_match_is_a_404(client, django_user_model):
     other = django_user_model.objects.create_user(username="other")
-    match = Match.objects.create(owner=other, seed=1)
+    match = make_match(other)
     assert client.get(f"/matches/{match.id}").status_code == 404
     assert client.get(f"/matches/{match.id}/live").status_code == 404
     assert client.post(f"/matches/{match.id}/stop").status_code == 404
@@ -201,7 +201,7 @@ def test_someone_elses_match_is_a_404(client, django_user_model):
 @pytest.mark.django_db
 def test_a_running_match_polls_its_live_region_and_can_be_stopped(client, user, fake_forge):
     game = fake_forge.create_game("duel", 1, [{"name": "A", "decklist": "1 Forest"}, {"name": "B", "decklist": "1 Forest"}])
-    match = Match.objects.create(owner=user, seed=1, status=Match.Status.RUNNING, forge_game_id=game["id"])
+    match = make_match(user, status=Match.Status.RUNNING, forge_game_id=game["id"])
     page = client.get(f"/matches/{match.id}").content
     assert b"hx-trigger" in page and b"Stop" in page
     assert client.post(f"/matches/{match.id}/stop").status_code == 302
@@ -211,7 +211,7 @@ def test_a_running_match_polls_its_live_region_and_can_be_stopped(client, user, 
 @pytest.mark.django_db
 def test_deleting_a_running_match_aborts_its_game(client, user, fake_forge):
     game = fake_forge.create_game("duel", 1, [{"name": "A", "decklist": "1 Forest"}, {"name": "B", "decklist": "1 Forest"}])
-    match = Match.objects.create(owner=user, seed=1, status=Match.Status.RUNNING, forge_game_id=game["id"])
+    match = make_match(user, status=Match.Status.RUNNING, forge_game_id=game["id"])
     assert client.post(f"/matches/{match.id}/delete").status_code == 302
     assert not Match.objects.exists()
     assert fake_forge.games[game["id"]].status == "aborted"
@@ -239,10 +239,9 @@ def test_a_posted_agent_is_ignored_every_seat_is_jev(client, user, fake_forge):
 def _finished(user, **seat_fields):
     from playtest.models import MatchEvent, Seat
 
-    match = Match.objects.create(owner=user, format="duel", seed=1, status=Match.Status.FINISHED, turn=3, end_reason="turn_limit")
-    for position in range(2):
-        fields = {"deck_name": f"Deck {position}", "agent": "jev", **(seat_fields if position == 0 else {})}
-        Seat.objects.create(match=match, position=position, **fields)
+    match = make_match(user, status=Match.Status.FINISHED, turn=3, end_reason="turn_limit")
+    if seat_fields:
+        Seat.objects.filter(match=match, position=0).update(**seat_fields)
     return match, MatchEvent
 
 
@@ -429,7 +428,7 @@ def test_a_jev_match_on_the_fake_bridge_shows_confidence_and_low_confidence_fall
 @pytest.mark.django_db
 def test_stopping_a_match_nobody_follows_any_more_ends_it(client, user, fake_forge):
     game = fake_forge.create_game("duel", 1, [{"name": "A", "decklist": "1 Forest"}, {"name": "B", "decklist": "1 Forest"}])
-    match = Match.objects.create(owner=user, seed=1, status=Match.Status.RUNNING, forge_game_id=game["id"])
+    match = make_match(user, status=Match.Status.RUNNING, forge_game_id=game["id"])
     client.post(f"/matches/{match.id}/stop")
     match.refresh_from_db()
     assert match.status == Match.Status.STOPPED and b"hx-trigger" not in client.get(f"/matches/{match.id}/live").content

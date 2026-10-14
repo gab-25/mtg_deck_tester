@@ -87,6 +87,21 @@ def test_forge_matches_keep_the_round_as_turn_and_give_llm_and_random_seats_to_f
         agents = list(apps.get_model("playtest", "Seat").objects.order_by("position").values_list("agent", flat=True))
         assert agents == ["forge_ai", "forge_ai"]
     finally:
+        # A match without a playtest cannot reach 0003, where the playtest is required.
+        apps.get_model("playtest", "Match").objects.all().delete()
         executor = MigrationExecutor(connection)
         executor.migrate(executor.loader.graph.leaf_nodes())
 
+
+
+@pytest.mark.django_db(transaction=True)
+def test_every_match_belongs_to_a_playtest():
+    apps = _migrate(("playtest", "0003_match_playtest_required"))
+    assert apps.get_model("playtest", "Match")._meta.get_field("playtest").null is False
+
+
+@pytest.mark.django_db(transaction=True)
+def test_decks_remember_their_forge_check():
+    apps = _migrate(("decks", "0006_deck_forge_check"))
+    fields = {f.name for f in apps.get_model("decks", "Deck")._meta.get_fields()}
+    assert {"coverage", "forge_checked_at"} <= fields

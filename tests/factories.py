@@ -103,3 +103,22 @@ def constructed_cards(fmt="modern"):
 
 def make_constructed_deck(owner, name="Goblins", fmt="modern"):
     return make_deck(owner, name=name, fmt=fmt, cards=constructed_cards(fmt), commander="", color_identity=["R"])
+
+
+def make_playtest(owner, deck=None, fmt="duel", deck_name="Deck 0", seed=1, **fields):
+    from playtest.models import Playtest
+
+    return Playtest.objects.create(owner=owner, deck=deck, format=fmt, deck_name=deck_name, seed=seed, **fields)
+
+
+def make_match(owner, playtest=None, seats=("Deck 0", "Deck 1"), **fields):
+    """A match of ``playtest`` (a new one if None) with two Jev seats named ``seats``."""
+    from playtest.models import Match, Seat
+
+    playtest = playtest or make_playtest(owner, fmt=fields.get("format", "duel"), deck_name=seats[0])
+    fields.setdefault("format", playtest.format)
+    fields.setdefault("seed", playtest.seed)
+    match = Match.objects.create(owner=owner, playtest=playtest, **fields)
+    for position, name in enumerate(seats):
+        Seat.objects.create(match=match, position=position, deck_name=name, agent="jev")
+    return match

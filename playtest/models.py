@@ -59,10 +59,8 @@ class Match(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="matches"
     )
     # The test session this match belongs to: seat 0 plays the deck under test,
-    # seat 1 one of its opponents. Empty for matches from before sessions.
-    playtest = models.ForeignKey(
-        Playtest, null=True, blank=True, on_delete=models.CASCADE, related_name="matches"
-    )
+    # seat 1 one of its opponents.
+    playtest = models.ForeignKey(Playtest, on_delete=models.CASCADE, related_name="matches")
     format = models.CharField(max_length=16, choices=format_choices(), default=DEFAULT_FORMAT)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
     # Seeds Forge's shuffles and Jev's option order: the same seed and the same

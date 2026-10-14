@@ -3,6 +3,7 @@
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
+from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from mtg_gauntlet.access import get_owned_or_404
@@ -94,7 +95,8 @@ def deck_detail(request, deck_id):
 @require_http_methods(["POST"])
 def deck_forge_check(request, deck_id):
     """What the Forge engine makes of the deck, on demand: cards it does not
-    know (a match would be refused) and cards it cannot play fully."""
+    know (a match would be refused) and cards it cannot play fully. The
+    answer is kept on the deck; a bridge that cannot answer changes nothing."""
     # The playtest app talks to Forge; imported here so decks keeps no
     # module-level dependency on it.
     from playtest import forge
@@ -102,11 +104,19 @@ def deck_forge_check(request, deck_id):
     deck = get_owned_or_404(Deck, request.user, deck_id)
     context = {"deck": deck}
     try:
-        context["check"] = forge.client().check_deck(
+        check = forge.client().check_deck(
             deck.format, forge.decklist_text(deck.cards, has_commander=deck.has_commander)
         )
     except forge.ForgeError as exc:
         context["error"] = str(exc)
+    else:
+        deck.coverage = {
+            "unresolved": check.get("unresolved") or [],
+            "unsupported_cards": check.get("unsupported_cards") or [],
+        }
+        deck.forge_checked_at = timezone.now()
+        deck.save(update_fields=["coverage", "forge_checked_at"])
+        context["check"] = check
     return render(request, "decks/partials/forge_check.html", context)
 
 

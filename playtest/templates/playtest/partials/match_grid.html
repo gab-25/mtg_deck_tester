@@ -3,14 +3,8 @@ The playtest-list region: polls itself while a match is running, like the deck g
 {% endcomment %}
 <div id="match-grid-region" class="flex flex-col gap-5"
     {% if has_busy %}hx-get="{% url 'match_list' %}" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
-    {% if sessions or matches %}
-    {% if sessions %}{% include "playtest/partials/playtest_cards.html" %}{% endif %}
-    {% if matches %}
-    <div>
-        <div class="field-label mb-3">Earlier matches</div>
-        {% include "playtest/partials/match_cards.html" %}
-    </div>
-    {% endif %}
+    {% if sessions %}
+    {% include "playtest/partials/playtest_cards.html" %}
     {% else %}
     <div class="text-center py-[70px] px-5 text-txt3">
         <span translate="no" class="ms text-[44px] opacity-50">swords</span>
