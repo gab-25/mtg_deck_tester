@@ -8,7 +8,7 @@ import requests
 from .text_utils import card_slug, front_face_name
 
 # Scryfall asks every client to identify itself with a custom User-Agent.
-SCRYFALL_HEADERS = {"User-Agent": "MTGDeckTester/1.0.0", "Accept": "application/json"}
+SCRYFALL_HEADERS = {"User-Agent": "MTGGauntlet/1.0.0", "Accept": "application/json"}
 
 # Polite delay between Scryfall requests (their guidelines ask for 50-100ms).
 _REQUEST_DELAY = 0.1

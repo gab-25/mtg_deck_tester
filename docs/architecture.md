@@ -1,10 +1,10 @@
 # Architecture
 
-MTG Deck Tester is one Django project (`mtg_deck_tester`) with three apps:
+MTG Gauntlet is one Django project (`mtg_gauntlet`) with three apps:
 
 | App | What it owns |
 |---|---|
-| `mtg_deck_tester/` | Settings, root URLs, the layout templates and the home page, plus the plumbing every app shares: background jobs (`jobs.py`), the ownership check (`access.py`), per-job log stamping (`logging_context.py`). |
+| `mtg_gauntlet/` | Settings, root URLs, the layout templates and the home page, plus the plumbing every app shares: background jobs (`jobs.py`), the ownership check (`access.py`), per-job log stamping (`logging_context.py`). |
 | `decks/` | Decks and the Scryfall card cache: decklist parsing, card fetching, legality, the format registry. See [Deck import](deck-import.md). |
 | `playtest/` | Matches: the client of the Forge bridge (the rules engine), the runner and the worker pool that connect it to the database, the agents that play, and the match summary. See [Forge](forge.md) and [Agents](agents.md). |
 | `theme/` | Static assets only: the precompiled stylesheet, vendored fonts, favicons. No Python beyond its `AppConfig`. |
@@ -25,7 +25,7 @@ POST form ──► cheap validation ──► row created (status = pending) �
    `playtest.forms.parse_playtest_form`).
 2. **It creates the rows** (`Deck` with `status=pending`; for a playtest, the
    `Playtest` session and one `Match` per opponent with its two `Seat`s, in one
-   transaction) and calls `mtg_deck_tester.jobs.start_job(target, id)` for each. A
+   transaction) and calls `mtg_gauntlet.jobs.start_job(target, id)` for each. A
    playtest first starts every match's game on the Forge bridge
    (`playtest.runner.start_game`): when Forge does not know a card (or the bridge is
    unreachable) the games already started are aborted, the session is deleted and the
@@ -85,7 +85,7 @@ jobs can be told apart on the console.
 | `match_events` | `playtest.MatchEvent` | The bridge's log: `seq`, `turn`, `step` (Forge's phase), `seat_position`, `kind` (`log`/`decision`/`fallback`/`forge_ai`/`game_over`), `text`, `payload` (Forge's log category, Jev confidence and probabilities, fallback reasons), `reasoning`. |
 
 **Ownership.** `Deck` and `Match` have an `owner`. Every view loads them through
-`mtg_deck_tester.access.get_owned_or_404`, which answers 404 (not 403) for someone
+`mtg_gauntlet.access.get_owned_or_404`, which answers 404 (not 403) for someone
 else's row. Login is required everywhere except the login page.
 
 ## Web layer
@@ -93,7 +93,7 @@ else's row. Login is required everywhere except the login page.
 - Views are plain function views with `@login_required` and
   `@require_http_methods`.
 - Templates: project-wide ones (layout, login, shared partials) live in
-  `mtg_deck_tester/templates/`; each app keeps its own in
+  `mtg_gauntlet/templates/`; each app keeps its own in
   `<app>/templates/<app>/`, with HTMX fragments under `partials/`.
 - HTMX comes from `django-htmx` (`{% htmx_script %}` in `base.html`; the middleware
   sets `request.htmx`).

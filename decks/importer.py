@@ -5,7 +5,7 @@ The one place the parse -> Scryfall fetch -> legality check workflow lives.
 
 import logging
 
-from mtg_deck_tester.logging_context import job_log_context
+from mtg_gauntlet.logging_context import job_log_context
 
 from .cache import DbCardCache
 from .formats import FORMATS

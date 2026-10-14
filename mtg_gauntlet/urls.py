@@ -1,4 +1,4 @@
-"""URL routing for the MTG Deck Tester web service."""
+"""URL routing for the MTG Gauntlet web service."""
 
 from django.contrib import admin
 from django.contrib.auth import views as auth_views

@@ -5,8 +5,8 @@ from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_http_methods
 
-from mtg_deck_tester.access import get_owned_or_404
-from mtg_deck_tester.jobs import start_job
+from mtg_gauntlet.access import get_owned_or_404
+from mtg_gauntlet.jobs import start_job
 
 from .formats import DEFAULT_FORMAT, FORMATS, format_choices
 from .importer import decklist_errors, run_import

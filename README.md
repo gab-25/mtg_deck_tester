@@ -1,4 +1,4 @@
-# MTG Deck Tester
+# MTG Gauntlet
 
 A **Django** web app where **AI agents playtest competitive Magic: The Gathering decks**:
 Standard, Pioneer, Modern, Legacy, Vintage, Pauper and Duel Commander (Commander decks,
@@ -103,7 +103,7 @@ See [Forge](docs/forge.md) for the decision protocol.
 
 ```
 manage.py
-mtg_deck_tester/        # Django project: settings, URLs, layout templates, home page
+mtg_gauntlet/        # Django project: settings, URLs, layout templates, home page
 ├── jobs.py             #   Background jobs (thread per job; inline in tests)
 ├── access.py           #   Ownership check shared by every view
 └── logging_context.py  #   Stamps "[match <id>]" / "[deck <id>]" on job logs
@@ -176,7 +176,7 @@ day. Run the command **daily or weekly** with `--if-newer` to keep cards and pri
 current, e.g. from cron:
 
 ```cron
-30 4 * * * cd /path/to/mtg_deck_tester && uv run python manage.py load_oracle_cards --if-newer
+30 4 * * * cd /path/to/mtg_gauntlet && uv run python manage.py load_oracle_cards --if-newer
 ```
 
 ## Metagame decks

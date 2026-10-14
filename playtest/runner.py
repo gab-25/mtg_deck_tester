@@ -20,7 +20,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from decks.formats import FORMATS
-from mtg_deck_tester.logging_context import job_log_context
+from mtg_gauntlet.logging_context import job_log_context
 
 from . import forge, workers
 from .models import Match, MatchEvent, Seat

@@ -1,5 +1,5 @@
 [project]
-name = "mtg-deck-tester"
+name = "mtg-gauntlet"
 version = "0.3.0"
 description = "Django web app where AI agents playtest Magic: The Gathering Commander decks"
 readme = "README.md"
@@ -28,7 +28,7 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-DJANGO_SETTINGS_MODULE = "mtg_deck_tester.settings_test"
+DJANGO_SETTINGS_MODULE = "mtg_gauntlet.settings_test"
 markers = [
     "forge: plays against a real Forge bridge at FORGE_URL (opt-in: uv run pytest -m forge)",
 ]

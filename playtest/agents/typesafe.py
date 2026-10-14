@@ -37,8 +37,8 @@ MAX_BACKOFF_SECONDS = 20.0
 MAX_CHOICE_OPTIONS = 255
 
 # Optional attribution headers, used by OpenRouter to credit the calling app.
-APP_URL = "https://github.com/gab-25/mtg_deck_tester"
-APP_TITLE = "mtg_deck_tester"
+APP_URL = "https://github.com/gab-25/mtg_gauntlet"
+APP_TITLE = "mtg_gauntlet"
 
 
 class TypeSafeError(Exception):
