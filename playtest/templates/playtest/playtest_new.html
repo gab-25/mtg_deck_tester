@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block title %}New playtest — MTG Gauntlet{% endblock %}
+
+{% block breadcrumb %}
+<nav class="breadcrumb" aria-label="Breadcrumb">
+    <a href="{% url 'playtest_list' %}">Playtests</a><span aria-hidden="true">/</span><span aria-current="page">New</span>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div class="page-head-main">
+        <h1 class="page-title">Test a deck</h1>
+        <p class="page-sub">Pick the deck, pick who it plays against. The format comes from the deck.</p>
+    </div>
+</div>
+
+{% include "partials/form_errors.html" with errors_title="This playtest can’t start yet" %}
+
+<div class="split-form">
+    <form id="new-playtest" method="post" action="{% url 'create_playtest' %}" class="stack">
+        {% csrf_token %}
+        <section class="panel step" aria-labelledby="step-1">
+            <div class="panel-head step-head"><span class="step-num">01</span><h2 id="step-1" class="step-title">Deck to test</h2></div>
+            <div class="panel-body choice-list">
+                {% for deck in decks %}
+                <label class="choice">
+                    <input type="radio" name="deck" value="{{ deck.id }}"{% if deck == form_deck %} checked{% endif %}
+                        hx-get="{% url 'new_playtest_opponents' %}" hx-target="#opponents" hx-swap="outerHTML" hx-include="this" />
+                    <span class="pips" aria-hidden="true">{% for pip in deck.pips %}<span class="pip" style="background:{{ pip.hex }}"></span>{% endfor %}</span>
+                    <span class="choice-main"><span translate="no" class="choice-name">{{ deck.name }}</span><span class="choice-meta">{{ deck.get_format_display }}</span></span>
+                    <span class="choice-end">{% include "decks/partials/forge_badge.html" with deck=deck %}</span>
+                </label>
+                {% empty %}
+                <div class="empty"><p>No deck ready to test.</p><a href="{% url 'new_deck' %}" class="btn btn-primary btn-sm">Import deck</a></div>
+                {% endfor %}
+            </div>
+        </section>
+
+        {% include "playtest/partials/opponents.html" %}
+
+        <details class="panel details">
+            <summary class="panel-head"><span class="step-num">03</span><span class="step-title">Advanced</span></summary>
+            <div class="panel-body">
+                <div class="field">
+                    <label class="field-label" for="seed">Seed</label>
+                    <input id="seed" type="text" name="seed" value="{{ form_seed }}" placeholder="random" class="input" inputmode="numeric" />
+                    <p class="field-help">Each match is seeded from it: the same seed and the same answers replay the same games.</p>
+                </div>
+            </div>
+        </details>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // The summary lives outside the form's flow on wide screens: move it into
+  // the layout's second column, then keep its count and button in step.
+  (() => {
+    const layout = document.querySelector(".split-form");
+    const place = () => {
+      const summary = document.getElementById("playtest-summary");
+      if (summary && summary.parentElement !== layout) layout.appendChild(summary);
+    };
+    const count = () => {
+      place();
+      const n = document.querySelectorAll('input[name="opponents"]:checked').length;
+      const deck = document.querySelector('input[name="deck"]:checked');
+      const start = document.querySelector("[data-start]");
+      const shown = document.querySelector("[data-chosen-count]");
+      if (shown) shown.textContent = n;
+      if (start) {
+        start.textContent = n ? `Start ${n} match${n === 1 ? "" : "es"}` : "Pick at least one opponent";
+        start.disabled = !n || !deck || start.dataset.blocked === "true";
+      }
+    };
+    document.addEventListener("change", (e) => { if (e.target.name === "opponents") count(); });
+    document.addEventListener("click", (e) => {
+      const top = e.target.closest("[data-pick-top]");
+      const none = e.target.closest("[data-pick-none]");
+      if (!top && !none) return;
+      const limit = top ? Number(top.dataset.pickTop) : 0;
+      document.querySelectorAll('input[name="opponents"]').forEach((box) => { box.checked = false; });
+      if (top) document.querySelectorAll("input[data-metagame]").forEach((box, i) => { box.checked = i < limit; });
+      count();
+    });
+    document.body.addEventListener("htmx:afterSettle", count);
+    place();
+  })();
+</script>
+{% endblock %}

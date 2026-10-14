@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}Playtests — MTG Gauntlet{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div class="page-head-main">
+        <div class="kicker">Playtests</div>
+        <h1 class="page-title">Every session</h1>
+        <p class="page-sub">One deck against each of its opponents, newest first.</p>
+    </div>
+    <div class="actions">
+        <a href="{% url 'new_playtest' %}" class="btn btn-primary"><span translate="no" class="ms">add</span>New playtest</a>
+    </div>
+</div>
+
+<form method="get" class="cluster" aria-label="Filters">
+    <label class="sr-only" for="filter-deck">Deck</label>
+    <select id="filter-deck" name="deck" class="select" style="width:auto" onchange="this.form.submit()">
+        <option value="">All decks</option>
+        {% for deck in filter_decks %}<option value="{{ deck.id }}"{% if active_deck == deck.id|stringformat:'s' %} selected{% endif %}>{{ deck.name }}</option>{% endfor %}
+    </select>
+    <label class="sr-only" for="filter-format">Format</label>
+    <select id="filter-format" name="format" class="select" style="width:auto" onchange="this.form.submit()">
+        <option value="">All formats</option>
+        {% for key, label in filter_formats %}<option value="{{ key }}"{% if key == active_format %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <noscript><button type="submit" class="btn btn-line btn-sm">Filter</button></noscript>
+</form>
+
+{% include "playtest/partials/playtest_grid.html" %}
+{% endblock %}

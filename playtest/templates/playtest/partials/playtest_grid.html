@@ -1,0 +1,32 @@
+{% comment %}
+The playtest-list region: polls itself while a match is running.
+{% endcomment %}
+<section id="playtest-grid-region" class="panel" aria-label="Playtests"
+    {% if has_busy %}hx-get="{{ request.get_full_path }}" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
+    {% if sessions %}
+    <div class="table-scroll">
+        <table class="data-table">
+            <thead><tr><th>Deck</th><th>Format</th><th class="num">Opponents</th><th>W–L–D</th><th>Win rate</th><th>Started</th><th><span class="sr-only">Open</span></th></tr></thead>
+            <tbody>
+                {% for session in sessions %}
+                <tr class="row-link">
+                    <td class="cell-main"><a href="{% url 'playtest_detail' session.playtest.id %}" translate="no" class="deck-name">{{ session.playtest.deck_name }}</a><span class="cell-sub">{% if session.busy %}<span class="warn">playing</span> · {% endif %}vs <span translate="no">{% for row in session.rows %}{{ row.opponent.deck_name|default:"—" }}{% if not forloop.last %}, {% endif %}{% endfor %}</span></span></td>
+                    <td class="muted">{{ session.playtest.get_format_display }}</td>
+                    <td class="num">{{ session.rows|length }}</td>
+                    <td class="num">{{ session.record.score }}</td>
+                    <td>{% include "partials/meter.html" with value=session.record.win_rate %}</td>
+                    <td class="muted nowrap">{{ session.playtest.created_at|timesince }} ago</td>
+                    <td class="cell-icon"><span translate="no" class="ms" aria-hidden="true">chevron_right</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty">
+        <span translate="no" class="ms ms-lg">swords</span>
+        <p>{% if filtered %}No playtest matches these filters.{% else %}No playtests yet.{% endif %}</p>
+        <a href="{% url 'new_playtest' %}" class="btn btn-primary">Test a deck</a>
+    </div>
+    {% endif %}
+</section>

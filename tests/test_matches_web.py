@@ -1,5 +1,7 @@
 """Web tests for setting up and following a match."""
 
+import re
+
 import pytest
 
 from playtest.models import Match, Playtest
@@ -53,8 +55,9 @@ def test_new_match_form_lists_my_ready_decks(client, user):
 @pytest.mark.django_db
 def test_new_match_form_prefills_the_deck_from_its_page(client, user):
     deck = make_deck(user, fmt="duel")
-    content = client.get(f"/playtests/new?deck={deck.id}&format=duel").content.decode()
-    assert f'value="{deck.id}" data-format="duel" selected' in content
+    content = client.get(f"/playtests/new?deck={deck.id}").content.decode()
+    assert f'value="{deck.id}" checked' in content
+    assert 'name="format" value="duel"' in content
 
 
 @pytest.mark.django_db
@@ -91,7 +94,8 @@ def test_multiplayer_commander_cannot_be_played_yet(client, user, fake_forge):
     assert response.status_code == 422
     assert b"Commander cannot be played yet" in response.content
     assert not Match.objects.exists() and not fake_forge.created
-    assert b'<option value="commander"' not in client.get("/playtests/new").content
+    page = client.get(f"/playtests/new?deck={decks[0].id}").content.decode()
+    assert "Commander cannot be played yet" in page and "disabled" in page
 
 
 @pytest.mark.django_db
@@ -224,7 +228,7 @@ def test_deleting_a_running_match_aborts_its_game(client, user, fake_forge):
 def test_the_form_offers_no_agent_choice(client):
     content = client.get("/playtests/new").content.decode()
     assert 'name="seat-0-agent"' not in content
-    assert "JEV PLAYS EVERY SEAT" in content
+    assert "Jev on every seat" in content
 
 
 @pytest.mark.django_db
@@ -316,17 +320,14 @@ def test_a_constructed_match_between_two_jev_agents(client, user, fake_forge, mo
 def test_the_new_match_form_tags_decks_by_format(client, user):
     from .factories import make_constructed_deck
 
-    make_constructed_deck(user, name="Goblins")
-    page = client.get("/playtests/new").content.decode()
-    assert 'data-format="modern"' in page
+    tested = make_constructed_deck(user, name="Goblins")
+    make_deck(user, name="Duel Bears", fmt="duel")
+    page = client.get(f"/playtests/new?deck={tested.id}").content.decode()
+    assert "Goblins" in page and "Modern" in page
+    # Only decks of the tested deck's format are offered as opponents.
+    opponents = page.split('id="opponents"', 1)[1]
+    assert "Duel Bears" not in opponents
     assert "benchmark" not in page
-
-
-@pytest.mark.django_db
-def test_hidden_decks_and_opponents_are_cleared_not_just_hidden(client):
-    page = client.get("/playtests/new").content.decode()
-    # Decks and opponents of another format must not stay selected and be posted unseen.
-    assert 'deck.value = ""' in page and "checked = false" in page
 
 
 def _metagame(fmt="modern", **fields):
@@ -344,9 +345,10 @@ def _metagame(fmt="modern", **fields):
 @pytest.mark.django_db
 def test_the_form_offers_metagame_decks_warning_of_cards_forge_does_not_know(client):
     deck = _metagame()
-    page = client.get("/playtests/new").content.decode()
+    page = client.get("/playtests/new?format=modern").content.decode()
     assert f'name="opponents" value="metagame:{deck.id}"' in page
-    assert "Goblins — 8.4% — 1 card unknown to Forge</span><span class=\"text-gold\">⚠" in page
+    assert "1 card unknown to Forge" in page
+    assert "<span translate=\"no\">Goblins</span> has cards Forge does not know: its match will be refused." in page
 
 
 @pytest.mark.django_db
@@ -512,3 +514,73 @@ def test_the_old_match_urls_are_gone(client, user):
     match = make_match(user)
     for url in ("/matches", "/matches/new", f"/matches/{match.id}"):
         assert client.get(url).status_code == 404
+
+
+def _checked(page):
+    return re.findall(r'name="opponents" value="([^"]+)" checked', page)
+
+
+@pytest.mark.django_db
+def test_new_playtest_preselects_the_deck_and_its_format_opponents(client, user):
+    from .factories import make_constructed_deck
+
+    tested = make_constructed_deck(user, name="Tested")
+    make_constructed_deck(user, name="Other Modern")
+    make_deck(user, name="A Duel Deck", fmt="duel")
+    _metagame("modern", archetype="Eldrazi Ramp", rank=1)
+    page = client.get(f"/playtests/new?deck={tested.id}").content.decode()
+    assert f'value="{tested.id}" checked' in page
+    opponents = page.split('id="opponents"', 1)[1]
+    assert "Eldrazi Ramp" in opponents and "Other Modern" in opponents and "A Duel Deck" not in opponents
+    assert _checked(page) == []
+
+
+@pytest.mark.django_db
+def test_run_again_preselects_the_opponents(client, user):
+    tested, rival = make_deck(user, name="T", fmt="duel"), make_deck(user, name="R", fmt="duel")
+    page = client.get(f"/playtests/new?deck={tested.id}&opponents={rival.id}").content.decode()
+    assert _checked(page) == [str(rival.id)]
+    assert "Start 1 match" in page
+
+
+@pytest.mark.django_db
+def test_a_format_alone_preselects_the_top_five_metagame_decks(client):
+    decks = [_metagame("modern", archetype=f"Deck {rank}", rank=rank) for rank in range(1, 8)]
+    page = client.get("/playtests/new?format=modern").content.decode()
+    assert _checked(page) == [f"metagame:{d.id}" for d in decks[:5]]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("query", ["?deck=not-a-uuid", "?deck=00000000-0000-0000-0000-000000000000",
+                                   "?opponents=metagame:999&opponents=junk", "?format=nope"])
+def test_a_dirty_query_string_is_ignored(client, query):
+    response = client.get(f"/playtests/new{query}")
+    assert response.status_code == 200 and _checked(response.content.decode()) == []
+
+
+@pytest.mark.django_db
+def test_someone_elses_deck_is_not_preselected(client, django_user_model):
+    theirs = make_deck(django_user_model.objects.create_user(username="other"), fmt="duel")
+    assert str(theirs.id) not in client.get(f"/playtests/new?deck={theirs.id}").content.decode()
+
+
+@pytest.mark.django_db
+def test_changing_deck_reloads_the_opponents(client, user):
+    from .factories import make_constructed_deck
+
+    tested = make_constructed_deck(user)
+    _metagame("modern", archetype="Amulet Titan", rank=2)
+    part = client.get(f"/playtests/new/opponents?deck={tested.id}").content.decode()
+    assert "Amulet Titan" in part and 'id="opponents"' in part and 'hx-swap-oob="true"' in part
+
+
+@pytest.mark.django_db
+def test_the_playtest_list_filters_by_deck_and_format(client, user):
+    a, b = make_deck(user, name="Alpha", fmt="duel"), make_deck(user, name="Beta", fmt="duel")
+    make_match(user, playtest=make_playtest(user, deck=a, deck_name="Alpha"))
+    make_match(user, playtest=make_playtest(user, deck=b, deck_name="Beta"))
+    rows = client.get(f"/playtests?deck={a.id}").content.decode().split("<tbody>", 1)[1]
+    assert "Alpha" in rows and "Beta" not in rows
+    rows = client.get("/playtests?format=modern").content.decode()
+    assert "No playtest matches" in rows
+    assert client.get("/playtests?deck=junk&format=nope").status_code == 200

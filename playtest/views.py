@@ -1,6 +1,7 @@
 """Playtest views: set up a session, follow it and its matches, read a match's log."""
 
 import logging
+import uuid
 
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
@@ -9,8 +10,9 @@ from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
-from decks.formats import playable_formats
+from decks.formats import FORMATS, playable_formats
 from decks.models import Deck, MetagameDeck
+from decks.presentation import deck_pips
 from mtg_gauntlet.access import get_owned_or_404
 from mtg_gauntlet.jobs import start_job
 
@@ -19,18 +21,43 @@ from .agents import typesafe
 from .forms import DEFAULT_MATCH_FORMAT, MAX_OPPONENTS, METAGAME_PREFIX, SEAT_AGENT, parse_playtest_form
 from .models import Match, Playtest, Seat
 from .runner import run_match, start_game
+from .stats import record
 from .summary import event_row, fallback_executions, fallback_reason
 
 logger = logging.getLogger(__name__)
 
 
-def _grid_context(user) -> dict:
+def _grid_context(user, deck="", fmt="") -> dict:
     """Context for the playtest list, which polls itself while a match runs."""
-    playtests = list(
-        Playtest.objects.filter(owner=user).prefetch_related("matches__seats", "matches__winner")
-    )
-    sessions = [session_view(playtest) for playtest in playtests]
-    return {"sessions": sessions, "has_busy": any(s["busy"] for s in sessions)}
+    playtests = Playtest.objects.filter(owner=user).prefetch_related("matches__seats", "matches__winner")
+    decks = list(Deck.objects.filter(owner=user, playtests__isnull=False).distinct().order_by("name"))
+    deck_id = _uuid(deck)
+    if deck_id is not None and any(d.id == deck_id for d in decks):
+        playtests = playtests.filter(deck_id=deck_id)
+    else:
+        deck_id = None
+    if fmt in FORMATS:
+        playtests = playtests.filter(format=fmt)
+    else:
+        fmt = ""
+    sessions = [{**session_view(playtest), "record": record(playtest.matches.all())} for playtest in playtests]
+    return {
+        "sessions": sessions,
+        "filter_decks": decks,
+        "filter_formats": [(key, f.label) for key, f in FORMATS.items()],
+        "active_deck": str(deck_id) if deck_id else "",
+        "active_format": fmt,
+        "filtered": bool(deck_id or fmt),
+        "has_busy": any(s["busy"] for s in sessions),
+    }
+
+
+def _uuid(value):
+    """The UUID in ``value``, or None for anything else (a hand-edited query string)."""
+    try:
+        return uuid.UUID(str(value))
+    except (TypeError, ValueError):
+        return None
 
 
 def session_view(playtest) -> dict:
@@ -57,26 +84,58 @@ RESULT_ORDER = ("won", "lost", "draw", "running", "pending", "stopped", "failed"
 @login_required
 @require_http_methods(["GET"])
 def playtest_list(request):
-    context = _grid_context(request.user)
-    template = "playtest/partials/match_grid.html" if request.htmx else "playtest/match_list.html"
+    context = _grid_context(request.user, request.GET.get("deck", ""), request.GET.get("format", ""))
+    template = "playtest/partials/playtest_grid.html" if request.htmx else "playtest/playtest_list.html"
     return render(request, template, context)
 
 
-def _form_context(user, post=None, **extra) -> dict:
-    post = post or {}
-    chosen = set(post.getlist("opponents")) if hasattr(post, "getlist") else set(post.get("opponents", []))
+# "Top 5 of the metagame": opponents preselected when a format comes alone.
+TOP_METAGAME = 5
+
+
+def _form_context(user, data, preset_top=False, **extra) -> dict:
+    """The new-playtest form for ``data`` (a query string or a refused POST).
+
+    The deck to test sets the format; without one, ``format`` does. Only
+    opponents of that format are offered, and only offered ones stay chosen.
+    """
+    decks = list(Deck.objects.filter(owner=user, status=Deck.Status.READY))
+    for deck in decks:
+        deck.pips = deck_pips(deck)
+    deck_id = _uuid(data.get("deck"))
+    deck = next((d for d in decks if d.id == deck_id), None)
+    if deck is not None:
+        fmt = deck.format
+    else:
+        fmt = data.get("format") if data.get("format") in playable_formats() else DEFAULT_MATCH_FORMAT
+    metagame = [
+        (f"{METAGAME_PREFIX}{meta.id}", meta)
+        for meta in MetagameDeck.objects.filter(format=fmt, status=MetagameDeck.Status.READY).order_by("rank")
+    ]
+    mine = [(str(d.id), d) for d in decks if d.format == fmt]
+    chosen = set(data.getlist("opponents")) if hasattr(data, "getlist") else set(data.get("opponents", []))
+    if preset_top and deck is None and not chosen:
+        chosen = {value for value, _ in metagame[:TOP_METAGAME]}
+    chosen &= {value for value, _ in metagame + mine}
+    refused = [obj.archetype for value, obj in metagame if value in chosen and obj.unknown_cards]
+    refused += [obj.name for value, obj in mine if value in chosen and obj.unknown_cards]
+    playable = fmt in playable_formats()
     return {
-        "decks": Deck.objects.filter(owner=user, status=Deck.Status.READY),
-        "formats": playable_formats(),
-        "form_format": post.get("format", DEFAULT_MATCH_FORMAT),
-        "form_deck": post.get("deck", ""),
+        "decks": decks,
+        "form_deck": deck,
+        "form_format": fmt,
+        "format_rules": FORMATS[fmt],
+        "playable": playable,
+        "playable_labels": [f.label for f in playable_formats().values()],
+        "metagame": metagame,
+        "metagame_synced": max((meta.fetched_at for _, meta in metagame), default=None),
+        "mine": mine,
         "form_opponents": chosen,
-        "form_seed": post.get("seed", ""),
+        "chosen_count": len(chosen),
+        "refused": refused,
+        "form_seed": data.get("seed", ""),
         "max_opponents": MAX_OPPONENTS,
-        "metagame_decks": [
-            (f"{METAGAME_PREFIX}{meta.id}", meta)
-            for meta in MetagameDeck.objects.filter(status=MetagameDeck.Status.READY).order_by("format", "rank")
-        ],
+        "top_metagame": TOP_METAGAME,
         "jev_model": typesafe.MODEL,
         "jev_available": typesafe.api_key() is not None,
         **extra,
@@ -86,16 +145,18 @@ def _form_context(user, post=None, **extra) -> dict:
 @login_required
 @require_http_methods(["GET"])
 def new_playtest(request):
-    # "Test this deck" on a deck page pre-fills the deck to test.
-    prefill = {"format": request.GET.get("format", DEFAULT_MATCH_FORMAT), "deck": request.GET.get("deck", "")}
-    return render(request, "playtest/match_new.html", _form_context(request.user, prefill))
+    # "Test this deck" passes ?deck=, "Run again" adds ?opponents=, the
+    # metagame page passes ?format= alone and gets its top decks preselected.
+    context = _form_context(request.user, request.GET, preset_top=True)
+    return render(request, "playtest/playtest_new.html", context)
 
 
 @login_required
 @require_http_methods(["GET"])
 def new_playtest_opponents(request):
-    """The opponent step of the form for the chosen deck (HTMX)."""
-    return HttpResponse("")
+    """The opponent step and the summary for the chosen deck (HTMX)."""
+    context = _form_context(request.user, request.GET, oob=True)
+    return render(request, "playtest/partials/opponents.html", context)
 
 
 def _new_session(user, form) -> Playtest:
@@ -121,7 +182,7 @@ def create_playtest(request):
     form, errors = parse_playtest_form(request.POST, request.user)
     if errors:
         context = _form_context(request.user, request.POST, errors=errors)
-        return render(request, "playtest/match_new.html", context, status=422)
+        return render(request, "playtest/playtest_new.html", context, status=422)
 
     playtest = _new_session(request.user, form)
     matches = list(playtest.matches.order_by("seed"))
@@ -144,7 +205,7 @@ def create_playtest(request):
             _abort(match)
         playtest.delete()
         context = _form_context(request.user, request.POST, errors=list(dict.fromkeys(errors)))
-        return render(request, "playtest/match_new.html", context, status=status)
+        return render(request, "playtest/playtest_new.html", context, status=status)
     for match in matches:
         start_job(run_match, match.id)
     return redirect("playtest_detail", playtest_id=playtest.id)
