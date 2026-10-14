@@ -155,9 +155,9 @@ class MetagameDeck(models.Model):
     cards = models.JSONField(default=list)
     commander = models.CharField(max_length=255, blank=True, default="")
     color_identity = models.JSONField(default=list)
-    # What the Forge engine made of the deck at sync:
-    # ``{"unresolved": [...], "unsupported_cards": [...]}``, or empty when the
-    # bridge could not be reached.
+    # What the Forge engine made of the deck:
+    # ``{"unresolved": [...], "unsupported_cards": [...]}``, kept when a playtest
+    # starts against it; empty until then (the sync does not ask Forge).
     coverage = models.JSONField(default=dict, blank=True)
 
     class Meta:

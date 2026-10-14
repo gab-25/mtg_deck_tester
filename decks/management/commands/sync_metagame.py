@@ -10,8 +10,8 @@ from decks.metagame import SourceError, sync
 class Command(BaseCommand):
     help = (
         "Fetches the current top decks of each format (EDHTop16 for Commander, MTGTop8 "
-        "for Duel Commander and the constructed formats), imports them, checks their cards "
-        "against the Forge bridge when it runs, and replaces that format's metagame decks."
+        "for Duel Commander and the constructed formats), imports them and replaces that "
+        "format's metagame decks."
     )
 
     def add_arguments(self, parser):
@@ -29,10 +29,6 @@ class Command(BaseCommand):
                 failed.append(fmt)
                 self.stderr.write(f"{fmt}: {exc}")
                 continue
-            if report.unknown_to_forge is None:
-                forge = "not checked (Forge bridge unreachable)"
-            else:
-                forge = f"{report.unknown_to_forge} with cards Forge does not know"
-            self.stdout.write(f"{fmt}: {report.imported} imported, {report.failed} failed, {forge}")
+            self.stdout.write(f"{fmt}: {report.imported} imported, {report.failed} failed")
         if failed:
             raise CommandError(f"Could not sync: {', '.join(failed)}. Their previous decks are kept.")

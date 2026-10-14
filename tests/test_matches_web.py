@@ -369,6 +369,24 @@ def test_a_deck_tested_against_a_metagame_deck(client, user, fake_forge):
 
 
 @pytest.mark.django_db
+def test_starting_a_playtest_keeps_forges_answer_on_an_unchecked_metagame_deck(client, user, fake_forge):
+    from .factories import make_constructed_deck
+
+    mine = make_constructed_deck(user)
+    meta = _metagame(coverage={})
+    data = {"format": "modern", "seed": "2", "deck": str(mine.id), "opponents": [f"metagame:{meta.id}"]}
+    fake_forge.unknown = {"Spell 3"}
+    assert client.post("/playtests/create", data).status_code == 422
+    meta.refresh_from_db()
+    assert meta.coverage == {"unresolved": ["Spell 3"], "unsupported_cards": []}
+
+    fake_forge.unknown, fake_forge.unsupported = set(), {"Side 0"}
+    assert client.post("/playtests/create", data).status_code == 302
+    meta.refresh_from_db()
+    assert meta.forge_checked and meta.coverage == {"unresolved": [], "unsupported_cards": ["Side 0"]}
+
+
+@pytest.mark.django_db
 def test_a_metagame_deck_of_another_format_or_failed_is_refused(client, user):
     from .factories import make_constructed_deck
 
