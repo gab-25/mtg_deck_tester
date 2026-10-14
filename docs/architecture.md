@@ -115,11 +115,13 @@ else's row. Login is required everywhere except the login page.
   active section comes from the route name through the `nav_section` filter
   (`mtg_gauntlet/templatetags/`, loaded as a builtin), the counts and engine state
   from the `sidebar` context processor (local data only: no call to the bridge). The
-  Forge bridge row loads apart (`/engine/forge`, HTMX on load, then every 30s): it
+  Forge bridge row loads apart (`/engine/forge`, HTMX on load, then every 60s): it
   asks the bridge's `/health` with a 2s timeout and caches the answer for 10s. The
-  Jev row does the same (`/engine/jev`, every 5 minutes, cached 60s) with
+  Jev row does the same (`/engine/jev`, every 60s, cached 60s) with
   OpenRouter's `/api/v1/key`, which spends no credit: it tells whether the key works
   and has credit left, not whether Jev itself answers. Without a key it asks nothing.
+  The Workers row (the user's running matches over `FORGE_WORKERS`) reloads from
+  `/engine/workers` every 60s too.
   Pages put their breadcrumb in `{% block breadcrumb %}`; tabs are links with
   `?tab=` (deck: results/cards/list, match: summary/log).
 - Routes: `/decks/<id>`, `/playtests`, `/playtests/new?deck=&opponents=&format=`,

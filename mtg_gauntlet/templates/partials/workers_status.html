@@ -1,0 +1,8 @@
+{% comment %}
+The sidebar's Workers row: the user's running matches over FORGE_WORKERS. The
+page renders it with the count of the moment, then it polls every 60s
+(/engine/workers), like the rest of the engine box.
+{% endcomment %}
+<div class="engine-row" hx-get="{% url 'workers_status' %}" hx-trigger="every 60s" hx-swap="outerHTML">
+    <span class="dot {% if running %}warn{% else %}muted{% endif %}" aria-hidden="true"></span>Workers<span class="engine-value{% if running %} warn{% endif %}">{{ running }}/{{ workers }} busy</span>
+</div>

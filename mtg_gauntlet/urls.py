@@ -14,6 +14,7 @@ urlpatterns = [
     path("home/running", views.home_running, name="home_running"),
     path("engine/forge", views.forge_status, name="forge_status"),
     path("engine/jev", views.jev_status, name="jev_status"),
+    path("engine/workers", views.workers_status, name="workers_status"),
     path("", include("decks.urls")),
     path("", include("playtest.urls")),
 ]
