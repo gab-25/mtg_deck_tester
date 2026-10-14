@@ -11,9 +11,9 @@ trigger and polling stops.
             <thead><tr><th>Deck</th><th>Format</th><th>Cards</th><th>Forge</th><th>W–L–D</th><th>Win rate</th></tr></thead>
             <tbody>
                 {% for deck in decks %}
-                <tr class="row-link">
+                <tr{% if not deck.is_busy %} class="row-link"{% endif %}>
                     <td>
-                        {% if deck.is_busy %}<span class="cluster">{% else %}<a href="{% url 'deck_detail' deck.id %}" class="cluster">{% endif %}
+                        {% if deck.is_busy %}<span class="cluster">{% else %}<a href="{% url 'deck_detail' deck.id %}" class="cluster row-target">{% endif %}
                             <span class="pips" aria-hidden="true">{% for pip in deck.pips %}<span class="pip" style="background:{{ pip.hex }}"></span>{% endfor %}</span>
                             <span translate="no" class="deck-name">{{ deck.name }}</span>
                         {% if deck.is_busy %}</span>{% else %}</a>{% endif %}

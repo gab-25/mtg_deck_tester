@@ -73,8 +73,11 @@
 .data-table td.cell-main { font-weight: 600; }
 .data-table .cell-sub { display: block; font-size: 11.5px; font-weight: 400; color: var(--text-3); }
 .data-table .cell-icon { width: 32px; padding-left: 0; text-align: right; color: var(--text-3); }
-.row-link { cursor: pointer; }
-.row-link:hover td { background: var(--line-soft); }
+/* The row's one link (.row-target) stretches over the whole row: a single tab
+   stop, yet a click anywhere in the row opens it. */
+.row-link { position: relative; cursor: pointer; }
+.row-link .row-target::after { content: ""; position: absolute; inset: 0; }
+.row-link:hover td, .row-link:has(.row-target:focus-visible) td { background: var(--line-soft); }
 .row-link a { color: var(--text); text-decoration: none; }
 .row-link a:hover { color: var(--text); }
 .deck-name {

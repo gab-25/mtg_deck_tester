@@ -30,7 +30,7 @@
                         {% for row in deck_rows %}
                         <tr class="row-link">
                             <td>
-                                <a href="{% url 'deck_detail' row.deck.id %}" class="cluster">
+                                <a href="{% url 'deck_detail' row.deck.id %}" class="cluster row-target">
                                     <span class="pips" aria-hidden="true">{% for pip in row.deck.pips %}<span class="pip" style="background:{{ pip.hex }}"></span>{% endfor %}</span>
                                     <span translate="no" class="deck-name">{{ row.deck.name }}</span>
                                 </a>

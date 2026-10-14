@@ -55,7 +55,7 @@ the region polls itself (outerHTML swap); once every match ended polling stops.
                 <tbody>
                     {% for row in session.rows %}
                     <tr class="row-link">
-                        <td class="cell-main"><a href="{% url 'match_detail' row.match.playtest_id row.match.id %}" translate="no">{{ row.opponent.deck_name|default:"—" }}</a></td>
+                        <td class="cell-main"><a href="{% url 'match_detail' row.match.playtest_id row.match.id %}" translate="no" class="row-target">{{ row.opponent.deck_name|default:"—" }}</a></td>
                         {% if playtest.games_per_opponent > 1 %}<td class="num">{{ row.game }}</td>{% endif %}
                         <td class="muted">{{ row.source }}</td>
                         <td><span class="result {{ row.result }}">{% if row.result == 'running' %}<span class="spinner" aria-hidden="true"></span> {% endif %}{{ row.result|result_label }}</span></td>
