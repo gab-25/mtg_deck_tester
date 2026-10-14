@@ -2,10 +2,10 @@
 
 Each worker long-polls the bridge for the oldest pending decision of any game,
 finds the match and the seat it belongs to, asks the seat's agent and answers.
-``FORGE_WORKERS`` threads (default 4) start once per process, with the first
-match; their number bounds the model calls in flight. With ``FORGE_WORKERS=0``
-(and in tests) no pool runs and each match's runner answers its own decisions,
-one at a time.
+``FORGE_WORKERS`` threads (default 4) start once, when the Celery worker is
+ready (:mod:`.tasks`); there is one worker process, so their number bounds the
+model calls in flight. With ``FORGE_WORKERS=0`` (and in tests) no pool runs and
+each match's runner answers its own decisions, one at a time.
 
 A worker never stops on an error: a decision it cannot serve is delegated to
 Forge's AI, and if a worker dies anyway the bridge's ``DECISION_TIMEOUT`` hands
@@ -220,6 +220,15 @@ def ensure_started() -> bool:
         _pool.start()
         logger.info("Started %s Forge workers", size)
         return True
+
+
+def stop(timeout: float | None = None) -> None:
+    """Stops this process's pool, if one runs (the worker shutting down)."""
+    global _pool
+    with _pool_lock:
+        if _pool is not None:
+            _pool.stop(timeout)
+            _pool = None
 
 
 def running() -> bool:
