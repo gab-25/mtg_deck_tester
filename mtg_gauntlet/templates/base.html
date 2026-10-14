@@ -30,16 +30,8 @@
         <div class="sidebar-foot">
             <div class="engine-box">
                 <div class="field-label">Engine</div>
-                <div class="engine-row" title="{{ sidebar.forge_url }}">
-                    <span class="dot info" aria-hidden="true"></span>Forge bridge<span translate="no" class="engine-url">{{ sidebar.forge_url }}</span>
-                </div>
-                <div class="engine-row">
-                    {% if sidebar.jev_ready %}
-                    <span class="dot ok" aria-hidden="true"></span>Jev players<span class="engine-value ok">ready</span>
-                    {% else %}
-                    <span class="dot danger" aria-hidden="true"></span>Jev players<span class="engine-value danger">no API key</span>
-                    {% endif %}
-                </div>
+                {% include "partials/forge_status.html" with forge_url=sidebar.forge_url %}
+                {% if sidebar.jev_ready %}{% include "partials/jev_status.html" %}{% else %}{% include "partials/jev_status.html" with status="no API key" dot="danger" %}{% endif %}
                 <div class="engine-row">
                     <span class="dot {% if sidebar.running %}warn{% else %}muted{% endif %}" aria-hidden="true"></span>Workers<span class="engine-value{% if sidebar.running %} warn{% endif %}">{{ sidebar.running }}/{{ sidebar.workers }} busy</span>
                 </div>

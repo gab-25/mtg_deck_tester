@@ -240,7 +240,7 @@ class FakeForge:
             raise ForgeGameNotFound()
         return game
 
-    def health(self) -> dict:
+    def health(self, timeout: float = 0) -> dict:
         return {"status": "ready", "cards": 1}
 
     def create_game(self, fmt: str, seed: int, seats: list[dict]) -> dict:

@@ -125,3 +125,9 @@ def test_a_game_the_bridge_does_not_know_is_its_own_error(path, call):
     client, _ = _client({("GET", path): Response(404, {"detail": "no such game"})})
     with pytest.raises(forge.ForgeGameNotFound, match="no longer knows this game"):
         call(client)
+
+
+def test_health_reads_a_bridge_still_loading_its_cards():
+    client, session = _client({("GET", "/health"): Response(503, text="loading")})
+    assert client.health(timeout=2) == {"status": "loading"}
+    assert session.sent[0]["timeout"] == 2
