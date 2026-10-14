@@ -660,3 +660,36 @@ def test_picking_a_deck_keeps_the_chosen_opponents_of_its_format(client, user):
     assert 'hx-include="this, #opponents input[name=opponents]:checked"' in page
     part = client.get("/playtests/new/opponents", {"deck": tested.id, "opponents": [f"metagame:{meta.id}", f"metagame:{other.id}"]}).content.decode()
     assert _checked(part) == [f"metagame:{meta.id}"]
+
+
+@pytest.mark.django_db
+def test_each_match_of_a_session_is_queued_for_the_worker(client, user, fake_forge, monkeypatch):
+    from playtest import tasks
+
+    queued = []
+    monkeypatch.setattr(tasks.run_match_task, "delay", queued.append)
+    decks = [make_deck(user, name=f"Deck {i}", fmt="duel") for i in range(3)]
+    assert client.post("/playtests/create", _form("duel", decks)).status_code == 302
+    playtest = Playtest.objects.get(owner=user)
+    assert sorted(queued) == sorted(str(m.id) for m in playtest.matches.all())
+    # The games started on the bridge; the worker follows them.
+    assert set(playtest.matches.values_list("status", flat=True)) == {Match.Status.PENDING}
+    assert all(playtest.matches.values_list("forge_game_id", flat=True))
+
+
+@pytest.mark.django_db
+def test_a_session_the_broker_cannot_queue_leaves_nothing_behind(client, user, fake_forge, monkeypatch):
+    from kombu.exceptions import OperationalError
+
+    from playtest import tasks
+
+    def down(*args, **kwargs):
+        raise OperationalError("Error 111 connecting to localhost:6379. Connection refused.")
+
+    monkeypatch.setattr(tasks.run_match_task, "delay", down)
+    decks = [make_deck(user, name=f"Deck {i}", fmt="duel") for i in range(3)]
+    response = client.post("/playtests/create", _form("duel", decks))
+    assert response.status_code == 503
+    assert b"The playtest could not be queued" in response.content
+    assert not Playtest.objects.exists() and not Match.objects.exists()
+    assert {g.status for g in fake_forge.games.values()} == {"aborted"}
