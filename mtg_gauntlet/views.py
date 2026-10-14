@@ -10,9 +10,9 @@ from django.views.decorators.http import require_http_methods
 from decks.formats import FORMATS
 from decks.models import Deck, MetagameDeck
 from decks.presentation import deck_pips
-from playtest import forge
+from playtest import forge, workers
 from playtest.agents import typesafe
-from playtest.models import Playtest
+from playtest.models import Match, Playtest
 from playtest.stats import needs_attention, record
 from playtest.views import session_view
 
@@ -117,3 +117,11 @@ def jev_status(request):
     """The sidebar's Jev row: the OpenRouter key's state, loaded apart and polled by HTMX."""
     status = cache.get_or_set("jev_status", typesafe.key_status, JEV_STATUS_TTL)
     return render(request, "partials/jev_status.html", {"status": status, "dot": JEV_STATES[status]})
+
+
+@login_required
+@require_http_methods(["GET"])
+def workers_status(request):
+    """The sidebar's Workers row: the user's running matches over the workers, polled by HTMX."""
+    running = Match.objects.filter(owner=request.user, status=Match.Status.RUNNING).count()
+    return render(request, "partials/workers_status.html", {"running": running, "workers": workers.worker_count()})

@@ -163,3 +163,17 @@ def test_the_jev_status_is_cached(jev_status):
     jev_status("ready")
     assert ">ready<" in jev_status("invalid key")
     assert jev_status.calls == ["ready"]
+
+
+@pytest.mark.django_db
+def test_the_workers_row_reloads_my_running_matches(client, django_user_model, monkeypatch):
+    monkeypatch.setenv("FORGE_WORKERS", "4")
+    user = django_user_model.objects.create_user(username="u")
+    client.force_login(user)
+    make_match(django_user_model.objects.create_user(username="other"), status=Match.Status.RUNNING)
+    page = client.get("/decks").content.decode()
+    assert 'hx-get="/engine/workers"' in page and ">0/4 busy<" in page
+    make_match(user, status=Match.Status.RUNNING)
+    make_match(user, status=Match.Status.FINISHED)
+    row = client.get("/engine/workers").content.decode()
+    assert ">1/4 busy<" in row and 'class="dot warn"' in row and 'hx-trigger="every 10s"' in row

@@ -120,6 +120,8 @@ else's row. Login is required everywhere except the login page.
   Jev row does the same (`/engine/jev`, every 5 minutes, cached 60s) with
   OpenRouter's `/api/v1/key`, which spends no credit: it tells whether the key works
   and has credit left, not whether Jev itself answers. Without a key it asks nothing.
+  The Workers row (the user's running matches over `FORGE_WORKERS`) reloads from
+  `/engine/workers` every 10s, as a session's matches start and end.
   Pages put their breadcrumb in `{% block breadcrumb %}`; tabs are links with
   `?tab=` (deck: results/cards/list, match: summary/log).
 - Routes: `/decks/<id>`, `/playtests`, `/playtests/new?deck=&opponents=&format=`,
