@@ -11,17 +11,21 @@ from decks.formats import FORMATS
 from decks.models import Deck, MetagameDeck
 from decks.presentation import deck_pips
 from playtest import forge
+from playtest.agents import typesafe
 from playtest.models import Playtest
 from playtest.stats import needs_attention, record
 from playtest.views import session_view
 
 RECENT = 5
-# The sidebar asks the bridge's health on every page: a short timeout, and a
-# cached answer, so a bridge that is down never slows the pages down.
+# The sidebar's engine rows load apart from the page, each asking its service
+# with a short timeout and caching the answer, so a service that is down never
+# slows the pages down. The OpenRouter key changes rarely: asked less often.
 FORGE_HEALTH_TIMEOUT = 2
 FORGE_STATUS_TTL = 10
-# The bridge's health state -> the sidebar's dot and label.
+JEV_STATUS_TTL = 60
+# Each state -> the sidebar's dot and label colour.
 FORGE_STATES = {"online": "ok", "loading": "warn", "offline": "danger"}
+JEV_STATES = {"ready": "ok", "no credit": "warn", "invalid key": "danger", "unreachable": "danger", "no API key": "danger"}
 
 
 def _playtests(user):
@@ -85,17 +89,17 @@ def home_running(request):
     return render(request, "partials/running_now.html", {"running": _running(_playtests(request.user))})
 
 
-def _forge_status() -> str:
+def _forge_health() -> str:
     """"online", "loading" (Forge still reads its cards) or "offline"."""
-    status = cache.get("forge_status")
-    if status is None:
-        try:
-            health = forge.client().health(timeout=FORGE_HEALTH_TIMEOUT)
-            status = "online" if health.get("status") == "ready" else "loading"
-        except forge.ForgeError:
-            status = "offline"
-        cache.set("forge_status", status, FORGE_STATUS_TTL)
-    return status
+    try:
+        health = forge.client().health(timeout=FORGE_HEALTH_TIMEOUT)
+    except forge.ForgeError:
+        return "offline"
+    return "online" if health.get("status") == "ready" else "loading"
+
+
+def _forge_status() -> str:
+    return cache.get_or_set("forge_status", _forge_health, FORGE_STATUS_TTL)
 
 
 @login_required
@@ -105,3 +109,11 @@ def forge_status(request):
     status = _forge_status()
     context = {"forge_url": forge.base_url(), "status": status, "dot": FORGE_STATES[status]}
     return render(request, "partials/forge_status.html", context)
+
+
+@login_required
+@require_http_methods(["GET"])
+def jev_status(request):
+    """The sidebar's Jev row: the OpenRouter key's state, loaded apart and polled by HTMX."""
+    status = cache.get_or_set("jev_status", typesafe.key_status, JEV_STATUS_TTL)
+    return render(request, "partials/jev_status.html", {"status": status, "dot": JEV_STATES[status]})

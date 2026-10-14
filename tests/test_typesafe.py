@@ -95,3 +95,37 @@ def test_read_choice_refuses_an_option_that_was_not_offered():
 def test_a_choice_has_at_most_255_options():
     with pytest.raises(ValueError):
         typesafe.choice("?", {str(i): "x" for i in range(256)})
+
+
+@pytest.mark.parametrize(
+    "response, status",
+    [
+        (Response(200, payload={"data": {"limit": None, "limit_remaining": None, "usage": 3}}), "ready"),
+        (Response(200, payload={"data": {"limit": 10, "limit_remaining": 4.5}}), "ready"),
+        (Response(200, payload={"data": {"limit": 10, "limit_remaining": 0}}), "no credit"),
+        (Response(402, text="pay"), "no credit"),
+        (Response(401, text="bad key"), "invalid key"),
+        (Response(500, text="down"), "unreachable"),
+        (Response(200, payload={"nope": 1}), "unreachable"),
+    ],
+)
+def test_key_status_reads_the_key_endpoint(monkeypatch, response, status):
+    calls = []
+
+    def fake_get(url, headers, timeout):
+        calls.append((url, headers["Authorization"], timeout))
+        return response
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    assert typesafe.key_status("k") == status
+    assert calls == [(typesafe.KEY_URL, "Bearer k", typesafe.STATUS_TIMEOUT)]
+
+
+def test_key_status_without_a_key_or_network(monkeypatch):
+    def offline(*args, **kwargs):
+        raise requests.ConnectionError("offline")
+
+    monkeypatch.setattr(requests, "get", offline)
+    assert typesafe.key_status("k") == "unreachable"
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    assert typesafe.key_status() == "no API key"

@@ -19,6 +19,8 @@ import requests
 logger = logging.getLogger(__name__)
 
 API_URL = "https://openrouter.ai/api/v1/systemone"
+# The key's own state (validity, credit left): asking it spends no credit.
+KEY_URL = "https://openrouter.ai/api/v1/key"
 
 # Every Jev seat uses this alias, which follows Jev releases; the response
 # names the exact version.
@@ -26,6 +28,8 @@ MODEL = "~typesafe/jev-latest"
 
 # A match runs in a background thread: never wait forever on one request.
 REQUEST_TIMEOUT = 30
+# The sidebar asks the key's state: it waits for it less.
+STATUS_TIMEOUT = 5
 
 # Rate limited (429) or overloaded (529): retried with exponential backoff.
 RETRY_STATUSES = {429, 529}
@@ -47,6 +51,33 @@ class TypeSafeError(Exception):
 
 def api_key() -> str | None:
     return os.environ.get("OPENROUTER_API_KEY") or None
+
+
+def key_status(key: str | None = None) -> str:
+    """The OpenRouter key's state, from ``KEY_URL``: "ready", "no credit",
+    "invalid key", "unreachable", or "no API key" (then nothing is asked).
+
+    It says whether the key works, not whether Jev itself answers: only a
+    paid call to the model would tell.
+    """
+    key = key or api_key()
+    if not key:
+        return "no API key"
+    try:
+        response = requests.get(KEY_URL, headers={"Authorization": f"Bearer {key}"}, timeout=STATUS_TIMEOUT)
+    except requests.RequestException:
+        return "unreachable"
+    if response.status_code in (401, 403):
+        return "invalid key"
+    if response.status_code == 402:
+        return "no credit"
+    if not 200 <= response.status_code < 300:
+        return "unreachable"
+    try:
+        remaining = response.json()["data"]["limit_remaining"]
+    except (ValueError, LookupError, TypeError):
+        return "unreachable"
+    return "no credit" if remaining is not None and remaining <= 0 else "ready"
 
 
 def choice(instructions, criteria: dict) -> dict:
