@@ -322,19 +322,45 @@ def log_rows(events, names: dict[int, str]) -> list[dict]:
     return rows
 
 
-def _live_context(match) -> dict:
-    seats = list(match.seats.all())
+# The match page's tabs (``?tab=``) and the log's filters (``?show=``).
+MATCH_TABS = ("summary", "log")
+LOG_FILTERS = ("all", "key", "fallbacks")
+
+
+def _shown(rows, show: str) -> list[dict]:
+    """The log rows a filter keeps: key moments are turns and the outcome."""
+    if show == "key":
+        return [row for row in rows if row.get("headline") or row["kind"] == "game_over"]
+    if show == "fallbacks":
+        return [row for row in rows if row["kind"] == "fallback"]
+    return rows
+
+
+def _live_context(match, tab="summary", show="all") -> dict:
+    tab = tab if tab in MATCH_TABS else "summary"
+    show = show if show in LOG_FILTERS else "all"
+    seats = list(match.seats.select_related("metagame_deck"))
     summary = match.summary or {}
     by_seat = {s["seat"]: s for s in summary.get("seats", [])}
     events = list(match.events.all())
+    siblings = list(match.playtest.matches.order_by("seed").values_list("id", "seed"))
+    later = [match_id for match_id, seed in siblings if seed > match.seed]
+    opponent = next((seat for seat in seats if seat.position == 1), None)
     return {
         "match": match,
+        "playtest": match.playtest,
         "seats": seats,
+        "opponent": opponent,
+        "sources": {seat.position: opponent_source(seat) for seat in seats},
         "event_count": len(events),
-        "log": log_rows(events, {seat.position: seat.deck_name for seat in seats}),
+        "log": _shown(log_rows(events, {seat.position: seat.deck_name for seat in seats}), show),
         "summary": summary,
         "seat_stats": [(seat, by_seat.get(seat.position)) for seat in seats],
         "jev_model": typesafe.MODEL,
+        "tab": tab,
+        "show": show,
+        "log_filters": (("all", "Everything"), ("key", "Key moments"), ("fallbacks", "Fallbacks to Forge AI")),
+        "next_match_id": later[0] if later else None,
     }
 
 
@@ -350,7 +376,8 @@ def _match_or_404(user, playtest_id, match_id) -> Match:
 @require_http_methods(["GET"])
 def match_detail(request, playtest_id, match_id):
     match = _match_or_404(request.user, playtest_id, match_id)
-    return render(request, "playtest/match_detail.html", _live_context(match))
+    context = _live_context(match, request.GET.get("tab", ""), request.GET.get("show", ""))
+    return render(request, "playtest/match_detail.html", context)
 
 
 @login_required
@@ -358,7 +385,8 @@ def match_detail(request, playtest_id, match_id):
 def match_live(request, playtest_id, match_id):
     """The scoreboard and log region, polled by HTMX while the match runs."""
     match = _match_or_404(request.user, playtest_id, match_id)
-    return render(request, "playtest/partials/match_live.html", _live_context(match))
+    context = _live_context(match, request.GET.get("tab", ""), request.GET.get("show", ""))
+    return render(request, "playtest/partials/match_live.html", context)
 
 
 def _abort(match) -> None:

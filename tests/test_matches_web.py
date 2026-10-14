@@ -81,8 +81,9 @@ def test_a_deck_is_tested_against_each_opponent(client, user, fake_forge):
     # Every match ended: the session no longer polls.
     assert b"hx-trigger" not in client.get(f"/playtests/{playtest.id}/live").content
 
-    log = client.get(f"/playtests/{playtest.id}/matches/{matches[0].id}").content.decode()
-    assert "Game log" in log and "Turn 1 (Deck 0)" in log and "Back to the playtest" in log
+    log = client.get(f"/playtests/{playtest.id}/matches/{matches[0].id}?tab=log").content.decode()
+    assert "Game log" in log and "Turn 1 (Deck 0)" in log
+    assert f'href="/playtests/{playtest.id}"' in log.split('aria-label="Breadcrumb"', 1)[1]
     # Every step of every turn stays out of the page.
     assert "{T}: Add {R}" not in log
 
@@ -276,7 +277,7 @@ def test_the_log_shows_confidence_fallback_reasons_and_folds_forge_ai_decisions(
     ]
     for seq, (kind, seat, text, payload) in enumerate(rows):
         MatchEvent.objects.create(match=match, seq=seq, turn=1, seat_position=seat, kind=kind, text=text, payload=payload)
-    page = client.get(f"/playtests/{match.playtest_id}/matches/{match.id}").content.decode()
+    page = client.get(f"/playtests/{match.playtest_id}/matches/{match.id}?tab=log").content.decode()
     assert "0.82" in page and "runner-up: Pass priority" in page
     assert "low_confidence" in page and "Jev leaned to: Attack with Bear" in page
     assert "timeout" in page
@@ -417,13 +418,13 @@ def test_a_jev_match_on_the_fake_bridge_shows_confidence_and_low_confidence_fall
     decks = [make_deck(user, name=f"Deck {i}", fmt="duel") for i in range(2)]
     client.post("/playtests/create", _form("duel", decks))
     match = Match.objects.get(owner=user)
-    page = client.get(f"/playtests/{match.playtest_id}/matches/{match.id}").content.decode()
+    page = client.get(f"/playtests/{match.playtest_id}/matches/{match.id}?tab=log").content.decode()
     assert "0.90" in page and "runner-up:" in page
 
     monkeypatch.setattr(typesafe, "system_one", StubJev(confidence=0.05))
     client.post("/playtests/create", _form("duel", decks))
     unsure = Match.objects.exclude(pk=match.pk).get()
-    page = client.get(f"/playtests/{unsure.playtest_id}/matches/{unsure.id}").content.decode()
+    page = client.get(f"/playtests/{unsure.playtest_id}/matches/{unsure.id}?tab=log").content.decode()
     assert "decided by Forge AI (delegate)" in page and "low_confidence" in page and "Jev leaned to:" in page
 
 
@@ -612,3 +613,28 @@ def test_a_playtest_of_a_deleted_deck_still_renders(client, user):
     page = client.get(f"/playtests/{playtest.id}").content.decode()
     assert "Gone" in page and "Run again" not in page and "Removed deck" in page
     assert f'href="/playtests"' in page.split('aria-label="Breadcrumb"', 1)[1]
+
+
+@pytest.mark.django_db
+def test_the_match_page_has_summary_and_log_tabs_and_a_next_match(client, user):
+    playtest = make_playtest(user)
+    first = make_match(user, playtest=playtest, seed=1, status="finished")
+    second = make_match(user, playtest=playtest, seed=2)
+    page = client.get(f"/playtests/{playtest.id}/matches/{first.id}").content.decode()
+    assert 'href="?tab=log"' in page and 'class="tab is-active" aria-current="page"' in page
+    assert f'href="/playtests/{playtest.id}/matches/{second.id}"' in page and "Next match" in page
+    assert "Next match" not in client.get(f"/playtests/{playtest.id}/matches/{second.id}").content.decode()
+
+
+@pytest.mark.django_db
+def test_the_log_filters_key_moments_and_fallbacks(client, user):
+    match, MatchEvent = _finished(user)
+    MatchEvent.objects.create(match=match, seq=0, turn=1, kind="log", text="Turn 1 (Deck 0)", payload={"type": "TURN"})
+    MatchEvent.objects.create(match=match, seq=1, turn=1, seat_position=0, kind="decision", text="attack: X", payload={"confidence": 0.9})
+    MatchEvent.objects.create(match=match, seq=2, turn=1, seat_position=0, kind="fallback", text="block: decided by Forge AI (timeout)", payload={"reason": "timeout"})
+    base = f"/playtests/{match.playtest_id}/matches/{match.id}?tab=log"
+    fallbacks = client.get(base + "&show=fallbacks").content.decode()
+    assert "decided by Forge AI (timeout)" in fallbacks and "attack: X" not in fallbacks
+    key = client.get(base + "&show=key").content.decode()
+    assert "Turn 1 (Deck 0)" in key and "attack: X" not in key
+    assert "attack: X" in client.get(base + "&show=nope").content.decode()
