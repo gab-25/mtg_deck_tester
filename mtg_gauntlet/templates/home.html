@@ -25,7 +25,7 @@
             {% if deck_rows %}
             <div class="table-scroll">
                 <table class="data-table">
-                    <thead><tr><th>Deck</th><th>Format</th><th>W–L–D</th><th>Win rate</th><th>Last test</th></tr></thead>
+                    <thead><tr><th>Deck</th><th>Format</th><th>W–L–D</th><th>Win rate</th><th>Last test</th><th><span class="sr-only">Open</span></th></tr></thead>
                     <tbody>
                         {% for row in deck_rows %}
                         <tr class="row-link">
@@ -39,6 +39,7 @@
                             <td class="num">{{ row.record.score }}</td>
                             <td>{% include "partials/meter.html" with value=row.record.win_rate %}</td>
                             <td class="muted">{% if row.last %}{{ row.last.created_at|timesince }} ago{% else %}never{% endif %}</td>
+                            <td class="cell-icon"><span translate="no" class="ms" aria-hidden="true">chevron_right</span></td>
                         </tr>
                         {% endfor %}
                     </tbody>

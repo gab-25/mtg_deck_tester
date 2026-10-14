@@ -8,7 +8,7 @@ trigger and polling stops.
     {% if decks %}
     <div class="table-scroll">
         <table class="data-table">
-            <thead><tr><th>Deck</th><th>Format</th><th>Cards</th><th>Forge</th><th>W–L–D</th><th>Win rate</th></tr></thead>
+            <thead><tr><th>Deck</th><th>Format</th><th>Cards</th><th>Forge</th><th>W–L–D</th><th>Win rate</th><th><span class="sr-only">Open</span></th></tr></thead>
             <tbody>
                 {% for deck in decks %}
                 <tr{% if not deck.is_busy %} class="row-link"{% endif %}>
@@ -24,6 +24,7 @@ trigger and polling stops.
                     <td>{% include "decks/partials/status_badge.html" with deck=deck %}</td>
                     <td class="num">{{ deck.record.score }}</td>
                     <td>{% include "partials/meter.html" with value=deck.record.win_rate %}</td>
+                    <td class="cell-icon">{% if not deck.is_busy %}<span translate="no" class="ms" aria-hidden="true">chevron_right</span>{% endif %}</td>
                 </tr>
                 {% endfor %}
             </tbody>
