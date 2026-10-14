@@ -94,7 +94,7 @@ them on the match page.
 2. **The worker follows it.** `runner.run_match` (the Celery task `run_match_task`,
    on the worker) marks the match
    running and copies the bridge's events into `MatchEvent` rows as they arrive,
-   keeping `Match.turn` current. The bridge may be unreachable for up to a minute
+   keeping `Match.turn` and each seat's life current. The bridge may be unreachable for up to a minute
    (`MAX_OUTAGE_SECONDS`) before the match fails; a deleted match or a game past
    `MATCH_TIMEOUT` (3 hours) is aborted. When the bridge no longer knows the game (it
    restarted) the match fails at once. A match that fails for any reason aborts its

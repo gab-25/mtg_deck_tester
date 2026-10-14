@@ -43,6 +43,28 @@ def _by_prefix(text: str, names: list[tuple[str, int]], prefix: str = "") -> tup
     return None
 
 
+def names_by_length(seats: list) -> list[tuple[str, int]]:
+    """``(table name, position)`` of each seat, longest names first (see :func:`_by_prefix`)."""
+    return sorted(((name, seat.position) for name, seat in zip(table_names(seats), seats)), key=lambda x: -len(x[0]))
+
+
+def life_change(text: str, names: list[tuple[str, int]]) -> tuple[int, int] | None:
+    """``(seat, new life)`` of a ``Life: Green 20 > 17`` log line."""
+    found = _by_prefix(text, names, "Life: ")
+    change = LIFE_CHANGE.search(text)
+    return (found[0], int(change.group(2))) if found and change else None
+
+
+def current_lives(events, seats: list) -> dict[int, int]:
+    """Each seat's life after ``events``, for the seats whose life changed in them."""
+    names = names_by_length(seats)
+    lives = {}
+    for _, kind, _, text, payload in map(event_row, events):
+        if kind == "log" and payload.get("type") == "LIFE" and (change := life_change(text, names)):
+            lives[change[0]] = change[1]
+    return lives
+
+
 def fallback_executions(rows) -> set[int]:
     """The indexes of the ``forge_ai`` events that carry out a fallback.
 
@@ -78,7 +100,7 @@ def summarize_match(events, seats: list, fmt: str, game: dict) -> dict:
     """
     rows = [event_row(e) for e in events]
     names = table_names(seats)
-    by_length = sorted(((name, seat.position) for name, seat in zip(names, seats)), key=lambda x: -len(x[0]))
+    by_length = names_by_length(seats)
     starting = FORMATS[fmt].starting_life
     winner = game.get("winner")
     turns = max([game.get("turn") or 0] + [turn for turn, *_ in rows])
@@ -124,10 +146,9 @@ def summarize_match(events, seats: list, fmt: str, game: dict) -> dict:
         if kind == "log":
             category = payload.get("type")
             if category == "LIFE":
-                found = _by_prefix(text, by_length, "Life: ")
-                change = LIFE_CHANGE.search(text)
-                if found and change:
-                    life[found[0]] = int(change.group(2))
+                change = life_change(text, by_length)
+                if change:
+                    life[change[0]] = change[1]
             elif category == "TURN":
                 line = TURN_LINE.match(text)
                 active = next((s for n, s in by_length if line and n == line.group(2)), None)
