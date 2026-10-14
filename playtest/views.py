@@ -116,7 +116,8 @@ def _form_context(user, data, preset_top=False, **extra) -> dict:
     ]
     mine = [(str(d.id), d) for d in decks if d.format == fmt]
     chosen = set(data.getlist("opponents")) if hasattr(data, "getlist") else set(data.get("opponents", []))
-    if preset_top and deck is None and not chosen:
+    # Only ?format= alone (the metagame page's "Test my deck against these").
+    if preset_top and "deck" not in data and data.get("format") and not chosen:
         chosen = {value for value, _ in metagame[:TOP_METAGAME]}
     chosen &= {value for value, _ in metagame + mine}
     refused = [obj.archetype for value, obj in metagame if value in chosen and obj.unknown_cards]

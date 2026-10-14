@@ -27,7 +27,7 @@
                 {% for deck in decks %}
                 <label class="choice">
                     <input type="radio" name="deck" value="{{ deck.id }}"{% if deck == form_deck %} checked{% endif %}
-                        hx-get="{% url 'new_playtest_opponents' %}" hx-target="#opponents" hx-swap="outerHTML" hx-include="this" />
+                        hx-get="{% url 'new_playtest_opponents' %}" hx-target="#opponents" hx-swap="outerHTML" hx-include="this, #opponents input[name=opponents]:checked" />
                     <span class="pips" aria-hidden="true">{% for pip in deck.pips %}<span class="pip" style="background:{{ pip.hex }}"></span>{% endfor %}</span>
                     <span class="choice-main"><span translate="no" class="choice-name">{{ deck.name }}</span><span class="choice-meta">{{ deck.get_format_display }}</span></span>
                     <span class="choice-end">{% include "decks/partials/forge_badge.html" with deck=deck %}</span>

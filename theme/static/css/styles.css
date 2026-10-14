@@ -728,7 +728,8 @@ button.card-row:hover { background: var(--line-soft); }
 /* 13. Overlays ------------------------------------------------------------ */
 
 .modal-root { display: inline-flex; }
-.modal-toggle { position: absolute; opacity: 0; pointer-events: none; }
+.modal-toggle { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.modal-toggle:focus-visible + label { outline: 2px solid var(--accent-soft); outline-offset: 2px; }
 .modal-backdrop {
   position: fixed;
   inset: 0;

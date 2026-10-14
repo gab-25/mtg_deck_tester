@@ -330,3 +330,11 @@ def test_the_metagame_page_shows_one_format_at_a_time(client):
     assert 'aria-current="page" href="?format=pioneer"' in page
     # An unknown format falls back to the first one with decks, in registry order.
     assert "Rakdos Midrange" in client.get("/metagame?format=nope").content.decode()
+
+
+@pytest.mark.django_db
+def test_the_delete_confirmation_opens_from_the_keyboard(client, user):
+    page = client.get(f"/decks/{make_deck(user).id}").content.decode()
+    toggle = page.split('class="modal-toggle"', 1)[0].rsplit("<input", 1)[1] + page.split('class="modal-toggle"', 1)[1].split(">", 1)[0]
+    # The hidden checkbox is what Space toggles: it must stay in the tab order.
+    assert 'tabindex="-1"' not in toggle and "aria-hidden" not in toggle

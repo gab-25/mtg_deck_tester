@@ -15,8 +15,9 @@ Params:
   danger        truthy to make the confirm button the danger one
 {% endcomment %}
 <div class="modal-root">
-    <input type="checkbox" id="{{ id }}" class="modal-toggle" aria-hidden="true" tabindex="-1" />
-    <label for="{{ id }}" class="{{ trigger_class|default:'btn btn-danger' }}" tabindex="0" role="button"
+    {# Focusable on purpose: Space on the checkbox opens the modal from the keyboard. #}
+    <input type="checkbox" id="{{ id }}" class="modal-toggle" aria-haspopup="dialog" {% if trigger_title %}aria-label="{{ trigger_title }}"{% elif trigger_label %}aria-label="{{ trigger_label }}"{% endif %} />
+    <label for="{{ id }}" class="{{ trigger_class|default:'btn btn-danger' }}"
         {% if trigger_title %}title="{{ trigger_title }}" aria-label="{{ trigger_title }}"{% endif %}>
         {% if trigger_icon %}<span translate="no" class="ms ms-sm">{{ trigger_icon }}</span>{% endif %}
         {% if trigger_label %}{{ trigger_label }}{% endif %}

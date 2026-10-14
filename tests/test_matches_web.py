@@ -638,3 +638,25 @@ def test_the_log_filters_key_moments_and_fallbacks(client, user):
     key = client.get(base + "&show=key").content.decode()
     assert "Turn 1 (Deck 0)" in key and "attack: X" not in key
     assert "attack: X" in client.get(base + "&show=nope").content.decode()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("query", ["", "?deck=junk", "?deck=00000000-0000-0000-0000-000000000000"])
+def test_only_a_format_alone_preselects_the_metagame(client, query):
+    from playtest.forms import DEFAULT_MATCH_FORMAT
+
+    _metagame(DEFAULT_MATCH_FORMAT, archetype="Top Deck", rank=1)
+    assert _checked(client.get(f"/playtests/new{query}").content.decode()) == []
+
+
+@pytest.mark.django_db
+def test_picking_a_deck_keeps_the_chosen_opponents_of_its_format(client, user):
+    from .factories import make_constructed_deck
+
+    tested = make_constructed_deck(user)
+    meta = _metagame("modern", archetype="Amulet Titan", rank=1)
+    other = _metagame("pauper", archetype="Faeries", rank=1)
+    page = client.get("/playtests/new?format=modern").content.decode()
+    assert 'hx-include="this, #opponents input[name=opponents]:checked"' in page
+    part = client.get("/playtests/new/opponents", {"deck": tested.id, "opponents": [f"metagame:{meta.id}", f"metagame:{other.id}"]}).content.decode()
+    assert _checked(part) == [f"metagame:{meta.id}"]
