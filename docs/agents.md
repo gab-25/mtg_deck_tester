@@ -113,6 +113,29 @@ the match ends (or fails) the runner settles the others as `done` or `delegated`
 A trace that cannot be stored is logged and skipped: it never costs the decision.
 A trace takes a few KB. Matches played before traces existed have none.
 
+## Decision checks
+
+When a match ends, `playtest/checks.py` runs deterministic checks over its traces —
+pure functions, no model, like the summary — and flags the decisions that deserve a
+look. Only decisions the agent took itself are checked. The checks read the bridge's
+option labels and Forge's facts; they never compute a rule.
+
+| Check | Flags |
+|---|---|
+| `no_effect` | a play Forge did not carry out (the trace's outcome) |
+| `pass_with_plays` | "Pass priority" in your own second main phase, empty stack, with a `Cast …` option offered |
+| `land_not_played` | the last "Pass priority" of your turn in a main phase, empty stack, no land played this turn, a `Play …` option offered, and no land played later that turn |
+| `ignored_lethal` | "Done" attacking while an attack is `lethal if unblocked`; "Done" blocking while the prompt's unblocked damage is at least your life |
+| `bad_attack` | an attack whose facts say `dies if blocked by: …` and which is not lethal |
+| `mulligan_keep` | keeping seven cards with at most 1 or at least 6 lands (`MULLIGAN_LANDS` per format, `DEFAULT_MULLIGAN_LANDS = (1, 6)`) |
+
+A flag means "look at this", not "this was wrong": the bridge says which blockers kill
+an attacker, not whether they die too, so `bad_attack` cannot tell a bad attack from
+an even trade. Each flag is stored on the trace (`flags: [{check, reason}]`), counted
+per seat in `Match.summary` (`seats[].flags`, absent for a seat without traces, shown as
+"Flagged decisions" on the match page), and summed for the deck under test on the
+playtest page.
+
 ## Jev client
 
 `playtest/agents/typesafe.py` — `system_one(state, questions, *, model=None, key=None, sleep=time.sleep)`

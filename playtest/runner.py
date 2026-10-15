@@ -24,6 +24,7 @@ from mtg_gauntlet.logging_context import job_log_context
 
 from . import forge, workers
 from .models import DecisionTrace, Match, MatchEvent, Seat
+from .checks import check_match, trace_stats
 from .summary import current_lives, summarize_match, table_names
 
 logger = logging.getLogger(__name__)
@@ -211,11 +212,24 @@ def _fail(match_id, error: str, client=None, game_id: str = "") -> None:
             logger.warning("Could not abort game %s: %s", game_id, exc)
 
 
-def _finish(match: Match, game: dict) -> None:
+def _analyse(match: Match) -> dict[int, dict]:
+    """Settles the match's traces, flags the suspicious ones (:mod:`.checks`); returns each seat's trace stats."""
     settle_traces(match.pk)
+    traces = list(match.traces.all())
+    flags = check_match(traces, match.format)
+    for trace in traces:
+        trace.flags = flags.get(trace.id, [])
+    DecisionTrace.objects.bulk_update(traces, ["flags"])
+    return trace_stats(traces)
+
+
+def _finish(match: Match, game: dict) -> None:
+    traced = _analyse(match)
     seats = list(match.seats.all())
     events = list(match.events.all())
     summary = summarize_match(events, seats, match.format, game)
+    for seat in summary["seats"]:
+        seat.update(traced.get(seat["seat"], {}))
     status = game["status"]
     error = ""
     if status == "failed":

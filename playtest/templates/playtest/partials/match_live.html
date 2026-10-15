@@ -92,6 +92,7 @@ the trigger and polling stops.
                     <tr><td>Confidence</td>{% for seat, stats in seat_stats %}<td class="num">{% if stats.confidence.rated %}median {{ stats.confidence.median|floatformat:2 }} · {{ stats.confidence.low }} low{% else %}—{% endif %}</td>{% endfor %}</tr>
                     <tr><td>Fallbacks</td>{% for seat, stats in seat_stats %}<td class="num">{% for reason, count in stats.fallbacks.items %}{{ count }} {{ reason }}{% if not forloop.last %} · {% endif %}{% empty %}none{% endfor %}</td>{% endfor %}</tr>
                     <tr><td>Failed plays</td>{% for seat, stats in seat_stats %}<td class="num">{% if stats and 'failed_plays' in stats %}{{ stats.failed_plays }}{% else %}—{% endif %}</td>{% endfor %}</tr>
+                    <tr><td>Flagged decisions</td>{% for seat, stats in seat_stats %}<td class="num">{% if stats and 'flags' in stats %}{% for check, count in stats.flags.items %}{{ count }} {{ check|flag_label }}{% if not forloop.last %} · {% endif %}{% empty %}none{% endfor %}{% else %}—{% endif %}</td>{% endfor %}</tr>
                     <tr><td>Life by turn</td>{% for seat, stats in seat_stats %}<td class="num">{{ summary.starting_life }}{% for life in stats.life_by_turn %} › {{ life }}{% endfor %}</td>{% endfor %}</tr>
                 </tbody>
             </table>

@@ -29,7 +29,7 @@ from .forms import (
 )
 from .models import Match, Playtest, Seat
 from .runner import start_game
-from .stats import opponent_source, record
+from .stats import flag_totals, opponent_source, record
 from .summary import event_row, fallback_executions, fallback_reason
 from .tasks import run_match_task
 
@@ -300,6 +300,7 @@ def _playtest_context(playtest) -> dict:
         "session": session,
         "playtest": playtest,
         "record": record(playtest.matches.all()),
+        "flag_totals": flag_totals(playtest.matches.all()),
         "done": done,
         "total": len(session["rows"]),
         "playing": sum(row["result"] == "running" for row in session["rows"]),

@@ -87,3 +87,13 @@ def test_needs_attention_lists_unchecked_unknown_importing_and_stale(user):
     assert "Slow is still importing" in titles and "Broken could not be imported" in titles
     assert "Modern metagame is 9 days old" in titles
     assert not any("Fine" in t or "Pioneer" in t for t in titles)
+
+
+@pytest.mark.django_db
+def test_flag_totals_add_up_seat_zero_of_finished_matches(django_user_model):
+    user = django_user_model.objects.create_user(username="f")
+    playtest = make_playtest(user)
+    for flags, status in (({"no_effect": 2}, "finished"), ({"no_effect": 1, "bad_attack": 1}, "finished"), ({"no_effect": 9}, "failed")):
+        make_match(user, playtest=playtest, status=status,
+                   summary={"seats": [{"seat": 0, "flags": flags}, {"seat": 1, "flags": {"no_effect": 5}}]})
+    assert stats.flag_totals(playtest.matches.all()) == {"bad_attack": 1, "no_effect": 3}

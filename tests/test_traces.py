@@ -111,3 +111,21 @@ def test_a_trace_that_cannot_be_stored_does_not_cost_the_decision(user, fake_for
     assert match.status == Match.Status.FINISHED, match.error
     assert match.events.filter(kind="decision").exists() and not match.traces.exists()
     assert all("trace" not in a["meta"] for a in fake_forge.answers)
+
+
+@pytest.mark.django_db
+def test_the_checks_run_when_the_match_ends(user, fake_forge, jev):
+    fake_forge.failing_cast = True
+    match = _played(user)
+    flagged = list(match.traces.exclude(flags=[]))
+    assert flagged and all(flag["reason"] for t in flagged for flag in t.flags)
+    assert {flag["check"] for t in flagged for flag in t.flags} >= {"no_effect"}
+    total = sum(sum(seat["flags"].values()) for seat in match.summary["seats"])
+    assert total == sum(len(t.flags) for t in flagged)
+
+
+@pytest.mark.django_db
+def test_a_match_without_traces_has_no_flags_in_its_summary(user, fake_forge, jev, monkeypatch):
+    monkeypatch.setenv("MAX_AGENT_CALLS", "0")
+    match = _played(user)
+    assert all("flags" not in seat for seat in match.summary["seats"])

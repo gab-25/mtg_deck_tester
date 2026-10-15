@@ -188,7 +188,7 @@ class FakeGame:
             ])
             if attack:
                 self.phase = "COMBAT_DECLARE_BLOCKERS"
-                block = yield from self._ask(other, "block", f"Declare blockers (your life {self.life[other]})", [
+                block = yield from self._ask(other, "block", f"Declare blockers (unblocked attackers deal 3, your life {self.life[other]})", [
                     ("Done (no more blockers)", []),
                     ("Block Bear with Wall", ["your blocker survives"]),
                 ])

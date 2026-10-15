@@ -70,6 +70,17 @@ def record(matches) -> Record:
     return result
 
 
+def flag_totals(matches) -> dict[str, int]:
+    """The deck under test's flagged decisions (playtest.checks), by check, over the finished matches."""
+    totals: dict[str, int] = {}
+    for match in matches:
+        if match.result not in RESULTS:
+            continue
+        for check, count in (_seat_zero(match).get("flags") or {}).items():
+            totals[check] = totals.get(check, 0) + count
+    return dict(sorted(totals.items()))
+
+
 def opponent_source(seat) -> str:
     """Where an opponent comes from: the metagame, the user's decks, or a deck since deleted."""
     if seat.metagame_deck_id and seat.metagame_deck is not None:
