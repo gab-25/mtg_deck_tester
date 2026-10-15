@@ -103,3 +103,14 @@ def test_trace_stats_counts_each_seats_flags():
     a.flags = [{"check": "no_effect", "reason": ""}]
     b.flags = [{"check": "no_effect", "reason": ""}, {"check": "bad_attack", "reason": ""}]
     assert trace_stats([a, b, c]) == {0: {"flags": {"bad_attack": 1, "no_effect": 2}}, 1: {"flags": {}}}
+
+
+def test_trace_stats_reports_agreement_with_forge_ai():
+    a = trace(kind="attack", choice=1)
+    a.forge_ai_choice = 1
+    b = trace(kind="priority", choice=0)
+    b.forge_ai_choice = 2
+    c = trace(kind="priority", choice=None)
+    c.forge_ai_choice = 2
+    stats = trace_stats([a, b, c])
+    assert stats[0]["agreement"] == {"rated": 2, "agree": 1, "by_kind": {"attack": [1, 1], "priority": [1, 0]}}

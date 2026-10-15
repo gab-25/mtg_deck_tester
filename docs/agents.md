@@ -113,6 +113,12 @@ the match ends (or fails) the runner settles the others as `done` or `delegated`
 A trace that cannot be stored is logged and skipped: it never costs the decision.
 A trace takes a few KB. Matches played before traces existed have none.
 
+**Forge AI as a reference (#75).** When the bridge says which option Forge's AI would
+pick (`forge_ai_choice`, see [Forge](forge.md)), the trace keeps it, the summary reports
+per seat how often Jev agreed (`seats[].agreement`: `rated`, `agree`, `by_kind`, shown as
+"Agrees with Forge AI"), and the inspector offers a "Disagrees with Forge AI" filter. It
+is a reference, not a judge: Forge's AI is not assumed right.
+
 **Exporting.** `manage.py export_match <id> [--format jsonl|md] [--seat N] [--flagged]
 [--output PATH]` writes a match (to stdout by default): `jsonl`, one line per event with
 each decision's trace; `md`, a narration per turn with each decision's compact state,

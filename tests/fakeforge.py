@@ -125,6 +125,8 @@ class FakeGame:
             "view": self.view(seat),
             "options": [{"index": i, "label": label, "facts": facts} for i, (label, facts) in enumerate(options)],
         }
+        if self.fake.forge_ai_choice is not None:
+            decision["forge_ai_choice"] = self.fake.forge_ai_choice(decision)
         answer = yield decision
         if answer["choice"] is None:
             self._event("fallback", seat, f"{kind}: decided by Forge AI (delegate)", {"kind": kind, "reason": "delegate", **answer["meta"]})
@@ -232,8 +234,12 @@ class FakeForge:
     maps a card name to Forge's "unsupported" flag; ``failing_cast`` adds a
     priority option whose cast Forge never carries out."""
 
-    def __init__(self, *, unknown=(), unsupported=(), max_turns=12, starting_life=20, failing_cast=False):
+    def __init__(self, *, unknown=(), unsupported=(), max_turns=12, starting_life=20, failing_cast=False,
+                 forge_ai_choice=None):
         self.unknown = set(unknown)
+        # A function of the decision giving the option Forge's AI would pick (#75);
+        # None leaves it out of the lease, like today's bridge.
+        self.forge_ai_choice = forge_ai_choice
         # Offer a "Cast Stifle" that never happens, the same decision coming back.
         self.failing_cast = failing_cast
         self.unsupported = set(unsupported)

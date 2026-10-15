@@ -141,12 +141,24 @@ def check_match(traces, fmt: str) -> dict[int, list[dict]]:
 
 
 def trace_stats(traces) -> dict[int, dict]:
-    """Per seat with traces: ``{"flags": {check: count}}``, merged into the match summary."""
+    """Per seat with traces, merged into the match summary: ``{"flags": {check: count}}``
+    and, when the bridge said what Forge's AI would pick (#75), ``agreement``
+    (``rated``, ``agree``, and ``by_kind``: ``{kind: [rated, agree]}``)."""
     stats: dict[int, dict] = {}
     for trace in traces:
         seat = stats.setdefault(trace.seat_position, {"flags": {}})
         for flag in trace.flags or []:
             seat["flags"][flag["check"]] = seat["flags"].get(flag["check"], 0) + 1
+        if trace.choice is not None and trace.forge_ai_choice is not None:
+            agreement = seat.setdefault("agreement", {"rated": 0, "agree": 0, "by_kind": {}})
+            same = trace.choice == trace.forge_ai_choice
+            agreement["rated"] += 1
+            agreement["agree"] += same
+            kind = agreement["by_kind"].setdefault(trace.kind, [0, 0])
+            kind[0] += 1
+            kind[1] += same
     for seat in stats.values():
         seat["flags"] = dict(sorted(seat["flags"].items()))
+        if "agreement" in seat:
+            seat["agreement"]["by_kind"] = dict(sorted(seat["agreement"]["by_kind"].items()))
     return stats

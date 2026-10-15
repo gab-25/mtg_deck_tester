@@ -178,6 +178,14 @@ def _ask(match: Match, entry: SeatAgent, decision: dict, options: list[dict]) ->
     )
 
 
+def _forge_ai_choice(decision: dict) -> int | None:
+    """The option Forge's AI would pick, when the bridge says (#75): an offered index, else None."""
+    value = decision.get("forge_ai_choice")
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value if any(option["index"] == value for option in decision["options"]) else None
+
+
 def _record(match: Match, seat: Seat, decision: dict, answer: Decision) -> Decision:
     """Stores the trace of a decision the agent was asked (#72); the answer then carries its id.
 
@@ -206,6 +214,7 @@ def _record(match: Match, seat: Seat, decision: dict, answer: Decision) -> Decis
             fallback_reason=answer.fallback_reason,
             failed_play=answer.failed_play,
             model=answer.model[:128],
+            forge_ai_choice=_forge_ai_choice(decision),
         )
     except DatabaseError:
         logger.exception("Could not store the trace of decision %s", decision.get("decision_id"))

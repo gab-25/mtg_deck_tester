@@ -20,7 +20,7 @@ Forge's AI.
 | `GET` | `/games/{id}` | `status` (`queued`/`running`/`finished`/`failed`/`aborted`), `turn`, `winner` (a seat index), `end_reason`, `error` |
 | `GET` | `/games/{id}/events?since=N` | `{"events": [...], "next": M}` |
 | `DELETE` | `/games/{id}` | abort |
-| `GET` | `/decisions?wait=30&game=<id>` | the oldest pending decision of any game (or of `game`); 204 if none |
+| `GET` | `/decisions?wait=30&game=<id>` | the oldest pending decision of any game (or of `game`); 204 if none; may carry `forge_ai_choice` |
 | `POST` | `/decisions/{id}` | `{"choice": i}` or `{"delegate": true}`, with an optional `meta` stored on the event; 409 when the decision is no longer pending |
 
 A seat's `controller` is `external` (a worker answers its decisions) or `forge_ai`
@@ -32,7 +32,10 @@ every seat is `external`; `forge_ai` remains for older matches.
 filtered `view` (no hidden information) and up to 255 numbered `options`, each with a
 `label` and code-computed `facts` ("deals 2 damage if unblocked", "dies if blocked by:
 …"). Multi-selects (attackers, blockers, cards) come one pick at a time, option 0 being
-"Done". **Everything else is always Forge's AI**: mana payment, combat damage
+"Done". A decision may also carry `forge_ai_choice`, the option Forge's AI would pick,
+computed without playing it: optional, not sent by the bridge yet
+([mtg_forge_engine#6](https://github.com/gab-25/mtg_forge_engine/issues/6)); the worker
+keeps it in the decision trace only when it is an offered index. **Everything else is always Forge's AI**: mana payment, combat damage
 assignment, scry and the other choices the bridge does not expose; each is logged as a
 `forge_ai` event.
 

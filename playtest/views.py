@@ -7,6 +7,7 @@ from urllib.parse import urlencode
 
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
+from django.db.models import F
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -401,6 +402,7 @@ DECISION_FILTERS = (
     ("fallbacks", "Forge AI decided"),
     ("flagged", "Flagged"),
     ("no_effect", "No effect"),
+    ("disagree", "Disagrees with Forge AI"),
 )
 
 
@@ -415,6 +417,8 @@ def _decisions(match, seat: str = "", kind: str = "", only: str = "") -> list:
         traces = traces.filter(choice__isnull=True)
     elif only == "no_effect":
         traces = traces.filter(outcome=DecisionTrace.Outcome.NO_EFFECT)
+    elif only == "disagree":
+        traces = traces.filter(choice__isnull=False, forge_ai_choice__isnull=False).exclude(choice=F("forge_ai_choice"))
     traces = list(traces)
     if only == "flagged":
         traces = [trace for trace in traces if trace.flags]
@@ -439,7 +443,12 @@ def _decision_chips(match, filters: dict) -> dict:
     seats = [str(position + 1) for position in match.seats.values_list("position", flat=True)]
     kinds = sorted(set(match.traces.values_list("kind", flat=True)))
     return {
-        "only_chips": [(label, _filter_query(seat, kind, value), value == only) for value, label in DECISION_FILTERS],
+        "only_chips": [
+            (label, _filter_query(seat, kind, value), value == only)
+            for value, label in DECISION_FILTERS
+            # Only a bridge that says what Forge's AI would pick (#75) can disagree.
+            if value != "disagree" or value == only or match.traces.exclude(forge_ai_choice=None).exists()
+        ],
         "seat_chips": [(f"Seat {s}", _filter_query("" if s == seat else s, kind, only), s == seat) for s in seats],
         "kind_chips": [(k, _filter_query(seat, "" if k == kind else k, only), k == kind) for k in kinds],
     }

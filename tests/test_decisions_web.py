@@ -103,3 +103,19 @@ def test_someone_elses_trace_is_a_404(client, user, django_user_model):
     trace = _trace(theirs)
     assert client.get(_detail(theirs, trace)).status_code == 404
     assert client.get(f"/playtests/{mine.playtest_id}/matches/{mine.id}/decisions/{trace.id}").status_code == 404
+
+
+def test_the_disagree_filter(client, user):
+    match = make_match(user, status="finished")
+    _trace(match, forge_ai_choice=1)
+    _trace(match, forge_ai_choice=0, options=[{"index": 0, "label": "Pass priority", "facts": []}, {"index": 1, "label": "Play Mountain #9", "facts": []}])
+    page = client.get(_url(match, only="disagree")).content.decode()
+    assert "Play Mountain #9" in page and "Cast Shock #6" not in page
+
+
+def test_the_disagree_filter_is_offered_only_with_forge_ais_choices(client, user):
+    match = make_match(user, status="finished")
+    _trace(match)
+    assert "Disagrees with Forge AI" not in client.get(_url(match)).content.decode()
+    _trace(match, forge_ai_choice=0)
+    assert "Disagrees with Forge AI" in client.get(_url(match)).content.decode()

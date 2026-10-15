@@ -129,3 +129,24 @@ def test_a_match_without_traces_has_no_flags_in_its_summary(user, fake_forge, je
     monkeypatch.setenv("MAX_AGENT_CALLS", "0")
     match = _played(user)
     assert all("flags" not in seat for seat in match.summary["seats"])
+
+
+@pytest.mark.django_db
+def test_forge_ais_choice_from_the_lease_is_kept_and_compared(user, fake_forge, jev):
+    fake_forge.forge_ai_choice = lambda decision: 0
+    match = _played(user)
+    traces = list(match.traces.all())
+    assert traces and all(t.forge_ai_choice == 0 for t in traces)
+    agreement = match.summary["seats"][0]["agreement"]
+    rated = [t for t in traces if t.seat_position == 0 and t.choice is not None]
+    assert agreement["rated"] == len(rated)
+    assert agreement["agree"] == sum(t.choice == 0 for t in rated)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("value", [None, "1", 99, -1, True])
+def test_a_missing_or_bad_forge_ai_choice_is_ignored(user, fake_forge, jev, value):
+    fake_forge.forge_ai_choice = lambda decision: value
+    match = _played(user)
+    assert not match.traces.exclude(forge_ai_choice=None).exists()
+    assert all("agreement" not in seat for seat in match.summary["seats"])
