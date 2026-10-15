@@ -23,6 +23,9 @@ class Decision:
     confidence: float | None = None
     probabilities: tuple[tuple[str, float], ...] = ()
     model: str = ""
+    # The play the seat asked for just before, which Forge did not carry out:
+    # the same decision came back, and that option was left out of it.
+    failed_play: str = ""
 
     @property
     def delegate(self) -> bool:
@@ -43,6 +46,8 @@ class Decision:
             data["fallback_reason"] = self.fallback_reason
         if self.fallback_kind:
             data["fallback_kind"] = self.fallback_kind
+        if self.failed_play:
+            data["failed_play"] = self.failed_play
         return data
 
 

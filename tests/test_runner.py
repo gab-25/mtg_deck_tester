@@ -213,6 +213,25 @@ def test_an_agent_that_crashes_delegates(user, fake_forge, monkeypatch):
     assert all("agent error: bug" in e.payload["fallback_reason"] for e in match.events.filter(kind="fallback"))
 
 
+def test_a_play_forge_did_not_carry_out_is_not_offered_again(user, fake_forge, jev):
+    """#71: Jev prefers a "Cast Stifle" that never reaches the stack; the same
+    decision comes back, without it."""
+    fake_forge.failing_cast = True
+    match = _play(_match(user))
+    assert match.status == Match.Status.FINISHED, match.error
+    decisions = list(match.events.filter(kind="decision", payload__kind="priority"))
+    failed = [e for e in decisions if "Cast Stifle" in e.text]
+    assert failed
+    for previous, event in zip(decisions, decisions[1:]):
+        assert not (previous.seat_position == event.seat_position and previous.text == event.text)
+    retries = [e for e in decisions if e.payload.get("failed_play")]
+    assert len(retries) == len(failed)
+    assert all("Cast Stifle" in e.payload["failed_play"] and "Cast Stifle" not in e.text for e in retries)
+    seats = match.summary["seats"]
+    assert sum(seat["failed_plays"] for seat in seats) == len(failed)
+    assert not match.events.filter(kind="fallback").exists()
+
+
 def test_a_decision_for_an_unknown_game_is_delegated(fake_forge):
     from .fakeforge import sample_decision
 
