@@ -124,6 +124,13 @@ pool size bounds the model calls in flight across every running match.
 - Model-backed agents are metered: past `MAX_AGENT_CALLS` (400) for the seat or
   `MAX_MATCH_SECONDS` (1800) since the match started, the seat delegates every
   remaining decision (`fallback_kind = "budget"`).
+- A play Forge does not carry out brings the very same priority decision back
+  (same prompt, view and options): the bridge offers a counterspell that targets the
+  stack (Stifle, Spell Snare, Force Spike…) without checking the stack has a target
+  for it, and the cast aborts before reaching it. The worker then leaves that option
+  out of the decision, along with any other that failed in it, and the answer's
+  `meta.failed_play` names the play; a decision left with "Pass priority" alone
+  passes without asking the agent. So a seat never loops on a failed play (#71).
 - An agent's exception, a seat with no agent or an option out of range is delegated
   (`fallback_kind = "error"`); the worker keeps running. Bridge errors are logged and
   retried after a pause. If a worker dies anyway, `DECISION_TIMEOUT` hands its
@@ -170,7 +177,8 @@ deterministic. It reads Forge's log by the names the seats played under
 From the bridge's own events it counts, per seat, the agent's decisions against
 Forge AI's (fallbacks and `forge_ai` events), the median confidence, low-confidence
 fallbacks and fallbacks by reason (`fallback_reason`: the agent's `fallback_kind`
-when it delegated, else the bridge's reason). A fallback is followed by a `forge_ai`
+when it delegated, else the bridge's reason) and the failed plays (decisions carrying
+`failed_play`, see the worker pool). A fallback is followed by a `forge_ai`
 event for the very decision Forge's AI then takes; `fallback_executions` pairs the
 two so the decision counts (and shows) once. `automatic` counts the non-exposed
 decisions by Forge method. The match page hides `PHASE` and `MANA` log lines and

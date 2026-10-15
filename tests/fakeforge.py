@@ -159,11 +159,18 @@ class FakeGame:
             self.phase = "MAIN1"
             for _ in range(3):
                 land, shock = self._card(), self._card()
-                choice = yield from self._ask(active, "priority", f"Turn {self.turn}, MAIN1: you have priority", [
+                options = [
                     ("Pass priority", []),
                     (f"Play Mountain #{land}", []),
                     (f"Cast Shock #{shock} for {{R}}: deals 2 damage to any target", []),
-                ])
+                ]
+                if self.fake.failing_cast:
+                    options.append((f"Cast Stifle #{self._card()} for {{U}}: Counter target activated or triggered ability.", []))
+                choice = yield from self._ask(active, "priority", f"Turn {self.turn}, MAIN1: you have priority", options)
+                while choice == 3:
+                    # Like the bridge (#71): Forge finds no target on the stack, the
+                    # cast aborts and the very same decision comes back.
+                    choice = yield from self._ask(active, "priority", f"Turn {self.turn}, MAIN1: you have priority", options)
                 if choice == 0:
                     break
                 if choice == 1:
@@ -222,10 +229,13 @@ class FakeGame:
 
 class FakeForge:
     """A bridge in memory. ``unknown`` cards are refused (422); ``unsupported``
-    maps a card name to Forge's "unsupported" flag."""
+    maps a card name to Forge's "unsupported" flag; ``failing_cast`` adds a
+    priority option whose cast Forge never carries out."""
 
-    def __init__(self, *, unknown=(), unsupported=(), max_turns=12, starting_life=20):
+    def __init__(self, *, unknown=(), unsupported=(), max_turns=12, starting_life=20, failing_cast=False):
         self.unknown = set(unknown)
+        # Offer a "Cast Stifle" that never happens, the same decision coming back.
+        self.failing_cast = failing_cast
         self.unsupported = set(unsupported)
         self.max_turns = max_turns
         self.starting_life = starting_life

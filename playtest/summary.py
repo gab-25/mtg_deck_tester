@@ -120,6 +120,8 @@ def summarize_match(events, seats: list, fmt: str, game: dict) -> dict:
             "decisions": {"agent": 0, "forge_ai": 0, "agent_share": None},
             "confidence": {"rated": 0, "median": None, "low": 0},
             "fallbacks": {},
+            # Plays Forge did not carry out: the same decision came back without them.
+            "failed_plays": 0,
         }
         for seat, name in zip(seats, names)
     }
@@ -166,10 +168,12 @@ def summarize_match(events, seats: list, fmt: str, game: dict) -> dict:
             continue
         elif kind == "decision":
             stats[seat]["decisions"]["agent"] += 1
+            stats[seat]["failed_plays"] += bool(payload.get("failed_play"))
             if payload.get("confidence") is not None:
                 confidences[seat].append(payload["confidence"])
         elif kind == "fallback":
             stats[seat]["decisions"]["forge_ai"] += 1
+            stats[seat]["failed_plays"] += bool(payload.get("failed_play"))
             reason = fallback_reason(payload)
             stats[seat]["fallbacks"][reason] = stats[seat]["fallbacks"].get(reason, 0) + 1
             if reason == "low_confidence":

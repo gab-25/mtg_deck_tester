@@ -287,6 +287,17 @@ def test_the_log_shows_confidence_fallback_reasons_and_folds_forge_ai_decisions(
     assert "Untap step" not in page
 
 
+def test_the_log_names_a_play_forge_did_not_carry_out(client, user):
+    match, MatchEvent = _finished(user)
+    stifle = "Cast Stifle #180 for {U}: Counter target activated or triggered ability."
+    MatchEvent.objects.create(match=match, seq=0, turn=3, seat_position=0, kind="decision", text=f"priority: {stifle}",
+                              payload={"kind": "priority", "choice": 2})
+    MatchEvent.objects.create(match=match, seq=1, turn=3, seat_position=0, kind="decision", text="priority: Pass priority",
+                              payload={"kind": "priority", "choice": 0, "failed_play": stifle})
+    page = client.get(f"/playtests/{match.playtest_id}/matches/{match.id}?tab=log").content.decode()
+    assert "failed play" in page and "Forge did not carry out Cast Stifle #180" in page
+
+
 @pytest.mark.django_db
 def test_a_finished_match_shows_its_summary(client, user, fake_forge):
     match, _ = _finished(user)
@@ -295,7 +306,7 @@ def test_a_finished_match_shows_its_summary(client, user, fake_forge):
     client.post("/playtests/create", _form("duel", decks))
     played = Match.objects.exclude(pk=match.pk).get()
     page = client.get(f"/playtests/{played.playtest_id}/matches/{played.id}").content.decode()
-    assert "Match summary" in page and "Spells cast" in page and "Fallbacks" in page
+    assert "Match summary" in page and "Spells cast" in page and "Fallbacks" in page and "Failed plays" in page
     assert "Automatic for every seat: mana payment" in page and "assignCombatDamage" in page
     assert "% Jev" in page
 

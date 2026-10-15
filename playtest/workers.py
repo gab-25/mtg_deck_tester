@@ -10,13 +10,18 @@ each match's runner answers its own decisions, one at a time.
 A worker never stops on an error: a decision it cannot serve is delegated to
 Forge's AI, and if a worker dies anyway the bridge's ``DECISION_TIMEOUT`` hands
 its decision to Forge's AI, so no match stalls.
+
+A play Forge did not carry out (a cast aborted before reaching the stack) brings
+the very same priority decision back: the worker leaves that option out of it,
+so a seat never loops on it (#71).
 """
 
+import json
 import logging
 import os
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from django.db import close_old_connections
 from django.utils import timezone
@@ -39,6 +44,8 @@ DEFAULT_MAX_AGENT_CALLS = 400
 DEFAULT_MAX_MATCH_SECONDS = 1800
 # Pause after the bridge could not be reached, before polling again.
 ERROR_BACKOFF = 2.0
+# A priority decision's option 0 passes priority.
+PASS = 0
 
 
 def _env_int(name: str, default: int) -> int:
@@ -73,6 +80,11 @@ def build_agent(seat: Seat, seed: int):
 class SeatAgent:
     agent: object
     calls: int = 0
+    # The seat's last priority decision, as a fingerprint, and the play picked in it.
+    last_priority: str = ""
+    last_play: str = ""
+    # The plays of that very decision Forge did not carry out.
+    failed: set = field(default_factory=set)
 
 
 @dataclass
@@ -123,6 +135,44 @@ def _over_budget(match: Match, entry: SeatAgent) -> str:
     return ""
 
 
+def _fingerprint(decision: dict) -> str:
+    return json.dumps(
+        [decision.get("prompt"), decision["view"], [option["label"] for option in decision["options"]]],
+        sort_keys=True,
+        default=str,
+    )
+
+
+def _drop_failed_plays(entry: SeatAgent, decision: dict) -> tuple[str, list[dict]]:
+    """``(the play that just failed, the options left)`` of a priority decision.
+
+    When a seat's priority decision comes back identical — same prompt, same
+    view, same options — right after it picked a play, Forge did not carry
+    that play out (the cast aborted before reaching the stack): it is left
+    out, along with the plays that failed before it in the same decision.
+    """
+    fingerprint = _fingerprint(decision)
+    failed_play = ""
+    if fingerprint != entry.last_priority:
+        entry.failed = set()
+    elif entry.last_play:
+        failed_play = entry.last_play
+        entry.failed.add(failed_play)
+    entry.last_priority = fingerprint
+    return failed_play, [option for option in decision["options"] if option["label"] not in entry.failed]
+
+
+def _ask(match: Match, entry: SeatAgent, decision: dict, options: list[dict]) -> Decision:
+    if getattr(entry.agent, "metered", False):
+        spent = _over_budget(match, entry)
+        if spent:
+            return delegate("budget", spent)
+        entry.calls += 1
+    return entry.agent.choose(
+        decision["view"], options, kind=decision.get("kind", ""), prompt=decision.get("prompt", "")
+    )
+
+
 def decide(decision: dict, *, cache: AgentCache = agents, grace: float = UNKNOWN_GAME_GRACE) -> Decision:
     """What the seat's agent answers to one bridge decision."""
     match = _find_match(decision["game_id"], grace)
@@ -137,14 +187,15 @@ def decide(decision: dict, *, cache: AgentCache = agents, grace: float = UNKNOWN
     entry = cache.get(match, seat)
     if entry.agent is None:
         return delegate("error", f"a {seat.get_agent_display()} seat has no agent")
-    if getattr(entry.agent, "metered", False):
-        spent = _over_budget(match, entry)
-        if spent:
-            return delegate("budget", spent)
-        entry.calls += 1
-    return entry.agent.choose(
-        decision["view"], decision["options"], kind=decision.get("kind", ""), prompt=decision.get("prompt", "")
+    if decision.get("kind") != "priority":
+        return _ask(match, entry, decision, decision["options"])
+    failed_play, options = _drop_failed_plays(entry, decision)
+    # Every play failed: passing is all that is left.
+    answer = Decision(options[0]["index"]) if len(options) == 1 else _ask(match, entry, decision, options)
+    entry.last_play = next(
+        (o["label"] for o in options if o["index"] == answer.choice and answer.choice != PASS), ""
     )
+    return replace(answer, failed_play=failed_play) if failed_play else answer
 
 
 def serve(client, decision: dict, *, cache: AgentCache = agents, grace: float = UNKNOWN_GAME_GRACE) -> None:

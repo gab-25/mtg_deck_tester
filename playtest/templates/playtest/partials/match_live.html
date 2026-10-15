@@ -91,6 +91,7 @@ the trigger and polling stops.
                     <tr><td>Decisions</td>{% for seat, stats in seat_stats %}<td class="num">{% if seat.agent == 'forge_ai' %}all Forge AI{% elif stats %}{{ stats.decisions.agent }} {{ seat.get_agent_display }} · {{ stats.decisions.forge_ai }} Forge AI{% if stats.decisions.agent_share is not None %} ({{ stats.decisions.agent_share }}% {{ seat.get_agent_display }}){% endif %}{% endif %}</td>{% endfor %}</tr>
                     <tr><td>Confidence</td>{% for seat, stats in seat_stats %}<td class="num">{% if stats.confidence.rated %}median {{ stats.confidence.median|floatformat:2 }} · {{ stats.confidence.low }} low{% else %}—{% endif %}</td>{% endfor %}</tr>
                     <tr><td>Fallbacks</td>{% for seat, stats in seat_stats %}<td class="num">{% for reason, count in stats.fallbacks.items %}{{ count }} {{ reason }}{% if not forloop.last %} · {% endif %}{% empty %}none{% endfor %}</td>{% endfor %}</tr>
+                    <tr><td>Failed plays</td>{% for seat, stats in seat_stats %}<td class="num">{% if stats and 'failed_plays' in stats %}{{ stats.failed_plays }}{% else %}—{% endif %}</td>{% endfor %}</tr>
                     <tr><td>Life by turn</td>{% for seat, stats in seat_stats %}<td class="num">{{ summary.starting_life }}{% for life in stats.life_by_turn %} › {{ life }}{% endfor %}</td>{% endfor %}</tr>
                 </tbody>
             </table>
@@ -125,6 +126,7 @@ the trigger and polling stops.
                         {% for option in event.payload.probabilities %}{% if forloop.first %} · Jev leaned to: {% else %}, {% endif %}{{ option.label }} <span class="font-mono">{{ option.p|floatformat:2 }}</span>{% endfor %}
                         {% if event.payload.fallback_reason and row.reason == 'error' %} · {{ event.payload.fallback_reason }}{% endif %}
                     </span>
+                    {% if event.payload.failed_play %}<span class="log-note"><span class="warn">failed play</span> · Forge did not carry out {{ event.payload.failed_play }}</span>{% endif %}
                     {% elif row.kind == 'decision' %}
                     <span class="log-text"><span translate="no" class="muted">{{ row.who }}</span> — {{ event.text }}</span>
                     {% if event.payload.confidence is not None %}
@@ -133,6 +135,7 @@ the trigger and polling stops.
                         {% for option in event.payload.probabilities|slice:"1:" %}{% if forloop.first %} · runner-up: {% else %}, {% endif %}{{ option.label }} <span class="font-mono">{{ option.p|floatformat:2 }}</span>{% endfor %}
                     </span>
                     {% endif %}
+                    {% if event.payload.failed_play %}<span class="log-note"><span class="warn">failed play</span> · Forge did not carry out {{ event.payload.failed_play }}</span>{% endif %}
                     {% if event.reasoning %}<span class="log-reason">“{{ event.reasoning }}”</span>{% endif %}
                     {% else %}
                     <span class="log-text">{{ event.text }}</span>
