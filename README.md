@@ -69,8 +69,12 @@ hands the decision back to Forge's AI.
   table and Forge's log as it grows (HTMX polling), each Jev decision with its
   confidence, each fallback with its reason, and at the end a deterministic summary per
   seat: result, life over time, turns, spells cast, lands played, the agent's decisions
-  against Forge AI's, confidence and fallbacks by reason. A running match, or a whole
-  playtest, can be stopped.
+  against Forge AI's, confidence and fallbacks by reason, and the decisions the
+  deterministic checks flagged. A running match, or a whole playtest, can be stopped.
+- **Decision inspector**: the match page's **Decisions** tab lists every decision Jev
+  was asked (filter by seat, kind, Forge AI fallbacks, flagged or no-effect plays); a
+  decision's page shows the board and hand as Jev saw them, Forge's prompt, every
+  option with its facts and Jev's probability, the choice, the outcome and the flags.
 - **Reproducible**: a match has a seed. The same seed and the same answers replay the
   same game, so a match is as reproducible as Jev.
 - **Scryfall cache in the database**: card JSON is cached in Postgres

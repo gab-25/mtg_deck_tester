@@ -63,7 +63,9 @@ POST form ──► cheap validation ──► row created (status = pending) �
    anything is busy (`has_busy` in the context; the view returns the partial when
    `request.htmx` is set). A playtest page polls `playtests/<id>/live` (each
    opponent's record when it plays several games, and one row per game); a match page polls `matches/<id>/live`, which renders
-   the scoreboard and the log.
+   the scoreboard, the log and the decision inspector (the **Decisions** tab: every
+   decision trace, filtered by seat, kind, fallback, flags or outcome; each opens
+   `matches/<id>/decisions/<trace id>`, the decision as Jev saw it).
 
 Every log line emitted inside a job is prefixed with `[deck <id>]` or
 `[match <id>]` (`job_log_context` + the `JobFilter` logging filter), so concurrent
