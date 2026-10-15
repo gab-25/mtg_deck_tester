@@ -56,7 +56,9 @@ POST form ──► cheap validation ──► row created (status = pending) �
      seat's final life and the deterministic `Match.summary`.
    - Meanwhile the **worker pool** (`playtest/workers.py`, `FORGE_WORKERS` threads
      started once in the Celery worker, when it is ready) answers the bridge's decisions
-     for every running match. Without a pool the runner answers its own.
+     for every running match, storing a `DecisionTrace` for every decision Jev is asked
+     (the runner links each to its event and settles its outcome when the match ends).
+     Without a pool the runner answers its own.
 5. **The page polls**. The deck list and playtest list re-fetch their grid partial while
    anything is busy (`has_busy` in the context; the view returns the partial when
    `request.htmx` is set). A playtest page polls `playtests/<id>/live` (each

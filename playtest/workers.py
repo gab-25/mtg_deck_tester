@@ -14,6 +14,9 @@ its decision to Forge's AI, so no match stalls.
 A play Forge did not carry out (a cast aborted before reaching the stack) brings
 the very same priority decision back: the worker leaves that option out of it,
 so a seat never loops on it (#71).
+
+Every decision the agent was asked is stored as a ``DecisionTrace`` before the
+answer goes back; only its id travels, in ``meta.trace`` (#72).
 """
 
 import json
@@ -23,14 +26,14 @@ import threading
 import time
 from dataclasses import dataclass, field, replace
 
-from django.db import close_old_connections
+from django.db import DatabaseError, close_old_connections
 from django.utils import timezone
 
 from . import forge
 from .agents import typesafe
 from .agents.base import Decision, delegate
 from .agents.jev_agent import JevAgent
-from .models import Match, Seat
+from .models import DecisionTrace, Match, Seat
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +88,8 @@ class SeatAgent:
     last_play: str = ""
     # The plays of that very decision Forge did not carry out.
     failed: set = field(default_factory=set)
+    # The trace of the seat's last decision, marked no_effect when that play fails.
+    last_trace: int | None = None
 
 
 @dataclass
@@ -173,6 +178,41 @@ def _ask(match: Match, entry: SeatAgent, decision: dict, options: list[dict]) ->
     )
 
 
+def _record(match: Match, seat: Seat, decision: dict, answer: Decision) -> Decision:
+    """Stores the trace of a decision the agent was asked (#72); the answer then carries its id.
+
+    A trace that cannot be stored is logged and skipped: it never costs the decision.
+    """
+    if answer.trace is None:
+        return answer
+    view = decision.get("view") or {}
+    try:
+        trace = DecisionTrace.objects.create(
+            match=match,
+            seat_position=seat.position,
+            decision_id=str(decision.get("decision_id") or "")[:64],
+            turn=view.get("turn") or 0,
+            step=(view.get("phase") or "")[:32],
+            kind=(decision.get("kind") or "")[:32],
+            prompt=decision.get("prompt") or "",
+            instructions=answer.trace.get("instructions") or "",
+            state=answer.trace.get("state") or {},
+            options=answer.trace.get("options") or [],
+            probabilities=answer.trace.get("probabilities") or {},
+            latency_ms=answer.trace.get("latency_ms"),
+            confidence=answer.confidence,
+            choice=answer.choice,
+            fallback_kind=answer.fallback_kind,
+            fallback_reason=answer.fallback_reason,
+            failed_play=answer.failed_play,
+            model=answer.model[:128],
+        )
+    except DatabaseError:
+        logger.exception("Could not store the trace of decision %s", decision.get("decision_id"))
+        return answer
+    return replace(answer, trace_id=trace.pk)
+
+
 def decide(decision: dict, *, cache: AgentCache = agents, grace: float = UNKNOWN_GAME_GRACE) -> Decision:
     """What the seat's agent answers to one bridge decision."""
     match = _find_match(decision["game_id"], grace)
@@ -188,14 +228,20 @@ def decide(decision: dict, *, cache: AgentCache = agents, grace: float = UNKNOWN
     if entry.agent is None:
         return delegate("error", f"a {seat.get_agent_display()} seat has no agent")
     if decision.get("kind") != "priority":
-        return _ask(match, entry, decision, decision["options"])
+        return _record(match, seat, decision, _ask(match, entry, decision, decision["options"]))
     failed_play, options = _drop_failed_plays(entry, decision)
+    if failed_play and entry.last_trace is not None:
+        DecisionTrace.objects.filter(pk=entry.last_trace).update(outcome=DecisionTrace.Outcome.NO_EFFECT)
     # Every play failed: passing is all that is left.
     answer = Decision(options[0]["index"]) if len(options) == 1 else _ask(match, entry, decision, options)
     entry.last_play = next(
         (o["label"] for o in options if o["index"] == answer.choice and answer.choice != PASS), ""
     )
-    return replace(answer, failed_play=failed_play) if failed_play else answer
+    if failed_play:
+        answer = replace(answer, failed_play=failed_play)
+    answer = _record(match, seat, decision, answer)
+    entry.last_trace = answer.trace_id
+    return answer
 
 
 def serve(client, decision: dict, *, cache: AgentCache = agents, grace: float = UNKNOWN_GAME_GRACE) -> None:

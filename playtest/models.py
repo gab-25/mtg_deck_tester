@@ -194,3 +194,62 @@ class MatchEvent(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["match", "seq"], name="unique_event_seq"),
         ]
+
+
+class DecisionTrace(models.Model):
+    """What a seat's agent saw and answered for one decision it was asked (#72).
+
+    One row per decision that reached Jev — answered, under the confidence
+    gate or failed — never for budget or forced passes. ``options`` are in the
+    order Jev was shown them; ``probabilities`` map an option's index (as a
+    string) to Jev's probability. The runner links ``event`` and settles
+    ``outcome`` (the worker marks ``no_effect`` as soon as it sees the same
+    decision come back); the checks of :mod:`.checks` fill ``flags``.
+    """
+
+    class Outcome(models.TextChoices):
+        PENDING = "", "Pending"
+        DONE = "done", "Done"
+        NO_EFFECT = "no_effect", "No effect"
+        DELEGATED = "delegated", "Delegated to Forge AI"
+
+    match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name="traces")
+    seat_position = models.PositiveSmallIntegerField()
+    event = models.ForeignKey(MatchEvent, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    decision_id = models.CharField(max_length=64, blank=True, default="")
+    turn = models.PositiveIntegerField(default=0)
+    step = models.CharField(max_length=32, blank=True, default="")
+    kind = models.CharField(max_length=32, blank=True, default="")
+    prompt = models.TextField(blank=True, default="")
+    instructions = models.TextField(blank=True, default="")
+    state = models.JSONField(default=dict, blank=True)
+    options = models.JSONField(default=list, blank=True)
+    probabilities = models.JSONField(default=dict, blank=True)
+    confidence = models.FloatField(null=True, blank=True)
+    # The picked option's index; None when Forge's AI decided.
+    choice = models.SmallIntegerField(null=True, blank=True)
+    fallback_kind = models.CharField(max_length=32, blank=True, default="")
+    fallback_reason = models.TextField(blank=True, default="")
+    failed_play = models.TextField(blank=True, default="")
+    model = models.CharField(max_length=128, blank=True, default="")
+    latency_ms = models.PositiveIntegerField(null=True, blank=True)
+    outcome = models.CharField(max_length=16, choices=Outcome.choices, blank=True, default=Outcome.PENDING)
+    # [{"check", "reason"}] from playtest.checks, written when the match ends.
+    flags = models.JSONField(default=list, blank=True)
+    # The option Forge's AI would have picked, when the bridge says (#75).
+    forge_ai_choice = models.SmallIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = "decision_traces"
+        ordering = ["id"]
+        indexes = [models.Index(fields=["match", "seat_position"], name="trace_match_seat")]
+
+    def option(self, index):
+        """The shown option with ``index``, or None."""
+        return next((option for option in self.options if option.get("index") == index), None)
+
+    @property
+    def chosen_label(self) -> str:
+        option = self.option(self.choice)
+        return option["label"] if option else ""

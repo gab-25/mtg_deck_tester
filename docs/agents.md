@@ -27,6 +27,9 @@ class Decision:
     confidence: float | None = None                    # Jev
     probabilities: tuple[tuple[str, float], ...] = ()  # top options by label
     model: str = ""             # the versioned model id that answered
+    failed_play: str = ""       # the play Forge did not carry out just before (#71)
+    trace: dict | None = None   # what the agent saw and answered; never sent to the bridge
+    trace_id: int | None = None # the stored DecisionTrace, sent as meta["trace"]
 
     delegate: bool              # property: choice is None
     def meta(self) -> dict: ... # what the bridge stores on the event
@@ -80,6 +83,35 @@ or one naming no offered option delegates with `error`.
 `metered` (Jev): past `MAX_AGENT_CALLS` (400) for the seat or
 `MAX_MATCH_SECONDS` (1800) for the match, the seat delegates without calling the
 model (`budget`).
+
+## Decision traces
+
+Every decision Jev is asked — answered, handed over under the confidence gate, or
+failed because Jev could not be reached — is stored as a `DecisionTrace`
+(`playtest/models.py`, table `decision_traces`), so a choice can be reviewed the way
+Jev saw it. Decisions Jev is never asked (the call budget, a priority decision left
+with "Pass priority" alone, more than 255 options) have none.
+
+| Field | What |
+|---|---|
+| `match`, `seat_position`, `event` | the match (deleting it deletes its traces), the seat, and the `decision` or `fallback` event of the answer |
+| `decision_id`, `turn`, `step`, `kind`, `prompt` | the bridge's decision |
+| `instructions`, `state` | the question's instructions and the `jev_state` JSON, exactly as sent |
+| `options` | `[{index, label, facts}]` in the order Jev was shown them (after the shuffle) |
+| `probabilities` | Jev's full distribution, `{index: p}` |
+| `confidence`, `choice`, `model`, `latency_ms` | the answer; `choice` is null when Forge's AI decided |
+| `fallback_kind`, `fallback_reason`, `failed_play` | as on the event |
+| `outcome` | `done`, `no_effect` (the same decision came back: Forge did not carry the play out) or `delegated` |
+| `flags` | the checks' findings (below) |
+| `forge_ai_choice` | the option Forge's AI would have picked, when the bridge says |
+
+`JevAgent.choose` puts what it sent and got back in `Decision.trace`; the worker
+(`playtest.workers.decide`) stores the row before answering and sends only its id,
+as `meta.trace`, which the runner uses to link the trace to its event. The worker
+marks a trace `no_effect` when it sees the same priority decision come back; when
+the match ends (or fails) the runner settles the others as `done` or `delegated`.
+A trace that cannot be stored is logged and skipped: it never costs the decision.
+A trace takes a few KB. Matches played before traces existed have none.
 
 ## Jev client
 

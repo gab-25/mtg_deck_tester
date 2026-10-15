@@ -134,6 +134,9 @@ pool size bounds the model calls in flight across every running match.
   out of the decision, along with any other that failed in it, and the answer's
   `meta.failed_play` names the play; a decision left with "Pass priority" alone
   passes without asking the agent. So a seat never loops on a failed play (#71).
+- Every decision the agent is asked is stored as a `DecisionTrace` before answering
+  ([Agents](agents.md#decision-traces)); the answer's `meta.trace` is its id, which the
+  runner uses to link it to the event.
 - An agent's exception, a seat with no agent or an option out of range is delegated
   (`fallback_kind = "error"`); the worker keeps running. Bridge errors are logged and
   retried after a pause. If a worker dies anyway, `DECISION_TIMEOUT` hands its
