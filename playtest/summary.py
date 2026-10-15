@@ -130,6 +130,9 @@ def summarize_match(events, seats: list, fmt: str, game: dict) -> dict:
     automatic: dict[str, int] = {}
     current_turn = 0
     executions = fallback_executions(rows)
+    # A bridge that reports failed plays (play_failed) is counted on its word;
+    # with an older one, the worker's failed_play mark on the next decision.
+    reported = any(kind == "play_failed" for _, kind, *_ in rows)
 
     def close_turns(upto: int) -> None:
         for seat in stats.values():
@@ -168,18 +171,20 @@ def summarize_match(events, seats: list, fmt: str, game: dict) -> dict:
             continue
         elif kind == "decision":
             stats[seat]["decisions"]["agent"] += 1
-            stats[seat]["failed_plays"] += bool(payload.get("failed_play"))
+            stats[seat]["failed_plays"] += not reported and bool(payload.get("failed_play"))
             if payload.get("confidence") is not None:
                 confidences[seat].append(payload["confidence"])
         elif kind == "fallback":
             stats[seat]["decisions"]["forge_ai"] += 1
-            stats[seat]["failed_plays"] += bool(payload.get("failed_play"))
+            stats[seat]["failed_plays"] += not reported and bool(payload.get("failed_play"))
             reason = fallback_reason(payload)
             stats[seat]["fallbacks"][reason] = stats[seat]["fallbacks"].get(reason, 0) + 1
             if reason == "low_confidence":
                 stats[seat]["confidence"]["low"] += 1
             if payload.get("confidence") is not None:
                 confidences[seat].append(payload["confidence"])
+        elif kind == "play_failed":
+            stats[seat]["failed_plays"] += 1
         elif kind == "forge_ai":
             stats[seat]["decisions"]["forge_ai"] += 1
             method = payload.get("method") or "other"

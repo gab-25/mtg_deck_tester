@@ -98,3 +98,14 @@ def test_plays_forge_did_not_carry_out_are_counted_and_still_decisions():
     red, green = summarize_match(events, _seats("jev", "jev"), "modern", {"turn": 3})["seats"]
     assert red["failed_plays"] == 1 and red["decisions"]["agent"] == 2
     assert green["failed_plays"] == 1 and green["decisions"]["forge_ai"] == 1
+
+
+def test_a_bridge_reporting_failed_plays_is_counted_once():
+    stifle = "Cast Stifle #180 for {U}: Counter target activated or triggered ability."
+    events = [
+        {"seq": 0, "turn": 3, "seat": 0, "kind": "decision", "text": f"priority: {stifle}", "payload": {"kind": "priority"}},
+        {"seq": 1, "turn": 3, "seat": 0, "kind": "play_failed", "text": "", "payload": {"ability": stifle, "reason": "targets"}},
+        {"seq": 2, "turn": 3, "seat": 0, "kind": "decision", "text": "priority: Pass priority", "payload": {"kind": "priority", "failed_play": stifle}},
+    ]
+    red, _ = summarize_match(events, _seats("jev", "jev"), "modern", {"turn": 3})["seats"]
+    assert red["failed_plays"] == 1 and red["decisions"]["agent"] == 2

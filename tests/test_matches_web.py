@@ -294,8 +294,11 @@ def test_the_log_names_a_play_forge_did_not_carry_out(client, user):
                               payload={"kind": "priority", "choice": 2})
     MatchEvent.objects.create(match=match, seq=1, turn=3, seat_position=0, kind="decision", text="priority: Pass priority",
                               payload={"kind": "priority", "choice": 0, "failed_play": stifle})
+    MatchEvent.objects.create(match=match, seq=2, turn=3, seat_position=0, kind="play_failed", text=f"{stifle}: not played (targets)",
+                              payload={"ability": stifle, "reason": "targets"})
     page = client.get(f"/playtests/{match.playtest_id}/matches/{match.id}?tab=log").content.decode()
     assert "failed play" in page and "Forge did not carry out Cast Stifle #180" in page
+    assert "Forge did not carry it out (targets)" in page
 
 
 @pytest.mark.django_db

@@ -114,7 +114,7 @@ the trigger and polling stops.
         </div>
         <div class="log">
             {% for row in log %}{% with event=row.event %}
-            <div class="log-row{% if row.headline or row.kind == 'game_over' %} log-headline{% endif %}{% if row.kind == 'fallback' %} log-fallback{% elif row.kind == 'forge_ai' %} log-forge{% elif row.kind == 'decision' %} log-decision{% endif %}">
+            <div class="log-row{% if row.headline or row.kind == 'game_over' %} log-headline{% endif %}{% if row.kind == 'fallback' or row.kind == 'play_failed' %} log-fallback{% elif row.kind == 'forge_ai' %} log-forge{% elif row.kind == 'decision' %} log-decision{% endif %}">
                 <span class="log-turn">{% if event.turn %}T{{ event.turn }}{% else %}{{ row.seq }}{% endif %}</span>
                 <div class="log-body">
                     {% if row.kind == 'forge_ai' %}
@@ -137,6 +137,9 @@ the trigger and polling stops.
                     {% endif %}
                     {% if event.payload.failed_play %}<span class="log-note"><span class="warn">failed play</span> · Forge did not carry out {{ event.payload.failed_play }}</span>{% endif %}
                     {% if event.reasoning %}<span class="log-reason">“{{ event.reasoning }}”</span>{% endif %}
+                    {% elif row.kind == 'play_failed' %}
+                    <span class="log-text"><span translate="no" class="muted">{{ row.who }}</span> — {{ event.payload.ability|default:event.text }}</span>
+                    <span class="log-note"><span class="warn">failed play</span> · Forge did not carry it out ({{ event.payload.reason|default:"unknown reason" }})</span>
                     {% else %}
                     <span class="log-text">{{ event.text }}</span>
                     {% endif %}
