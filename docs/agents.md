@@ -101,7 +101,7 @@ with "Pass priority" alone, more than 255 options) have none.
 | `probabilities` | Jev's full distribution, `{index: p}` |
 | `confidence`, `choice`, `model`, `latency_ms` | the answer; `choice` is null when Forge's AI decided |
 | `fallback_kind`, `fallback_reason`, `failed_play` | as on the event |
-| `outcome` | `done`, `no_effect` (the same decision came back: Forge did not carry the play out) or `delegated` |
+| `outcome` | `done`, `no_effect` (the same decision came back: Forge did not carry the play out) or `delegated` (Forge's AI decided, also when Jev's pick never reached the game: the bridge timed out or the game had ended) |
 | `flags` | the checks' findings (below) |
 | `forge_ai_choice` | the option Forge's AI would have picked, when the bridge says |
 
@@ -110,7 +110,9 @@ with "Pass priority" alone, more than 255 options) have none.
 as `meta.trace`, which the runner uses to link the trace to its event. The worker
 marks a trace `no_effect` when it sees the same priority decision come back; when
 the match ends (or fails) the runner settles the others as `done` or `delegated`.
-A trace that cannot be stored is logged and skipped: it never costs the decision.
+A pick the bridge no longer accepted is marked `delegated` and never checked. A trace
+that cannot be stored is logged and skipped, and a failing analysis is logged: neither
+ever costs the decision or the match's result.
 A trace takes a few KB. Matches played before traces existed have none.
 
 **Forge AI as a reference (#75).** When the bridge says which option Forge's AI would

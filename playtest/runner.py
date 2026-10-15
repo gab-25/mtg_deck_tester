@@ -224,7 +224,12 @@ def _analyse(match: Match) -> dict[int, dict]:
 
 
 def _finish(match: Match, game: dict) -> None:
-    traced = _analyse(match)
+    try:
+        traced = _analyse(match)
+    except Exception:  # noqa: BLE001 - the analysis must never cost the match's result.
+        logger.exception("Could not analyse the decision traces")
+        settle_traces(match.pk)
+        traced = {}
     seats = list(match.seats.all())
     events = list(match.events.all())
     summary = summarize_match(events, seats, match.format, game)

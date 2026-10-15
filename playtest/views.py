@@ -7,7 +7,7 @@ from urllib.parse import urlencode
 
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
-from django.db.models import F
+from django.db.models import F, Q
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -414,11 +414,15 @@ def _decisions(match, seat: str = "", kind: str = "", only: str = "") -> list:
     if kind:
         traces = traces.filter(kind=kind)
     if only == "fallbacks":
-        traces = traces.filter(choice__isnull=True)
+        traces = traces.filter(Q(choice__isnull=True) | Q(outcome=DecisionTrace.Outcome.DELEGATED))
     elif only == "no_effect":
         traces = traces.filter(outcome=DecisionTrace.Outcome.NO_EFFECT)
     elif only == "disagree":
-        traces = traces.filter(choice__isnull=False, forge_ai_choice__isnull=False).exclude(choice=F("forge_ai_choice"))
+        traces = (
+            traces.filter(choice__isnull=False, forge_ai_choice__isnull=False)
+            .exclude(outcome=DecisionTrace.Outcome.DELEGATED)
+            .exclude(choice=F("forge_ai_choice"))
+        )
     traces = list(traces)
     if only == "flagged":
         traces = [trace for trace in traces if trace.flags]

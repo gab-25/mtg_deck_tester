@@ -150,3 +150,34 @@ def test_a_missing_or_bad_forge_ai_choice_is_ignored(user, fake_forge, jev, valu
     match = _played(user)
     assert not match.traces.exclude(forge_ai_choice=None).exists()
     assert all("agreement" not in seat for seat in match.summary["seats"])
+
+
+@pytest.mark.django_db
+def test_an_answer_that_never_reached_the_game_is_traced_as_delegated(user, fake_forge, jev, monkeypatch):
+    """The bridge's DECISION_TIMEOUT handed the decision to Forge's AI before Jev answered:
+    Jev's pick never happened, so it is neither done nor checked."""
+    answer = fake_forge.answer
+
+    def too_late(decision_id, choice=None, *, delegate=False, meta=None):
+        answer(decision_id, None, delegate=True, meta={})
+        return False
+
+    monkeypatch.setattr(fake_forge, "answer", too_late)
+    fake_forge.forge_ai_choice = lambda decision: 0
+    match = _played(user)
+    traces = list(match.traces.all())
+    assert traces and all(t.outcome == "delegated" and t.choice is not None for t in traces)
+    assert all("did not reach the game" in t.fallback_reason for t in traces)
+    assert not any(t.flags for t in traces)
+    assert all(not seat.get("flags") and "agreement" not in seat for seat in match.summary["seats"])
+
+
+@pytest.mark.django_db
+def test_a_failing_check_never_costs_the_match_result(user, fake_forge, jev, monkeypatch):
+    def broken(traces, fmt):
+        raise RuntimeError("check bug")
+
+    monkeypatch.setattr(runner, "check_match", broken)
+    match = _played(user)
+    assert match.status == Match.Status.FINISHED and match.summary["seats"]
+    assert all(t.outcome in ("done", "delegated", "no_effect") for t in match.traces.all())

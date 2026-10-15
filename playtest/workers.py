@@ -260,10 +260,25 @@ def serve(client, decision: dict, *, cache: AgentCache = agents, grace: float = 
     except Exception as exc:  # noqa: BLE001 - an agent bug must not cost the match.
         logger.exception("Agent failed on decision %s", decision.get("decision_id"))
         answer = delegate("error", f"agent error: {exc}")
+    traced = answer.trace_id
     if answer.choice is not None and not 0 <= answer.choice < len(decision["options"]):
         answer = delegate("error", f"agent picked option {answer.choice}, which was not offered")
-    if not client.answer(decision["decision_id"], answer.choice, delegate=answer.delegate, meta=answer.meta()):
+    applied = client.answer(decision["decision_id"], answer.choice, delegate=answer.delegate, meta=answer.meta())
+    if not applied:
         logger.info("Decision %s was no longer pending (timed out or game ended)", decision["decision_id"])
+    if traced is not None and (not applied or answer.trace_id != traced):
+        _not_applied(traced)
+
+
+def _not_applied(trace_id: int) -> None:
+    """The agent's pick never reached the game (the bridge timed out, the game ended, or
+    the pick was out of range): its trace is a fallback, neither done nor checked."""
+    try:
+        DecisionTrace.objects.filter(pk=trace_id).update(
+            outcome=DecisionTrace.Outcome.DELEGATED, fallback_reason="the answer did not reach the game"
+        )
+    except DatabaseError:
+        logger.exception("Could not update trace %s", trace_id)
 
 
 class Pool:

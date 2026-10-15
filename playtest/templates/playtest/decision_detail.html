@@ -26,7 +26,7 @@
     <div class="cluster">
         <span class="badge {% if trace.outcome == 'no_effect' %}warn{% elif trace.outcome == 'delegated' %}muted{% else %}info{% endif %}">{{ trace.get_outcome_display }}</span>
         {% if trace.confidence is not None %}<span class="muted">confidence <span class="font-mono">{{ trace.confidence|floatformat:2 }}</span></span>{% endif %}
-        {% if trace.choice is None %}<span class="warn">Forge AI decided · {{ trace.fallback_kind }}{% if trace.fallback_reason %}: {{ trace.fallback_reason }}{% endif %}</span>{% endif %}
+        {% if trace.choice is None %}<span class="warn">Forge AI decided · {{ trace.fallback_kind }}{% if trace.fallback_reason %}: {{ trace.fallback_reason }}{% endif %}</span>{% elif trace.outcome == 'delegated' %}<span class="warn">Forge AI decided: {{ trace.fallback_reason|default:"the answer did not reach the game" }}</span>{% endif %}
         {% if trace.failed_play %}<span class="warn">after a failed play: {{ trace.failed_play }}</span>{% endif %}
     </div>
 

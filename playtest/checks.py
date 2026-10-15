@@ -52,6 +52,11 @@ def _own_empty_stack(trace) -> bool:
     return state.get("active_player") == "you" and not state.get("stack")
 
 
+def _took(trace) -> bool:
+    """Whether the agent's pick is what the game did: not delegated, nor lost on the way."""
+    return trace.choice is not None and trace.outcome != "delegated"
+
+
 def _passes(trace) -> bool:
     return trace.kind == "priority" and _label(trace, trace.choice) == "Pass priority"
 
@@ -132,7 +137,7 @@ CHECKS = (no_effect, pass_with_plays, land_not_played, ignored_lethal, bad_attac
 
 def check_match(traces, fmt: str) -> dict[int, list[dict]]:
     """``{trace id: [{"check", "reason"}, ...]}`` for the flagged decisions, in ``CHECKS`` order."""
-    chosen = [trace for trace in traces if trace.choice is not None]
+    chosen = [trace for trace in traces if _took(trace)]
     flags: dict[int, list[dict]] = {}
     for check in CHECKS:
         for trace, reason in check(chosen, fmt):
@@ -149,7 +154,7 @@ def trace_stats(traces) -> dict[int, dict]:
         seat = stats.setdefault(trace.seat_position, {"flags": {}})
         for flag in trace.flags or []:
             seat["flags"][flag["check"]] = seat["flags"].get(flag["check"], 0) + 1
-        if trace.choice is not None and trace.forge_ai_choice is not None:
+        if _took(trace) and trace.forge_ai_choice is not None:
             agreement = seat.setdefault("agreement", {"rated": 0, "agree": 0, "by_kind": {}})
             same = trace.choice == trace.forge_ai_choice
             agreement["rated"] += 1

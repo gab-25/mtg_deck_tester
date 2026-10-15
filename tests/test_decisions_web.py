@@ -119,3 +119,9 @@ def test_the_disagree_filter_is_offered_only_with_forge_ais_choices(client, user
     assert "Disagrees with Forge AI" not in client.get(_url(match)).content.decode()
     _trace(match, forge_ai_choice=0)
     assert "Disagrees with Forge AI" in client.get(_url(match)).content.decode()
+
+
+def test_a_pick_that_never_reached_the_game_counts_as_a_fallback(client, user):
+    match = make_match(user, status="finished")
+    _trace(match, outcome="delegated", fallback_reason="the answer did not reach the game")
+    assert "Cast Shock #6" in client.get(_url(match, only="fallbacks")).content.decode()
