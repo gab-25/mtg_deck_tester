@@ -19,6 +19,8 @@ uv run python manage.py runserver          # local dev server on :8000, auto-rel
 uv run python manage.py makemigrations     # after model/choices changes
 uv run python manage.py load_oracle_cards  # fill the card cache from Scryfall bulk data
 uv run python manage.py sync_metagame      # import the top decks of each format (network)
+uv run python manage.py export_match <id> --format md  # a match and its decision traces, for review
+uv run python manage.py export_playtest <id> --output DIR  # every match of a playtest, one file each
 docker compose up --build                  # Postgres + Forge + Redis + gunicorn on :8000 + the worker
 docker compose up -d db                    # just Postgres, for local runs
 docker compose up -d forge                 # just the Forge bridge, on localhost:8080
@@ -45,7 +47,9 @@ The default `DATABASE_URL` is the Compose Postgres on localhost; set
 - `playtest/tasks.py` — the Celery task following a match, and the worker's hooks
   (pool start, recovery) → `docs/forge.md`.
 - `playtest/workers.py` — the worker pool answering the bridge's decisions with each
-  seat's agent → `docs/forge.md`.
+  seat's agent, storing a `DecisionTrace` per decision Jev is asked → `docs/forge.md`.
+- `playtest/checks.py` — deterministic checks that flag suspicious decisions;
+  `playtest/export.py` — a match as JSON lines or Markdown → `docs/agents.md`.
 - `playtest/agents/` — the Jev agent and its client →
   `docs/agents.md`.
 - `theme/static/` — the hand-written stylesheet, vendored fonts and icons.

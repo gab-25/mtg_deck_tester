@@ -30,7 +30,7 @@ from .forms import (
 from .models import Match, Playtest, Seat
 from .runner import start_game
 from .stats import flag_totals, opponent_source, record
-from .summary import event_row, fallback_executions, fallback_reason
+from .summary import QUIET_LOG, event_row, fallback_executions, fallback_reason
 from .tasks import run_match_task
 
 logger = logging.getLogger(__name__)
@@ -344,9 +344,7 @@ def delete_playtest(request, playtest_id):
     return redirect("playtest_list")
 
 
-# Forge's log categories left out of the match page (still stored): every
-# step of every turn, and each mana ability.
-QUIET_LOG = {"PHASE", "MANA"}
+
 
 
 def log_rows(events, names: dict[int, str]) -> list[dict]:

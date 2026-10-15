@@ -113,6 +113,13 @@ the match ends (or fails) the runner settles the others as `done` or `delegated`
 A trace that cannot be stored is logged and skipped: it never costs the decision.
 A trace takes a few KB. Matches played before traces existed have none.
 
+**Exporting.** `manage.py export_match <id> [--format jsonl|md] [--seat N] [--flagged]
+[--output PATH]` writes a match (to stdout by default): `jsonl`, one line per event with
+each decision's trace; `md`, a narration per turn with each decision's compact state,
+options and probabilities, choice, outcome and flags. `export_playtest <id> --output DIR`
+writes one file per match (`<seed>-<opponent>.<ext>`). The logic is in
+`playtest/export.py`; nothing is sent anywhere.
+
 ## Decision checks
 
 When a match ends, `playtest/checks.py` runs deterministic checks over its traces —

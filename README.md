@@ -129,6 +129,8 @@ playtest/               # App: matches between agents
 ├── workers.py          #   The worker pool answering Forge's decisions
 ├── agents/             #   the Jev agent and its client
 ├── summary.py          #   The deterministic match summary
+├── checks.py           #   Deterministic checks that flag suspicious decisions
+├── export.py           #   A match as JSON lines or Markdown, for offline review
 └── forms.py            #   The new-playtest form: a deck to test and its opponents
 theme/static/           # Precompiled stylesheet, vendored fonts and icons
 tests/                  # Hermetic suite; fakeforge.py is an in-memory bridge
@@ -206,6 +208,21 @@ format's decks (a source that fails keeps the previous ones), imports them with 
 same rules as your decks, and, when the Forge bridge runs, checks each one for cards
 Forge does not know. Load the local card database first so the import needs few
 Scryfall calls. Run it weekly, e.g. from cron, after `load_oracle_cards`.
+
+## Exporting a match
+
+Every decision Jev is asked is stored with what it saw (state, Forge's prompt, every
+option with its facts, in the order shown) and its full distribution. Export a match,
+or every match of a playtest, to review it offline, by hand or with a model:
+
+```bash
+uv run python manage.py export_match <match id>                        # JSON lines, to stdout
+uv run python manage.py export_match <match id> --format md --seat 1 --flagged --output match.md
+uv run python manage.py export_playtest <playtest id> --format md --output exports/
+```
+
+`jsonl` is one line per event, each decision with its trace; `md` narrates each turn.
+The commands only write files: nothing is sent anywhere.
 
 ## Configuration
 
