@@ -27,6 +27,9 @@ class Decision:
     confidence: float | None = None                    # Jev
     probabilities: tuple[tuple[str, float], ...] = ()  # top options by label
     model: str = ""             # the versioned model id that answered
+    failed_play: str = ""       # the play Forge did not carry out just before (#71)
+    trace: dict | None = None   # what the agent saw and answered; never sent to the bridge
+    trace_id: int | None = None # the stored DecisionTrace, sent as meta["trace"]
 
     delegate: bool              # property: choice is None
     def meta(self) -> dict: ... # what the bridge stores on the event
@@ -80,6 +83,73 @@ or one naming no offered option delegates with `error`.
 `metered` (Jev): past `MAX_AGENT_CALLS` (400) for the seat or
 `MAX_MATCH_SECONDS` (1800) for the match, the seat delegates without calling the
 model (`budget`).
+
+## Decision traces
+
+Every decision Jev is asked — answered, handed over under the confidence gate, or
+failed because Jev could not be reached — is stored as a `DecisionTrace`
+(`playtest/models.py`, table `decision_traces`), so a choice can be reviewed the way
+Jev saw it. Decisions Jev is never asked (the call budget, a priority decision left
+with "Pass priority" alone, more than 255 options) have none.
+
+| Field | What |
+|---|---|
+| `match`, `seat_position`, `event` | the match (deleting it deletes its traces), the seat, and the `decision` or `fallback` event of the answer |
+| `decision_id`, `turn`, `step`, `kind`, `prompt` | the bridge's decision |
+| `instructions`, `state` | the question's instructions and the `jev_state` JSON, exactly as sent |
+| `options` | `[{index, label, facts}]` in the order Jev was shown them (after the shuffle) |
+| `probabilities` | Jev's full distribution, `{index: p}` |
+| `confidence`, `choice`, `model`, `latency_ms` | the answer; `choice` is null when Forge's AI decided |
+| `fallback_kind`, `fallback_reason`, `failed_play` | as on the event |
+| `outcome` | `done`, `no_effect` (the same decision came back: Forge did not carry the play out) or `delegated` (Forge's AI decided, also when Jev's pick never reached the game: the bridge timed out or the game had ended) |
+| `flags` | the checks' findings (below) |
+| `forge_ai_choice` | the option Forge's AI would have picked, when the bridge says |
+
+`JevAgent.choose` puts what it sent and got back in `Decision.trace`; the worker
+(`playtest.workers.decide`) stores the row before answering and sends only its id,
+as `meta.trace`, which the runner uses to link the trace to its event. The worker
+marks a trace `no_effect` when it sees the same priority decision come back; when
+the match ends (or fails) the runner settles the others as `done` or `delegated`.
+A pick the bridge no longer accepted is marked `delegated` and never checked. A trace
+that cannot be stored is logged and skipped, and a failing analysis is logged: neither
+ever costs the decision or the match's result.
+A trace takes a few KB. Matches played before traces existed have none.
+
+**Forge AI as a reference (#75).** When the bridge says which option Forge's AI would
+pick (`forge_ai_choice`, see [Forge](forge.md)), the trace keeps it, the summary reports
+per seat how often Jev agreed (`seats[].agreement`: `rated`, `agree`, `by_kind`, shown as
+"Agrees with Forge AI"), and the inspector offers a "Disagrees with Forge AI" filter. It
+is a reference, not a judge: Forge's AI is not assumed right.
+
+**Exporting.** `manage.py export_match <id> [--format jsonl|md] [--seat N] [--flagged]
+[--output PATH]` writes a match (to stdout by default): `jsonl`, one line per event with
+each decision's trace; `md`, a narration per turn with each decision's compact state,
+options and probabilities, choice, outcome and flags. `export_playtest <id> --output DIR`
+writes one file per match (`<seed>-<opponent>.<ext>`). The logic is in
+`playtest/export.py`; nothing is sent anywhere.
+
+## Decision checks
+
+When a match ends, `playtest/checks.py` runs deterministic checks over its traces —
+pure functions, no model, like the summary — and flags the decisions that deserve a
+look. Only decisions the agent took itself are checked. The checks read the bridge's
+option labels and Forge's facts; they never compute a rule.
+
+| Check | Flags |
+|---|---|
+| `no_effect` | a play Forge did not carry out (the trace's outcome) |
+| `pass_with_plays` | "Pass priority" in your own second main phase, empty stack, with a `Cast …` option offered |
+| `land_not_played` | the last "Pass priority" of your turn in a main phase, empty stack, no land played this turn, a `Play …` option offered, and no land played later that turn |
+| `ignored_lethal` | "Done" attacking while an attack is `lethal if unblocked`; "Done" blocking while the prompt's unblocked damage is at least your life |
+| `bad_attack` | an attack whose facts say `dies if blocked by: …` and which is not lethal |
+| `mulligan_keep` | keeping seven cards with at most 1 or at least 6 lands (`MULLIGAN_LANDS` per format, `DEFAULT_MULLIGAN_LANDS = (1, 6)`) |
+
+A flag means "look at this", not "this was wrong": the bridge says which blockers kill
+an attacker, not whether they die too, so `bad_attack` cannot tell a bad attack from
+an even trade. Each flag is stored on the trace (`flags: [{check, reason}]`), counted
+per seat in `Match.summary` (`seats[].flags`, absent for a seat without traces, shown as
+"Flagged decisions" on the match page), and summed for the deck under test on the
+playtest page.
 
 ## Jev client
 

@@ -913,3 +913,16 @@ def test_the_home_running_panel_lists_matchups_when_a_session_plays_several_game
     panel = page.split('id="running-now"', 1)[1].split("</section>", 1)[0]
     assert panel.count("Goblins") == 1
     assert "1–0–0" in panel and "1 of 3 games done" in panel
+
+
+@pytest.mark.django_db
+def test_the_playtest_page_and_the_match_summary_show_flagged_decisions(client, user):
+    playtest = make_playtest(user, fmt="modern")
+    match = make_match(user, playtest=playtest, status="finished", summary={
+        "turns": 3, "starting_life": 20,
+        "seats": [{"seat": 0, "flags": {"bad_attack": 2}}, {"seat": 1, "flags": {}}],
+    })
+    page = client.get(f"/playtests/{playtest.id}").content.decode()
+    assert "Flagged decisions" in page and "2 attack into a killer" in page
+    summary = client.get(f"/playtests/{playtest.id}/matches/{match.id}").content.decode()
+    assert "2 attack into a killer" in summary and "none" in summary

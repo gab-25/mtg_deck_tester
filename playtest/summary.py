@@ -14,6 +14,10 @@ import statistics
 
 from decks.formats import FORMATS
 
+# Forge's log categories left out of the match page and the Markdown export
+# (still stored): every step of every turn, and each mana ability.
+QUIET_LOG = {"PHASE", "MANA"}
+
 LIFE_CHANGE = re.compile(r" (-?\d+) > (-?\d+)$")
 TURN_LINE = re.compile(r"^Turn (\d+) \((.+)\)$")
 

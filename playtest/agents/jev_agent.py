@@ -18,6 +18,8 @@ reason.
 import json
 import logging
 import random
+import time
+from dataclasses import replace
 
 from . import typesafe
 from .base import Decision, delegate
@@ -190,19 +192,38 @@ class JevAgent:
         shuffled = list(keys)
         self.rng.shuffle(shuffled)
         criteria = {key: describe_option(by_key[key]) for key in shuffled}
-        question = typesafe.choice(instructions(view, kind, prompt), criteria)
+        text = instructions(view, kind, prompt)
+        state = jev_state(view, kind=kind, prompt=prompt)
+        question = typesafe.choice(text, criteria)
+        # What Jev is shown, kept for the decision trace (#72).
+        trace = {
+            "instructions": text,
+            "state": json.loads(state),
+            "options": [
+                {"index": by_key[key]["index"], "label": by_key[key]["label"], "facts": list(by_key[key].get("facts") or [])}
+                for key in shuffled
+            ],
+            "probabilities": {},
+            "latency_ms": None,
+        }
+        started = time.monotonic()
         try:
-            response = self.ask(jev_state(view, kind=kind, prompt=prompt), {"action": question}, model=self.model)
+            response = self.ask(state, {"action": question}, model=self.model)
             picked, confidence, probabilities = typesafe.read_choice(response["answers"].get("action"), by_key)
         except (typesafe.TypeSafeError, KeyError, TypeError, AttributeError) as exc:
             logger.warning("Jev agent (%s) delegated to Forge's AI: %s", self.model, exc)
-            return delegate("error", f"Jev unavailable: {exc}", model=self.model)
+            trace["latency_ms"] = round(1000 * (time.monotonic() - started))
+            return delegate("error", f"Jev unavailable: {exc}", model=self.model, trace=trace)
+        trace["latency_ms"] = round(1000 * (time.monotonic() - started))
+        trace["probabilities"] = {
+            str(by_key[key]["index"]): round(p, 4) for key, p in probabilities.items() if key in by_key
+        }
         top = tuple(
             (by_key[key]["label"], p)
             for key, p in sorted(probabilities.items(), key=lambda kv: (-kv[1], kv[0]))[:TOP_PROBABILITIES]
             if key in by_key
         )
-        return self.gate(by_key[picked]["index"], confidence, top, response.get("model", self.model))
+        return replace(self.gate(by_key[picked]["index"], confidence, top, response.get("model", self.model)), trace=trace)
 
     def gate(self, choice: int, confidence: float, top, model: str) -> Decision:
         """The confidence gate: the one place an uncertain decision is handed over (#44)."""

@@ -4,7 +4,7 @@ Result, seats, summary and log. While the match runs the region polls itself
 the trigger and polling stops.
 {% endcomment %}
 <div id="match-live-region" class="stack"
-    {% if match.is_busy %}hx-get="{% url 'match_live' match.playtest_id match.id %}?tab={{ tab }}&amp;show={{ show }}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+    {% if match.is_busy %}hx-get="{% url 'match_live' match.playtest_id match.id %}?tab={{ tab }}&amp;show={{ show }}{% if decision_query %}&amp;{{ decision_query }}{% endif %}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
 
     <div class="cluster">
         {% if match.status == 'finished' %}
@@ -74,6 +74,7 @@ the trigger and polling stops.
     <nav class="tabs" aria-label="Match sections">
         <a href="?tab=summary" class="tab{% if tab == 'summary' %} is-active{% endif %}"{% if tab == 'summary' %} aria-current="page"{% endif %}>Summary</a>
         <a href="?tab=log" class="tab{% if tab == 'log' %} is-active{% endif %}"{% if tab == 'log' %} aria-current="page"{% endif %}>Game log</a>
+        <a href="?tab=decisions" class="tab{% if tab == 'decisions' %} is-active{% endif %}"{% if tab == 'decisions' %} aria-current="page"{% endif %}>Decisions</a>
     </nav>
 
     {% if tab == 'summary' %}
@@ -92,6 +93,8 @@ the trigger and polling stops.
                     <tr><td>Confidence</td>{% for seat, stats in seat_stats %}<td class="num">{% if stats.confidence.rated %}median {{ stats.confidence.median|floatformat:2 }} · {{ stats.confidence.low }} low{% else %}—{% endif %}</td>{% endfor %}</tr>
                     <tr><td>Fallbacks</td>{% for seat, stats in seat_stats %}<td class="num">{% for reason, count in stats.fallbacks.items %}{{ count }} {{ reason }}{% if not forloop.last %} · {% endif %}{% empty %}none{% endfor %}</td>{% endfor %}</tr>
                     <tr><td>Failed plays</td>{% for seat, stats in seat_stats %}<td class="num">{% if stats and 'failed_plays' in stats %}{{ stats.failed_plays }}{% else %}—{% endif %}</td>{% endfor %}</tr>
+                    <tr><td>Flagged decisions</td>{% for seat, stats in seat_stats %}<td class="num">{% if stats and 'flags' in stats %}{% for check, count in stats.flags.items %}{{ count }} {{ check|flag_label }}{% if not forloop.last %} · {% endif %}{% empty %}none{% endfor %}{% else %}—{% endif %}</td>{% endfor %}</tr>
+                    {% if summary.seats.0.agreement or summary.seats.1.agreement %}<tr><td>Agrees with Forge AI</td>{% for seat, stats in seat_stats %}<td class="num">{% if stats.agreement %}{{ stats.agreement.agree }} of {{ stats.agreement.rated }}{% else %}—{% endif %}</td>{% endfor %}</tr>{% endif %}
                     <tr><td>Life by turn</td>{% for seat, stats in seat_stats %}<td class="num">{{ summary.starting_life }}{% for life in stats.life_by_turn %} › {{ life }}{% endfor %}</td>{% endfor %}</tr>
                 </tbody>
             </table>
@@ -103,7 +106,7 @@ the trigger and polling stops.
     {% else %}
     <section class="panel"><div class="empty"><p>{% if match.is_busy %}The summary is written when the game ends.{% else %}No summary for this match.{% endif %}</p></div></section>
     {% endif %}
-    {% else %}
+    {% elif tab == 'log' %}
     <section class="panel" aria-label="Game log">
         <div class="log-toolbar">
             <span class="panel-title">Game log</span>
@@ -120,7 +123,7 @@ the trigger and polling stops.
                     {% if row.kind == 'forge_ai' %}
                     <span class="log-text"><span translate="no" class="ms ms-sm">memory</span> Forge AI decided for <span translate="no">{{ row.who }}</span>: {{ row.methods|join:", " }}{% if row.count > 1 %} ({{ row.count }}×){% endif %}</span>
                     {% elif row.kind == 'fallback' %}
-                    <span class="log-text"><span translate="no">{{ row.who }}</span> — {{ event.text }}</span>
+                    <span class="log-text"><span translate="no">{{ row.who }}</span> — {{ event.text }}{% if event.payload.trace %} <a class="log-link" href="{% url 'decision_detail' match.playtest_id match.id event.payload.trace %}" title="Inspect this decision" aria-label="Inspect this decision"><span translate="no" class="ms ms-sm">search</span></a>{% endif %}</span>
                     <span class="log-note">
                         <span class="warn">{{ row.reason }}</span>{% if event.payload.confidence is not None %} · confidence <span class="font-mono">{{ event.payload.confidence|floatformat:2 }}</span>{% endif %}
                         {% for option in event.payload.probabilities %}{% if forloop.first %} · Jev leaned to: {% else %}, {% endif %}{{ option.label }} <span class="font-mono">{{ option.p|floatformat:2 }}</span>{% endfor %}
@@ -128,7 +131,7 @@ the trigger and polling stops.
                     </span>
                     {% if event.payload.failed_play %}<span class="log-note"><span class="warn">failed play</span> · Forge did not carry out {{ event.payload.failed_play }}</span>{% endif %}
                     {% elif row.kind == 'decision' %}
-                    <span class="log-text"><span translate="no" class="muted">{{ row.who }}</span> — {{ event.text }}</span>
+                    <span class="log-text"><span translate="no" class="muted">{{ row.who }}</span> — {{ event.text }}{% if event.payload.trace %} <a class="log-link" href="{% url 'decision_detail' match.playtest_id match.id event.payload.trace %}" title="Inspect this decision" aria-label="Inspect this decision"><span translate="no" class="ms ms-sm">search</span></a>{% endif %}</span>
                     {% if event.payload.confidence is not None %}
                     <span class="log-note">
                         Jev <span class="font-mono">{{ event.payload.confidence|floatformat:2 }}</span>
@@ -149,6 +152,38 @@ the trigger and polling stops.
             <div class="empty"><p>{% if match.is_busy and show == 'all' %}Forge is shuffling up…{% else %}Nothing to show.{% endif %}</p></div>
             {% endfor %}
         </div>
+    </section>
+    {% else %}
+    <section class="panel" aria-label="Decisions">
+        <div class="log-toolbar">
+            <span class="panel-title">Decisions</span>
+            {% for label, query, active in only_chips %}<a href="?tab=decisions{% if query %}&amp;{{ query }}{% endif %}" class="chip-link{% if active %} is-active{% endif %}"{% if active %} aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}
+            {% for label, query, active in seat_chips %}<a href="?tab=decisions{% if query %}&amp;{{ query }}{% endif %}" class="chip-link{% if active %} is-active{% endif %}"{% if active %} aria-pressed="true"{% endif %}>{{ label }}</a>{% endfor %}
+            {% for label, query, active in kind_chips %}<a href="?tab=decisions{% if query %}&amp;{{ query }}{% endif %}" class="chip-link{% if active %} is-active{% endif %}"{% if active %} aria-pressed="true"{% endif %}>{{ label }}</a>{% endfor %}
+            <span class="faint">{{ decisions|length }} decision{{ decisions|pluralize }}</span>
+        </div>
+        {% if decisions %}
+        <div class="table-scroll">
+            <table class="data-table">
+                <thead><tr><th>Turn</th><th>Seat</th><th>Kind</th><th>Choice</th><th class="num">Confidence</th><th>Outcome</th><th>Flags</th></tr></thead>
+                <tbody>
+                    {% for trace in decisions %}
+                    <tr class="row-link">
+                        <td class="num">T{{ trace.turn }}<span class="cell-sub">{{ trace.step|default:"start" }}</span></td>
+                        <td>{{ trace.seat_position|add:1 }}</td>
+                        <td>{{ trace.kind }}</td>
+                        <td class="cell-main"><a class="row-target" href="{% url 'decision_detail' match.playtest_id match.id trace.id %}{% if decision_query %}?{{ decision_query }}{% endif %}">{% if trace.choice is None %}<span translate="no" class="ms ms-sm">memory</span> Forge AI · {{ trace.fallback_kind }}{% else %}{{ trace.chosen_label }}{% endif %}</a></td>
+                        <td class="num font-mono">{% if trace.confidence is not None %}{{ trace.confidence|floatformat:2 }}{% else %}—{% endif %}</td>
+                        <td class="{% if trace.outcome == 'no_effect' %}warn{% else %}muted{% endif %}">{{ trace.get_outcome_display }}</td>
+                        <td>{% for flag in trace.flags %}<span class="chip">{{ flag.check|flag_label }}</span>{% endfor %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty"><p>{% if has_traces %}No decision matches these filters.{% else %}No decision traces for this match: they are recorded from this version on.{% endif %}</p></div>
+        {% endif %}
     </section>
     {% endif %}
 </div>

@@ -125,3 +125,26 @@ def test_a_missing_key_delegates(monkeypatch):
 def test_an_answer_outside_the_options_delegates():
     decision = _choose(JevAgent(seed=1, ask=StubJev(prefer=lambda criteria: "o99")))
     assert decision.delegate and "not an option" in decision.fallback_reason
+
+
+def test_the_trace_keeps_what_jev_saw_in_the_order_it_saw_it():
+    jev = StubJev(confidence=0.9)
+    answer = _choose(JevAgent(seed=3, ask=jev))
+    state, questions, _ = jev.requests[0]
+    trace = answer.trace
+    assert trace["state"] == json.loads(state)
+    assert trace["instructions"] == questions["action"]["instructions"]
+    shown = [f"o{option['index']}" for option in trace["options"]]
+    assert shown == list(questions["action"]["criteria"])
+    assert trace["options"][1]["facts"] is not None
+    assert set(trace["probabilities"]) == {"0", "1", "2"}
+    assert abs(sum(trace["probabilities"].values()) - 1) < 1e-3
+    assert isinstance(trace["latency_ms"], int)
+    assert "trace" not in answer.meta()
+
+
+def test_a_delegated_decision_keeps_its_trace():
+    low = _choose(JevAgent(seed=3, ask=StubJev(confidence=0.05)))
+    assert low.delegate and low.trace["probabilities"]
+    failed = _choose(JevAgent(seed=3, ask=StubJev(fail="down")))
+    assert failed.delegate and failed.trace["options"] and failed.trace["probabilities"] == {}

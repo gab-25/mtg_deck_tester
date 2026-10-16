@@ -4,7 +4,7 @@ Forge lists the options of every decision; an agent only picks one of them, or
 hands the decision back to Forge's AI. Agents never decide what is legal.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 
@@ -26,6 +26,12 @@ class Decision:
     # The play the seat asked for just before, which Forge did not carry out:
     # the same decision came back, and that option was left out of it.
     failed_play: str = ""
+    # What the agent saw and answered (state, options as shown, full
+    # distribution, latency), stored as a DecisionTrace by the worker; never
+    # sent to the bridge (#72).
+    trace: dict | None = field(default=None, compare=False, repr=False)
+    # The stored trace's id: the bridge keeps it on the event, linking the two.
+    trace_id: int | None = None
 
     @property
     def delegate(self) -> bool:
@@ -48,6 +54,8 @@ class Decision:
             data["fallback_kind"] = self.fallback_kind
         if self.failed_play:
             data["failed_play"] = self.failed_play
+        if self.trace_id is not None:
+            data["trace"] = self.trace_id
         return data
 
 

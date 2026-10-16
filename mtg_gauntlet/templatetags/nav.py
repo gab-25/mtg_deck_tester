@@ -6,7 +6,7 @@ register = template.Library()
 
 SECTIONS = (
     ("metagame", ("metagame",)),
-    ("playtests", ("playtest", "match")),
+    ("playtests", ("playtest", "match", "decision")),
     ("decks", ("deck",)),
     ("home", ("home",)),
 )

@@ -69,8 +69,12 @@ hands the decision back to Forge's AI.
   table and Forge's log as it grows (HTMX polling), each Jev decision with its
   confidence, each fallback with its reason, and at the end a deterministic summary per
   seat: result, life over time, turns, spells cast, lands played, the agent's decisions
-  against Forge AI's, confidence and fallbacks by reason. A running match, or a whole
-  playtest, can be stopped.
+  against Forge AI's, confidence and fallbacks by reason, and the decisions the
+  deterministic checks flagged. A running match, or a whole playtest, can be stopped.
+- **Decision inspector**: the match page's **Decisions** tab lists every decision Jev
+  was asked (filter by seat, kind, Forge AI fallbacks, flagged or no-effect plays); a
+  decision's page shows the board and hand as Jev saw them, Forge's prompt, every
+  option with its facts and Jev's probability, the choice, the outcome and the flags.
 - **Reproducible**: a match has a seed. The same seed and the same answers replay the
   same game, so a match is as reproducible as Jev.
 - **Scryfall cache in the database**: card JSON is cached in Postgres
@@ -129,6 +133,8 @@ playtest/               # App: matches between agents
 ├── workers.py          #   The worker pool answering Forge's decisions
 ├── agents/             #   the Jev agent and its client
 ├── summary.py          #   The deterministic match summary
+├── checks.py           #   Deterministic checks that flag suspicious decisions
+├── export.py           #   A match as JSON lines or Markdown, for offline review
 └── forms.py            #   The new-playtest form: a deck to test and its opponents
 theme/static/           # Precompiled stylesheet, vendored fonts and icons
 tests/                  # Hermetic suite; fakeforge.py is an in-memory bridge
@@ -206,6 +212,21 @@ format's decks (a source that fails keeps the previous ones), imports them with 
 same rules as your decks, and, when the Forge bridge runs, checks each one for cards
 Forge does not know. Load the local card database first so the import needs few
 Scryfall calls. Run it weekly, e.g. from cron, after `load_oracle_cards`.
+
+## Exporting a match
+
+Every decision Jev is asked is stored with what it saw (state, Forge's prompt, every
+option with its facts, in the order shown) and its full distribution. Export a match,
+or every match of a playtest, to review it offline, by hand or with a model:
+
+```bash
+uv run python manage.py export_match <match id>                        # JSON lines, to stdout
+uv run python manage.py export_match <match id> --format md --seat 1 --flagged --output match.md
+uv run python manage.py export_playtest <playtest id> --format md --output exports/
+```
+
+`jsonl` is one line per event, each decision with its trace; `md` narrates each turn.
+The commands only write files: nothing is sent anywhere.
 
 ## Configuration
 

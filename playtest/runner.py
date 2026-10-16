@@ -23,7 +23,8 @@ from decks.formats import FORMATS
 from mtg_gauntlet.logging_context import job_log_context
 
 from . import forge, workers
-from .models import Match, MatchEvent, Seat
+from .models import DecisionTrace, Match, MatchEvent, Seat
+from .checks import check_match, trace_stats
 from .summary import current_lives, summarize_match, table_names
 
 logger = logging.getLogger(__name__)
@@ -118,6 +119,7 @@ def _store(match: Match, events: list[dict]) -> None:
         ],
         ignore_conflicts=True,
     )
+    _link_traces(match, events)
     turn = max((event.get("turn") or 0 for event in events), default=0)
     if turn > match.turn:
         match.turn = turn
@@ -126,6 +128,28 @@ def _store(match: Match, events: list[dict]) -> None:
     if any(event["kind"] == "log" and (event.get("payload") or {}).get("type") == "LIFE" for event in events):
         for position, life in current_lives(events, list(match.seats.all())).items():
             Seat.objects.filter(match_id=match.pk, position=position).update(life=life)
+
+
+def _link_traces(match: Match, events: list[dict]) -> None:
+    """Points each decision trace at the event the bridge logged for its answer (``meta.trace``)."""
+    traced = {
+        event["seq"]: event["payload"]["trace"]
+        for event in events
+        if event["kind"] in ("decision", "fallback") and isinstance((event.get("payload") or {}).get("trace"), int)
+    }
+    if not traced:
+        return
+    ids = dict(MatchEvent.objects.filter(match_id=match.pk, seq__in=traced).values_list("seq", "id"))
+    for seq, trace_id in traced.items():
+        if seq in ids:
+            DecisionTrace.objects.filter(pk=trace_id, match_id=match.pk).update(event_id=ids[seq])
+
+
+def settle_traces(match_id) -> None:
+    """The outcome of every trace still open when the match ends: done, or delegated to Forge's AI."""
+    open_traces = DecisionTrace.objects.filter(match_id=match_id, outcome=DecisionTrace.Outcome.PENDING)
+    open_traces.filter(choice__isnull=False).update(outcome=DecisionTrace.Outcome.DONE)
+    open_traces.filter(choice__isnull=True).update(outcome=DecisionTrace.Outcome.DELEGATED)
 
 
 def _match_timeout() -> float:
@@ -180,6 +204,7 @@ def follow(match: Match, client) -> dict:
 def _fail(match_id, error: str, client=None, game_id: str = "") -> None:
     """Marks the match failed and ends its game, so no agent keeps playing it."""
     Match.objects.filter(pk=match_id).update(status=Match.Status.FAILED, error=error, finished_at=timezone.now())
+    settle_traces(match_id)
     if client is not None and game_id:
         try:
             client.abort(game_id)
@@ -187,10 +212,29 @@ def _fail(match_id, error: str, client=None, game_id: str = "") -> None:
             logger.warning("Could not abort game %s: %s", game_id, exc)
 
 
+def _analyse(match: Match) -> dict[int, dict]:
+    """Settles the match's traces, flags the suspicious ones (:mod:`.checks`); returns each seat's trace stats."""
+    settle_traces(match.pk)
+    traces = list(match.traces.all())
+    flags = check_match(traces, match.format)
+    for trace in traces:
+        trace.flags = flags.get(trace.id, [])
+    DecisionTrace.objects.bulk_update(traces, ["flags"])
+    return trace_stats(traces)
+
+
 def _finish(match: Match, game: dict) -> None:
+    try:
+        traced = _analyse(match)
+    except Exception:  # noqa: BLE001 - the analysis must never cost the match's result.
+        logger.exception("Could not analyse the decision traces")
+        settle_traces(match.pk)
+        traced = {}
     seats = list(match.seats.all())
     events = list(match.events.all())
     summary = summarize_match(events, seats, match.format, game)
+    for seat in summary["seats"]:
+        seat.update(traced.get(seat["seat"], {}))
     status = game["status"]
     error = ""
     if status == "failed":
