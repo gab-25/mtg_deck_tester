@@ -32,10 +32,13 @@ every seat is `external`; `forge_ai` remains for older matches.
 filtered `view` (no hidden information) and up to 255 numbered `options`, each with a
 `label` and code-computed `facts` ("deals 2 damage if unblocked", "dies if blocked by:
 …"). Multi-selects (attackers, blockers, cards) come one pick at a time, option 0 being
-"Done". A decision may also carry `forge_ai_choice`, the option Forge's AI would pick,
-computed without playing it: optional, not sent by the bridge yet
-([mtg_forge_engine#6](https://github.com/gab-25/mtg_forge_engine/issues/6)); the worker
-keeps it in the decision trace only when it is an offered index. **Everything else is always Forge's AI**: mana payment, combat damage
+"Done". A decision also carries `forge_ai_choice`: the option Forge's AI would pick, or
+`null` when it has no answer, computed without changing the game or drawing from its
+seeded generator; in a multi-select it points at the AI's next pick, then at "Done"
+([mtg_forge_engine#7](https://github.com/gab-25/mtg_forge_engine/pull/7)). The bridge
+copies it into the `decision` and `fallback` events too. It is optional for the client:
+the worker keeps it in the decision trace only when it is an offered index, and an older
+bridge without it keeps working. **Everything else is always Forge's AI**: mana payment, combat damage
 assignment, scry and the other choices the bridge does not expose; each is logged as a
 `forge_ai` event.
 
@@ -168,7 +171,10 @@ stored event, but its agents are new, so it no longer replays exactly from its s
 The bridge replays a game from its seed when the answers are the same — every event
 but Forge's wall-clock line ("Match Duration …"). Jev's option order is seeded too, so
 Jev seats are as reproducible as Jev's answers: a stub that answers deterministically
-(as in the tests) replays exactly.
+(as in the tests) replays exactly. Computing `forge_ai_choice` updates the AI's own
+memory for the seat, which only matters to decisions it then takes: a seed still replays,
+but a game played on a bridge that computes it can differ from the same game played on
+an older one.
 
 ## The summary
 
