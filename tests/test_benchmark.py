@@ -39,6 +39,17 @@ def test_jev_plays_each_deck_against_forge_ai_on_the_same_seeds(source):
 
 
 @pytest.mark.django_db
+def test_a_control_benchmark_plays_the_same_games_without_jev(source, fake_forge, monkeypatch, capsys):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    call_command("benchmark", str(source.id), games=1, seed=7, control=True)
+    assert "Forge's AI plays Goblins" in capsys.readouterr().out
+    matches = Match.objects.exclude(playtest_id=source.playtest_id)
+    assert {s.agent for m in matches for s in m.seats.all()} == {"forge_ai"}
+    assert sorted(m.seed for m in matches) == [7, 7] and all(m.status == "finished" for m in matches)
+    assert not matches.filter(traces__isnull=False).exists()
+
+
+@pytest.mark.django_db
 def test_a_benchmark_needs_two_seats(user):
     match = make_match(user, seats=("Only",))
     with pytest.raises(ValueError):

@@ -164,6 +164,8 @@ before and after. `manage.py benchmark <match id> [--games 20] [--seed N]` copie
 match's two decks into two playtest sessions, one per deck in Jev's hands: Jev plays
 seat 1 and Forge's AI the other deck in seat 2, on seeds `N … N + games - 1` in both
 sessions, queued to the worker game by game. Reuse the seed to compare two runs.
+`--control` plays the same games with Forge's AI in both seats (no Jev, no API key):
+the record the matchup makes on its own, to read Jev's win rate against.
 
 `manage.py benchmark_report <playtest id> …` prints, one column per session plus a
 total, Jev's numbers over the finished matches, read from their summaries

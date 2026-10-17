@@ -3,7 +3,9 @@
 :func:`create_benchmark` copies a match's decks into two playtest sessions,
 one per deck in Jev's hands: in each match Jev plays seat 0 and Forge's AI
 the other deck in seat 1, on the same seeds in both sessions. Seat 0 is the
-"deck under test" of every page, so the sessions' records are Jev's.
+"deck under test" of every page, so the sessions' records are Jev's. A
+control benchmark plays the same games with Forge's AI in both seats: the
+record the decks make without Jev.
 
 :func:`report` reads the finished matches' summaries — never a model — and
 gives the numbers to compare before and after a change: Jev's record, how
@@ -20,8 +22,13 @@ from .models import Match, Playtest, Seat
 from .stats import RESULTS
 
 
-def create_benchmark(source: Match, games: int, seed: int) -> list[Playtest]:
-    """Two sessions of ``games`` pending matches, seeds ``seed`` … ``seed + games - 1``."""
+def create_benchmark(source: Match, games: int, seed: int, *, control: bool = False) -> list[Playtest]:
+    """Two sessions of ``games`` pending matches, seeds ``seed`` … ``seed + games - 1``.
+
+    With ``control`` Forge's AI plays seat 0 too: the same games without Jev,
+    the matchup's own record to read Jev's against.
+    """
+    player = Seat.Agent.FORGE_AI if control else Seat.Agent.JEV
     seats = list(source.seats.order_by("position"))
     if len(seats) != 2:
         raise ValueError(f"A benchmark needs a two-seat match; this one has {len(seats)} seats.")
@@ -35,7 +42,7 @@ def create_benchmark(source: Match, games: int, seed: int) -> list[Playtest]:
             for game in range(games):
                 match = Match.objects.create(owner=source.owner, playtest=playtest, format=source.format, seed=seed + game)
                 Seat.objects.bulk_create([
-                    _copy(jev, match, 0, Seat.Agent.JEV),
+                    _copy(jev, match, 0, player),
                     _copy(forge_ai, match, 1, Seat.Agent.FORGE_AI),
                 ])
             playtests.append(playtest)

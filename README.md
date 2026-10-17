@@ -234,6 +234,7 @@ To tell whether a change makes Jev play better, replay the same games before and
 
 ```bash
 uv run python manage.py benchmark <match id> --games 20 --seed 1000   # Jev vs Forge's AI, each deck
+uv run python manage.py benchmark <match id> --games 20 --seed 1000 --control  # the same games, Forge's AI only
 uv run python manage.py benchmark_report <playtest id> <playtest id>   # once the worker played them
 ```
 
