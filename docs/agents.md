@@ -110,6 +110,9 @@ with "Pass priority" alone, more than 255 options) have none.
 as `meta.trace`, which the runner uses to link the trace to its event. The worker
 marks a trace `no_effect` when it sees the same priority decision come back; when
 the match ends (or fails) the runner settles the others as `done` or `delegated`.
+An attack or block declaration is asked one creature at a time; when a later step of it
+delegates, the bridge undoes the earlier picks and Forge's AI declares the whole combat,
+so those picks are settled as `delegated` too.
 A pick the bridge no longer accepted is marked `delegated` and never checked. A trace
 that cannot be stored is logged and skipped, and a failing analysis is logged: neither
 ever costs the decision or the match's result.
@@ -138,7 +141,7 @@ option labels and Forge's facts; they never compute a rule.
 | Check | Flags |
 |---|---|
 | `no_effect` | a play Forge did not carry out (the trace's outcome) |
-| `pass_with_plays` | "Pass priority" in your own second main phase, empty stack, with a `Cast …` option offered |
+| `pass_with_plays` | "Pass priority" in your own second main phase, empty stack, with a `Cast …` option offered for a card that is not an instant and has no flash (holding those for the opponent's turn is a plan) |
 | `land_not_played` | the last "Pass priority" of your turn in a main phase, empty stack, no land played this turn, a `Play …` option offered, and no land played later that turn |
 | `ignored_lethal` | "Done" attacking while an attack is `lethal if unblocked`; "Done" blocking while the prompt's unblocked damage is at least your life |
 | `bad_attack` | an attack whose facts say `dies if blocked by: …` and which is not lethal |
@@ -146,10 +149,28 @@ option labels and Forge's facts; they never compute a rule.
 
 A flag means "look at this", not "this was wrong": the bridge says which blockers kill
 an attacker, not whether they die too, so `bad_attack` cannot tell a bad attack from
-an even trade. Each flag is stored on the trace (`flags: [{check, reason}]`), counted
+an even trade. Two known false positives wait for facts from the bridge
+(mtg_forge_engine#8): `ignored_lethal` on a block when a trampler makes every block
+hopeless, and `bad_attack` when an attack trigger stops all blockers (Aragorn as the
+monarch). Each flag is stored on the trace (`flags: [{check, reason}]`), counted
 per seat in `Match.summary` (`seats[].flags`, absent for a seat without traces, shown as
 "Flagged decisions" on the match page), and summed for the deck under test on the
 playtest page.
+
+## Benchmark
+
+To measure a change to Jev, its instructions or the bridge (#79), play the same games
+before and after. `manage.py benchmark <match id> [--games 20] [--seed N]` copies the
+match's two decks into two playtest sessions, one per deck in Jev's hands: Jev plays
+seat 1 and Forge's AI the other deck in seat 2, on seeds `N … N + games - 1` in both
+sessions, queued to the worker game by game. Reuse the seed to compare two runs.
+
+`manage.py benchmark_report <playtest id> …` prints, one column per session plus a
+total, Jev's numbers over the finished matches, read from their summaries
+(`playtest/benchmark.py`, no model): won–lost–draw and win rate, average turns, the
+share of decisions Jev took itself and the fallbacks by kind, its median confidence,
+the checks' flags per game and by check, and its agreement with Forge's AI by decision
+kind (only with a bridge that reports `forge_ai_choice`).
 
 ## Jev client
 

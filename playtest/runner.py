@@ -145,9 +145,40 @@ def _link_traces(match: Match, events: list[dict]) -> None:
             DecisionTrace.objects.filter(pk=trace_id, match_id=match.pk).update(event_id=ids[seq])
 
 
+def _undone_declarations(traces) -> list[int]:
+    """The picks of attack and block declarations a later step handed to Forge's AI.
+
+    A declaration is asked one attacker (or blocker) at a time; when a step
+    delegates, the bridge undoes the earlier picks and Forge's AI declares the
+    whole combat, so none of them happened.
+    """
+    undone, run, last = [], [], None
+    for trace in traces:
+        key = (trace.seat_position, trace.turn, trace.step, trace.kind)
+        if trace.kind not in ("attack", "block") or key != last:
+            run = []
+        last = key if trace.kind in ("attack", "block") else None
+        if last is None:
+            continue
+        if trace.choice is None:
+            undone += run
+            run = []
+        elif trace.choice == 0:
+            run = []  # "Done": the declaration is over
+        else:
+            run.append(trace.pk)
+    return undone
+
+
 def settle_traces(match_id) -> None:
     """The outcome of every trace still open when the match ends: done, or delegated to Forge's AI."""
     open_traces = DecisionTrace.objects.filter(match_id=match_id, outcome=DecisionTrace.Outcome.PENDING)
+    combat = list(
+        DecisionTrace.objects.filter(match_id=match_id)
+        .order_by("seat_position", "id")
+        .only("id", "seat_position", "turn", "step", "kind", "choice")
+    )
+    open_traces.filter(pk__in=_undone_declarations(combat)).update(outcome=DecisionTrace.Outcome.DELEGATED)
     open_traces.filter(choice__isnull=False).update(outcome=DecisionTrace.Outcome.DONE)
     open_traces.filter(choice__isnull=True).update(outcome=DecisionTrace.Outcome.DELEGATED)
 

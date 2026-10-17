@@ -22,6 +22,10 @@ MULLIGAN_LANDS: dict[str, tuple[int, int]] = {}
 DIES_IF_BLOCKED = "dies if blocked by: "
 LETHAL = "lethal if unblocked"
 BLOCK_PROMPT = re.compile(r"unblocked attackers deal (\d+), your life (-?\d+)")
+# "Cast Remand #106 for {1}{U}: …": the card's name.
+CAST = re.compile(r"^Cast (.+?) #\d+")
+# The flash keyword on a line of its own in a card's text.
+FLASH = re.compile(r"(?m)^Flash\b")
 
 # How each check reads on the page.
 FLAG_LABELS = {
@@ -67,10 +71,24 @@ def no_effect(traces, fmt):
             yield trace, f"Forge did not carry out {_label(trace, trace.choice)}"
 
 
+def _instant_speed(trace) -> set[str]:
+    """The cards in hand that can be cast at instant speed: instants and cards with flash."""
+    return {
+        card.get("name")
+        for card in _you(trace).get("hand") or []
+        if "Instant" in (card.get("types") or "") or FLASH.search(card.get("text") or "")
+    }
+
+
 def pass_with_plays(traces, fmt):
+    """Holding instants and flash cards for the opponent's turn is a plan, not a missed play."""
     for trace in traces:
         if _passes(trace) and trace.step == "MAIN2" and _own_empty_stack(trace):
-            spells = [label for label in _labels(trace) if label.startswith("Cast ")]
+            held = _instant_speed(trace)
+            spells = [
+                label for label in _labels(trace)
+                if label.startswith("Cast ") and not ((cast := CAST.match(label)) and cast.group(1) in held)
+            ]
             if spells:
                 yield trace, f"passed the second main phase with {len(spells)} spell{'s' if len(spells) != 1 else ''} castable"
 
