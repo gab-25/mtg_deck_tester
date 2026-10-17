@@ -147,8 +147,8 @@ def table(reports: list[Report]) -> str:
     """The reports side by side, one column each, as plain text."""
     rows = [
         ("Games", [str(r.games) + (f" (+{r.unfinished} unfinished)" if r.unfinished else "") for r in reports]),
-        ("Jev won–lost–draw", [f"{r.won}–{r.lost}–{r.draw}" for r in reports]),
-        ("Jev win rate", [_cell(r.win_rate, "%") for r in reports]),
+        ("Seat 1 won–lost–draw", [f"{r.won}–{r.lost}–{r.draw}" for r in reports]),
+        ("Seat 1 win rate", [_cell(r.win_rate, "%") for r in reports]),
         ("Average turns", [_cell(r.avg_turns) for r in reports]),
         ("Decisions Jev took", [_cell(r.jev_share, "%") for r in reports]),
         ("Median confidence", [_cell(r.median_confidence) for r in reports]),

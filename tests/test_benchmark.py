@@ -80,7 +80,7 @@ def test_the_report_counts_jevs_seat_over_finished_matches(source):
     assert result.win_rate == 50 and result.jev_share == 90 and result.median_confidence == 0.4
     assert result.flags_per_game == 1.0 and result.agreement == 75 and result.by_kind == {"attack": [4, 3]}
     text = benchmark.table([result])
-    assert "Jev win rate" in text and "50%" in text and "flag: bad_attack" in text and "75% of 4" in text
+    assert "Seat 1 win rate" in text and "50%" in text and "flag: bad_attack" in text and "75% of 4" in text
 
 
 @pytest.mark.django_db
@@ -94,7 +94,7 @@ def test_the_commands_play_and_report_a_benchmark(source, fake_forge, monkeypatc
     assert all(m.status == "finished" for p in playtests for m in p.matches.all())
     call_command("benchmark_report", *[str(p.id) for p in playtests])
     out = capsys.readouterr().out
-    assert "Jev won–lost–draw" in out and "All" in out
+    assert "Seat 1 won–lost–draw" in out and "All" in out
 
 
 @pytest.mark.django_db
