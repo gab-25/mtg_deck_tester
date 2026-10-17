@@ -21,6 +21,8 @@ uv run python manage.py load_oracle_cards  # fill the card cache from Scryfall b
 uv run python manage.py sync_metagame      # import the top decks of each format (network)
 uv run python manage.py export_match <id> --format md  # a match and its decision traces, for review
 uv run python manage.py export_playtest <id> --output DIR  # every match of a playtest, one file each
+uv run python manage.py benchmark <match id> --games 20 --seed N  # Jev vs Forge AI with a match's decks
+uv run python manage.py benchmark_report <playtest id> ...  # Jev's numbers over benchmark sessions
 docker compose up --build                  # Postgres + Forge + Redis + gunicorn on :8000 + the worker
 docker compose up -d db                    # just Postgres, for local runs
 docker compose up -d forge                 # just the Forge bridge, on localhost:8080
@@ -49,7 +51,8 @@ The default `DATABASE_URL` is the Compose Postgres on localhost; set
 - `playtest/workers.py` — the worker pool answering the bridge's decisions with each
   seat's agent, storing a `DecisionTrace` per decision Jev is asked → `docs/forge.md`.
 - `playtest/checks.py` — deterministic checks that flag suspicious decisions;
-  `playtest/export.py` — a match as JSON lines or Markdown → `docs/agents.md`.
+  `playtest/export.py` — a match as JSON lines or Markdown; `playtest/benchmark.py` —
+  Jev against Forge's AI on fixed seeds, and its report → `docs/agents.md`.
 - `playtest/agents/` — the Jev agent and its client →
   `docs/agents.md`.
 - `theme/static/` — the hand-written stylesheet, vendored fonts and icons.

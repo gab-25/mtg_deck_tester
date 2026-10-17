@@ -228,6 +228,20 @@ uv run python manage.py export_playtest <playtest id> --format md --output expor
 `jsonl` is one line per event, each decision with its trace; `md` narrates each turn.
 The commands only write files: nothing is sent anywhere.
 
+## Benchmarking Jev
+
+To tell whether a change makes Jev play better, replay the same games before and after:
+
+```bash
+uv run python manage.py benchmark <match id> --games 20 --seed 1000   # Jev vs Forge's AI, each deck
+uv run python manage.py benchmark <match id> --games 20 --seed 1000 --control  # the same games, Forge's AI only
+uv run python manage.py benchmark_report <playtest id> <playtest id>   # once the worker played them
+```
+
+The report compares Jev's record, how much of the game it played itself, its
+confidence, the flagged decisions and its agreement with Forge's AI
+([agents](docs/agents.md#benchmark)).
+
 ## Configuration
 
 Everything is configured through environment variables (a `.env` file is loaded in

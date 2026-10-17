@@ -181,3 +181,23 @@ def test_a_failing_check_never_costs_the_match_result(user, fake_forge, jev, mon
     match = _played(user)
     assert match.status == Match.Status.FINISHED and match.summary["seats"]
     assert all(t.outcome in ("done", "delegated", "no_effect") for t in match.traces.all())
+
+
+@pytest.mark.django_db
+def test_a_declaration_forge_ai_finished_is_settled_as_delegated(user):
+    """The bridge undoes a declaration's earlier picks when a later step delegates:
+    Forge's AI declares the whole combat, so none of Jev's picks happened."""
+    match = make_match(user)
+
+    def traced(seat, kind, choice, turn=4, step="COMBAT_DECLARE_ATTACKERS"):
+        return DecisionTrace.objects.create(match=match, seat_position=seat, turn=turn, step=step, kind=kind, choice=choice)
+
+    undone = [traced(1, "attack", 1), traced(1, "attack", 2)]
+    handed = traced(1, "attack", None)
+    blocks = traced(0, "block", 1, step="COMBAT_DECLARE_BLOCKERS")
+    kept = [traced(1, "attack", 1, turn=6), traced(1, "attack", 0, turn=6)]
+    runner.settle_traces(match.pk)
+    outcome = lambda t: DecisionTrace.objects.get(pk=t.pk).outcome  # noqa: E731
+    assert [outcome(t) for t in undone + [handed]] == ["delegated"] * 3
+    assert outcome(blocks) == "done"
+    assert [outcome(t) for t in kept] == ["done", "done"]

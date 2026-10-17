@@ -48,6 +48,21 @@ def test_passing_on_the_opponents_turn_or_with_a_stack_is_fine():
     assert checks_of(trace(options=PRIORITY, active=False), trace(options=PRIORITY, stack=[{"text": "x"}])) == [[], []]
 
 
+def test_holding_instant_speed_spells_in_the_second_main_phase_is_fine():
+    hand = [
+        {"name": "Remand", "types": "Instant"},
+        {"name": "Snapcaster Mage", "types": "Creature - Human Wizard", "text": "Flash\nWhen Snapcaster Mage enters, ..."},
+        {"name": "Bear", "types": "Creature - Bear", "text": "Whenever a creature with flash enters, ..."},
+    ]
+    held = [("Pass priority", []), ("Cast Remand #7 for {1}{U}: Counter target spell.", []),
+            ("Cast Snapcaster Mage #8 for {1}{U}: Snapcaster Mage - Creature 2 / 1", [])]
+    sorcery = held + [("Cast Bear #9 for {1}{G}: Bear - Creature 2 / 2", [])]
+    holding, passing = trace(options=held, hand=hand, turn=3), trace(options=sorcery, hand=hand, turn=5)
+    flags = check_match([holding, passing], "modern")
+    assert holding.id not in flags
+    assert flags[passing.id] == [{"check": "pass_with_plays", "reason": "passed the second main phase with 1 spell castable"}]
+
+
 def test_land_not_played_is_flagged_once_per_turn_on_the_last_pass():
     first, last = trace(options=PRIORITY, step="MAIN1"), trace(options=PRIORITY[:2], step="MAIN2")
     assert checks_of(first, last) == [[], ["land_not_played"]]
